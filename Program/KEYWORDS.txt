@@ -1,0 +1,7 @@
+Algorithm		KEYWORD1
+AddOutline		KEYWORD2
+GenerateGCODE	KEYWORD2
+
+Point	KEYWORD1
+x		KEYWORD2
+y		KEYWORD2
