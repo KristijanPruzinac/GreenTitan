@@ -5,5 +5,5 @@
 The project currently uses the C94 M8P RTK GPS development board by u-blox, available through online retailers such as Mouser and others. If buying the board make sure to buy the correct variant of the board according to your region (https://www.u-blox.com/en/product/c94-m8p).
 
 # Credits
-Ublox C94-Mp8-4 case with openings - CC BY 4.0 - Scorbin - https://www.thingiverse.com/scorbin/designs
-Einhell battery adapter - CC-BY-NC-SA 4.0 - Hans - https://www.printables.com/social/193091-hans/about
+Ublox C94-Mp8-4 case with openings - CC BY 4.0 - Scorbin - https://www.thingiverse.com/scorbin/designs  
+Einhell battery adapter - CC-BY-NC-SA 4.0 - Hans - https://www.printables.com/social/193091-hans/about  
