@@ -29,7 +29,6 @@ private:
   double mowerOverlap; //Percentage of overlap when generating GCODE, initially set to 80%
 
   List<List<Point>> outlines;
-  List<List<Point>> connectedOutlines;
 
   String GCODE;
 
