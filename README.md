@@ -6,4 +6,4 @@ The project currently uses the C94 M8P RTK GPS development board by u-blox, avai
 
 # Credits
 Ublox C94-Mp8-4 case with openings - CC BY 4.0 - Scorbin - https://www.thingiverse.com/scorbin/designs  
-Einhell battery adapter - CC-BY-NC-SA 4.0 - Hans - https://www.printables.com/social/193091-hans/about  
+Einhell battery adapter - GNU GPL v3 - Hans - https://www.printables.com/social/193091-hans/about  
