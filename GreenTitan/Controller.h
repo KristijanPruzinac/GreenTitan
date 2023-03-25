@@ -44,4 +44,6 @@ void ControllerUpdate(){
   if (ControllerTickReady()){
     ControllerParseBluetooth(BluetoothRead());
   }
+
+  if ( !processGPS() ) {BluetoothSend(String(GPS.lat));}
 }

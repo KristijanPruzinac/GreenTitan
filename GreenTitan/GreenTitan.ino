@@ -9,6 +9,7 @@
 // -------------------------------------------------------- DEPENDENCIES ---------------------------------------------------------------
 
 #include "Bluetooth.h";
+#include "GPS.h";
 #include "Controller.h";
 
 // -------------------------------------------------------- INITIALIZATION ---------------------------------------------------------------
@@ -27,6 +28,10 @@ void InitPins(){
   digitalWrite(MOTOR_main, LOW);
 }
 
+void InitGPS(){
+  Serial2.begin(9600, SERIAL_8N1, 22, 21);
+}
+
 void InitBluetooth(){
   bluetooth.begin("GreenTitan");
 }
@@ -37,6 +42,7 @@ void InitBluetooth(){
 // -------------------------------------------------------- MAIN PROGRAM ---------------------------------------------------------------
 void setup() {
   InitPins();
+  InitGPS();
   InitBluetooth();
 }
 

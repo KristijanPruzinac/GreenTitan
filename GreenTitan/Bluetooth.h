@@ -9,3 +9,7 @@ BluetoothSerial bluetooth;
 String BluetoothRead(){
   return bluetooth.readString();
 }
+
+void BluetoothSend(String message){
+  bluetooth.println(message);
+}
