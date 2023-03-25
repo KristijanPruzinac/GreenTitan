@@ -17,5 +17,8 @@ Einhell battery adapter - GNU GPL v3 - Hans - https://www.printables.com/social/
 SOFTWARE  
 Recieve NAV_PVT message - iforce2d - https://www.youtube.com/watch?v=ylxwOg2pXrc
 
+ANDROID APPLICATION
+Android-BLE-Library - BSD 3-Clause "New" or "Revised" License - philips77 - https://github.com/NordicSemiconductor/Android-BLE-Library
+
 # Development process
 The project is currently under development and expected to be finished by july.
