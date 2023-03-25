@@ -22,17 +22,24 @@ bool ControllerTickReady(){
   return false;
 }
 
-void ControllerParseBluetooth(String message){
-  if (message == "left"){
+void ControllerParseBluetooth(){
+  String message = BluetoothRead();
+
+  //No new message
+  if (message.length() == 0){ return; }
+
+  Serial.println(message + " " + message.length());
+
+  if (message.equals("left")){
     digitalWrite(MOTOR_left, HIGH);
   }
-  else if (message == "right"){
+  else if (message.equals("right")){
     digitalWrite(MOTOR_right, HIGH);
   }
-  else if (message == "main"){
+  else if (message.equals("main")){
     digitalWrite(MOTOR_main, HIGH);
   }
-  else if (message == "stop"){
+  else if (message.equals("stop")){
     digitalWrite(MOTOR_left, LOW);
     digitalWrite(MOTOR_right, LOW);
     digitalWrite(MOTOR_main, LOW);
@@ -42,8 +49,6 @@ void ControllerParseBluetooth(String message){
 void ControllerUpdate(){
   //Sensor tick
   if (ControllerTickReady()){
-    ControllerParseBluetooth(BluetoothRead());
+    ControllerParseBluetooth();
   }
-
-  if ( !processGPS() ) {BluetoothSend(String(GPS.lat));}
 }

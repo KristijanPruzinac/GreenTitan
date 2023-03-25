@@ -1,3 +1,7 @@
+#include <SoftwareSerial.h>
+
+EspSoftwareSerial::UART SerialGPS;
+
 const unsigned char UBX_HEADER[] = { 0xB5, 0x62 };
 
 struct NAV_PVT {
@@ -54,8 +58,8 @@ bool processGPS() {
   static unsigned char checksum[2];
   const int payloadSize = sizeof(NAV_PVT);
 
-  while ( Serial2.available() ) {
-    byte c = Serial2.read();
+  while ( SerialGPS.available() ) {
+    byte c = SerialGPS.read();
     if ( fpos < 2 ) {
       if ( c == UBX_HEADER[fpos] )
         fpos++;
@@ -87,5 +91,15 @@ bool processGPS() {
     }
   }
   return false;
+}
+
+void InitGPS(){
+  SerialGPS.begin(9600, SWSERIAL_8N1, 22, 21, false);
+  if (!SerialGPS) { // If the object did not initialize, then its configuration is invalid
+  Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
+  while (1) { // Don't continue with invalid configuration
+    delay (1000);
+  }
+} 
 }
 

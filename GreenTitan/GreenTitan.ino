@@ -26,14 +26,8 @@ void InitPins(){
   digitalWrite(MOTOR_left, LOW);
   digitalWrite(MOTOR_right, LOW);
   digitalWrite(MOTOR_main, LOW);
-}
 
-void InitGPS(){
-  Serial2.begin(9600, SERIAL_8N1, 22, 21);
-}
-
-void InitBluetooth(){
-  bluetooth.begin("GreenTitan");
+  Serial.begin(9600);
 }
 
 // -------------------------------------------------------- USER FUNCTIONS ---------------------------------------------------------------
