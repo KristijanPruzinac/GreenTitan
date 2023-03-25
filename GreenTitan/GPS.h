@@ -1,6 +1,6 @@
-#include <SoftwareSerial.h>
+#include <HardwareSerial.h>
 
-EspSoftwareSerial::UART SerialGPS;
+HardwareSerial SerialGPS(2);
 
 const unsigned char UBX_HEADER[] = { 0xB5, 0x62 };
 
@@ -94,7 +94,7 @@ bool processGPS() {
 }
 
 void InitGPS(){
-  SerialGPS.begin(9600, SWSERIAL_8N1, 22, 21, false);
+  SerialGPS.begin(9600, SERIAL_8N1, 22, 21);
   if (!SerialGPS) { // If the object did not initialize, then its configuration is invalid
   Serial.println("Invalid EspSoftwareSerial pin configuration, check config"); 
   while (1) { // Don't continue with invalid configuration

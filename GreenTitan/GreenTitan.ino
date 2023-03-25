@@ -42,4 +42,6 @@ void setup() {
 
 void loop() {
   ControllerUpdate();
+
+  Serial.print(char(SerialGPS.read()));
 }
