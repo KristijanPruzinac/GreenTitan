@@ -8,19 +8,32 @@
 //Bluetooth message
 String MessageBLE = "";
 
+//Connection
+BLEClient*  pClient = nullptr;
+BLEAdvertising *pAdvertising = nullptr;
+bool        isConnected = false;
+BLECharacteristic* pCharacteristic = nullptr;
+
 class MyCallbacks: public BLECharacteristicCallbacks
 {
   void onWrite(BLECharacteristic *pCharacteristic)
   {
     std::string value = pCharacteristic->getValue();
-
-    if (value.length() > 0)
-    {
-      for (int i = 0; i < value.length(); i++){
-        MessageBLE += value[i];
-      }
-    }
+    MessageBLE = value.c_str();
   }
+};
+
+class MyClientCallbacks: public BLEClientCallbacks {
+    void onConnect(BLEClient* pClient) {
+        isConnected = true;
+        Serial.println("Bluetooth Connected");
+    }
+
+    void onDisconnect(BLEClient* pClient) {
+        isConnected = false;
+        if (pAdvertising)pAdvertising->start();
+        Serial.println("Bluetooth Disconnected");
+    }
 };
 
 void InitBluetooth(){
@@ -29,22 +42,37 @@ void InitBluetooth(){
 
   BLEService *pService = pServer->createService(SERVICE_UUID);
 
-  BLECharacteristic *pCharacteristic = pService->createCharacteristic(
+  pCharacteristic = pService->createCharacteristic(
                                          CHARACTERISTIC_UUID,
-                                         BLECharacteristic::PROPERTY_READ |
                                          BLECharacteristic::PROPERTY_WRITE
                                        );
 
   pCharacteristic->setCallbacks(new MyCallbacks());
 
-  pCharacteristic->setValue("Hello World");
   pService->start();
 
   BLEAdvertising *pAdvertising = pServer->getAdvertising();
   pAdvertising->start();
+
+  // Create a new BLE client object and set its callbacks
+  pClient = BLEDevice::createClient();
+  pClient->setClientCallbacks(new MyClientCallbacks());
+}
+
+bool BluetoothConnection() {
+  /*
+  if (!isConnected) {
+    Serial.println("Trying to reconnect Bluetooth...");
+    pClient->connect(const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>("GreenTitan")));
+    return false;
+  }*/
+
+  return true;
 }
 
 String BluetoothRead(){
+  if (!BluetoothConnection()){}
+
   int len = MessageBLE.length();
 
   String oldStr = "";
@@ -64,7 +92,23 @@ String BluetoothRead(){
     }
   }
 
+  if (!foundEndline) {
+    return "";
+  }
+
   MessageBLE = newStr;
 
   return oldStr;
+}
+
+void BluetoothWrite(String message) {
+  if (!BluetoothConnection()){}
+
+  if (!pCharacteristic) {
+    Serial.println("Error: Write characteristic not initialized");
+    return;
+  }
+
+  pCharacteristic->setValue(message.c_str());
+  pCharacteristic->notify();
 }

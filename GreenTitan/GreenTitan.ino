@@ -1,13 +1,14 @@
 // -------------------------------------------------------- PIN DEFINITIONS ---------------------------------------------------------------
 
 //Relay
-#define MOTOR_left 25
-#define MOTOR_right 26
-#define MOTOR_main 27
-#define RELAY_PIN4_UNUSED 14
+#define MOTOR_left_A 23
+#define MOTOR_left_B 22
+#define MOTOR_right_A 21
+#define MOTOR_right_B 19
 
 // -------------------------------------------------------- DEPENDENCIES ---------------------------------------------------------------
 
+#include "Sensors.h";
 #include "Bluetooth.h";
 #include "GPS.h";
 #include "Controller.h";
@@ -19,13 +20,15 @@
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
 
 void InitPins(){
-  pinMode(MOTOR_left, OUTPUT);
-  pinMode(MOTOR_right, OUTPUT);
-  pinMode(MOTOR_main, OUTPUT);
+  pinMode(MOTOR_left_A, OUTPUT);
+  pinMode(MOTOR_left_B, OUTPUT);
+  pinMode(MOTOR_right_A, OUTPUT);
+  pinMode(MOTOR_right_B, OUTPUT);
 
-  digitalWrite(MOTOR_left, LOW);
-  digitalWrite(MOTOR_right, LOW);
-  digitalWrite(MOTOR_main, LOW);
+  digitalWrite(MOTOR_left_A, LOW);
+  digitalWrite(MOTOR_left_B, LOW);
+  digitalWrite(MOTOR_right_A, LOW);
+  digitalWrite(MOTOR_right_B, LOW);
 
   Serial.begin(9600);
 }
@@ -36,12 +39,20 @@ void InitPins(){
 // -------------------------------------------------------- MAIN PROGRAM ---------------------------------------------------------------
 void setup() {
   InitPins();
+  InitGyro();
   InitGPS();
   InitBluetooth();
 }
 
 void loop() {
   ControllerUpdate();
-
-  Serial.print(char(SerialGPS.read()));
+  /*
+  char data = SerialGPS.read();
+  if (data == 0xB5){
+    Serial.print("\n");
+  }
+  else {
+    Serial.print(String(int(data)) + " ");
+  }
+  */
 }
