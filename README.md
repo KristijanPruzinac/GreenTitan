@@ -4,12 +4,10 @@
 
 The project currently uses the C94-M8P RTK GPS development board by u-blox, available through online retailers such as Mouser and others. When buying the board make sure to buy the correct variant of the board according to your region (https://www.u-blox.com/en/product/c94-m8p).
 
-# Libraries  
-
-EspSoftwareSerial by Dirk Kaar, Peter Lerup  
+# Competition
+As the project is open-source there is not much competition for it except for other open source projects. Unfortunately other projects seem to either feature software for an already made machine or only the 3d printed case, not both. My goal is to provide both with documentation to enable anyone to make it themselves.
 
 # Credits
-
 MODELS  
 Ublox C94-Mp8-4 case with openings - CC BY 4.0 - Scorbin - https://www.thingiverse.com/scorbin/designs  
 Einhell battery adapter - GNU GPL v3 - Hans - https://www.printables.com/social/193091-hans/about
@@ -18,7 +16,7 @@ SOFTWARE
 Recieve NAV_PVT message - iforce2d - https://www.youtube.com/watch?v=ylxwOg2pXrc
 
 ANDROID APPLICATION
-Android-BLE-Library - BSD 3-Clause "New" or "Revised" License - philips77 - https://github.com/NordicSemiconductor/Android-BLE-Library
+RxAndroidBle - Apache 2.0 license - https://github.com/dariuszseweryn/RxAndroidBle
 
 # Development process
 The project is currently under development and expected to be finished by july.
