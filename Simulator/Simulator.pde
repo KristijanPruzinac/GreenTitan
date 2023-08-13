@@ -1,18 +1,3 @@
-String mode = "CHARGING";
-/* CHARGING STOP PAUSE RUNNING */
-
-long mowerLon = -5672328;
-long mowerLat = 3376391;
-
-float mowerAzimuth = 270.0 + 45.0;
-
-//Charging station
-long baseLon = -5672328;
-long baseLat = 3376391;
-
-long baseExitLon = -5672428;
-long baseExitLat = 3376291;
-
 void setup(){
   size(800, 800);
 }
@@ -41,5 +26,9 @@ void draw(){
   rotate(radians(mowerAzimuth));
   line(0, 0, 0, -30);
   popMatrix();
+  
+  noStroke();
+  fill(0, 0, 0);
+  text(mode, width - 100, height - 50);
   
 }
