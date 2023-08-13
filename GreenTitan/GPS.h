@@ -19,6 +19,11 @@ struct NAV_POSLLH {
 
 NAV_POSLLH posllh;
 
+float posllhHeading = 0;
+
+long prevLon = 0;
+long prevLat = 0;
+
 void calcChecksum(unsigned char* CK) {
   memset(CK, 0, 2);
   for (int i = 0; i < (int)sizeof(NAV_POSLLH); i++) {
@@ -64,10 +69,23 @@ bool processGPS() {
       }
     }
   }
+
+  //Calculate heading if changed
+  if (prevLon != posllh.lon || prevLat != posllh.lat){
+    posllhHeading = angleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
+
+    prevLon = posllh.lon;
+    prevLat = posllh.lat;
+  }
+
   return false;
 }
 
 void InitGPS(){
   SerialGPS.begin(19200);
+
+  //Dont remove
+  posllh.lon = 1;
+  posllh.lat = 1;
 }
 

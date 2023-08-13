@@ -1,18 +1,35 @@
 // (c) Michael Schoeffler 2017, http://www.mschoeffler.de
+#include "Wire.h"
+const int MPU_ADDR = 0x68;
+int16_t accelerometer_x, accelerometer_y, accelerometer_z;
+int16_t gyro_x, gyro_y, gyro_z;
+int16_t temperature_;
+int16_t temperature;
 
-#include "Wire.h" // This library allows you to communicate with I2C devices.
+double pitch, roll;
 
-const int MPU_ADDR = 0x68; // I2C address of the MPU-6050. If AD0 pin is set to HIGH, the I2C address will be 0x69.
-
-int16_t accelerometer_x, accelerometer_y, accelerometer_z; // variables for accelerometer raw data
-int16_t gyro_x, gyro_y, gyro_z; // variables for gyro raw data
-int16_t temperature; // variables for temperature data
+int16_t xErr, yErr, zErr;
+bool errFirst = true;
 
 char tmp_str[7]; // temporary variable used in convert function
 
 char* convert_int16_to_str(int16_t i) { // converts int16 to string. Moreover, resulting strings will have the same length in the debug monitor.
   sprintf(tmp_str, "%6d", i);
   return tmp_str;
+}
+
+void getAngle(int Ax,int Ay,int Az) 
+{
+    double x = Ax;
+    double y = Ay;
+    double z = Az;
+
+    pitch = atan(x/sqrt((y*y) + (z*z))); //pitch calculation
+    roll = atan(y/sqrt((x*x) + (z*z))); //roll calculation
+
+    //converting radians into degrees
+    pitch = pitch * (180.0/3.14);
+    roll = roll * (180.0/3.14) ;
 }
 
 void InitGyro(){
@@ -38,15 +55,20 @@ void GyroRead(){
   gyro_y = Wire.read()<<8 | Wire.read(); // reading registers: 0x45 (GYRO_YOUT_H) and 0x46 (GYRO_YOUT_L)
   gyro_z = Wire.read()<<8 | Wire.read(); // reading registers: 0x47 (GYRO_ZOUT_H) and 0x48 (GYRO_ZOUT_L)
   
-  // print out data
-  Serial.print("aX = "); Serial.print(convert_int16_to_str(accelerometer_x));
-  Serial.print(" | aY = "); Serial.print(convert_int16_to_str(accelerometer_y));
-  Serial.print(" | aZ = "); Serial.print(convert_int16_to_str(accelerometer_z));
-  
-  // the following equation was taken from the documentation [MPU-6000/MPU-6050 Register Map and Description, p.30]
-  Serial.print(" | tmp = "); Serial.print(temperature/340.00+36.53);
-  Serial.print(" | gX = "); Serial.print(convert_int16_to_str(gyro_x));
-  Serial.print(" | gY = "); Serial.print(convert_int16_to_str(gyro_y));
-  Serial.print(" | gZ = "); Serial.print(convert_int16_to_str(gyro_z));
-  Serial.println();
+  temperature = temperature_/340.00+36.53;
+
+  if (errFirst){
+    xErr = gyro_x;
+    yErr = gyro_y;
+    zErr = gyro_z;
+
+    errFirst = false;
+  }
+
+  getAngle(gyro_x,gyro_y,gyro_z);
+
+  //printing values to serial port
+  Serial.print("Angle: ");
+  Serial.print("Pitch = "); Serial.print(pitch);
+  Serial.print(" Roll = "); Serial.println(roll);
 }
