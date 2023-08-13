@@ -1,22 +1,22 @@
 String mode = "CHARGING";
 /* CHARGING STOP PAUSE START RUNNING */
 
-void Charging(){
+void MainCharging(){
   
 }
 
-void Stop(){
+void MainStop(){
   
 }
 
-void Pause(){
+void MainPause(){
   
 }
 
-void Start(){
+void MainStart(){
   
 }
 
-void Running(){
+void MainRunning(){
   
 }
