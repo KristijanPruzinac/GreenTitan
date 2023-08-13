@@ -8,6 +8,7 @@ long baseLon = -5672328; //REMOVE
 long baseLat = 3376391; //REMOVE
 
 //Outlines - First point is the charging station exit point
+//FILL ON POWER UP FROM CONFIGURATION FILE
 long[][][] outlines = new long[][][]{
 {
   {-5672428, 3376291},
@@ -42,4 +43,36 @@ long[][][] outlines = new long[][][]{
 }
 }; //20 50 2
 
-long[][][]  = new long[20][50][];
+char[][] gcode;
+
+long terrainMinX;
+long terrainMaxX;
+long terrainMinY;
+long terrainMaxY;
+
+void GenerateGcode(){
+  //Gcode
+  gcode = new char[MAX_OUTLINE_COUNT * MAX_POINT_COUNT * 2][2];
+  
+  //Error conditions
+  if (outlines[0].length <= 2){return;}
+  
+  //Find terrain bounds
+  terrainMinX = outlines[0][0][0]; terrainMaxX = outlines[0][0][0];
+  terrainMinY = outlines[0][0][1]; terrainMaxY = outlines[0][0][1];
+  
+  for (int i = 0; i < outlines.length; i++){
+    for (int j = 0; j < outlines[i].length; j++){
+      long xVal = outlines[i][j][0];
+      long yVal = outlines[i][j][1];
+      
+      if (xVal < terrainMinX){terrainMinX = xVal;}
+      if (yVal < terrainMinY){terrainMinY = yVal;}
+      
+      if (xVal > terrainMaxX){terrainMaxX = xVal;}
+      if (yVal > terrainMaxY){terrainMaxY = yVal;}
+    }
+  }
+  
+  //long[][][] outlinesFilled = new long[MAX_OUTLINE_COUNT][MAX_POINT_COUNT * 2][2];
+}

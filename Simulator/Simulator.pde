@@ -5,6 +5,15 @@ String String(float val){return str(val);}
 
 void setup(){
   size(800, 800);
+  
+  GenerateGcode();
+}
+
+long adjustX(long in){
+  return in - baseLon;
+}
+long adjustY(long in){
+  return in - baseLat;
 }
 
 void mousePressed(){
@@ -15,12 +24,21 @@ void draw(){
   background(255);
   translate(width / 2, height * 6 / 7);
   
+  //Boundaries
+  stroke(220);
+  strokeWeight(1);
+  line(adjustX(terrainMinX), adjustY(terrainMinY), adjustX(terrainMaxX), adjustY(terrainMinY));
+  line(adjustX(terrainMinX), adjustY(terrainMaxY), adjustX(terrainMaxX), adjustY(terrainMaxY));
+  
+  line(adjustX(terrainMinX), adjustY(terrainMinY), adjustX(terrainMinX), adjustY(terrainMaxY));
+  line(adjustX(terrainMaxX), adjustY(terrainMinY), adjustX(terrainMaxX), adjustY(terrainMaxY));
+  
   //Points
   noStroke();
   fill(200);
   for (int i = 0; i < outlines.length; i++){
     for (int j = 0; j < outlines[i].length; j++){
-      circle(outlines[i][j][0] - baseLon, outlines[i][j][1] - baseLat, 15);
+      circle(adjustX(outlines[i][j][0]), adjustY(outlines[i][j][1]), 15);
     }
   }
   
@@ -29,10 +47,10 @@ void draw(){
   strokeWeight(1);
   for (int i = 0; i < outlines.length; i++){
     for (int j = 0; j < outlines[i].length - 1; j++){
-      line(outlines[i][j][0] - baseLon, outlines[i][j][1] - baseLat, outlines[i][j + 1][0] - baseLon, outlines[i][j + 1][1] - baseLat);
+      line(adjustX(outlines[i][j][0]), adjustY(outlines[i][j][1]), adjustX(outlines[i][j + 1][0]), adjustY(outlines[i][j + 1][1]));
     }
     if (outlines[i].length > 1){
-      line(outlines[i][0][0] - baseLon, outlines[i][0][1] - baseLat, outlines[i][outlines[i].length - 1][0] - baseLon, outlines[i][outlines[i].length - 1][1] - baseLat);
+      line(adjustX(outlines[i][0][0]), adjustY(outlines[i][0][1]), adjustX(outlines[i][outlines[i].length - 1][0]), adjustY(outlines[i][outlines[i].length - 1][1]));
     }
   }
   
@@ -43,16 +61,16 @@ void draw(){
   
   noStroke();
   fill(100, 150, 200);
-  circle(outlines[0][0][0] - baseLon, outlines[0][0][1] - baseLat, 15);
+  circle(adjustX(outlines[0][0][0]), adjustY(outlines[0][0][1]), 15);
   
   //Mower
   noStroke();
   fill(100, 200, 100);
-  circle(mowerLon - baseLon, mowerLat - baseLat, 15);
+  circle(adjustX(mowerLon), adjustY(mowerLat), 15);
   
   stroke(100, 200, 100);
   pushMatrix();
-  translate(mowerLon - baseLon, mowerLat - baseLat);
+  translate(adjustX(mowerLon), adjustY(mowerLat));
   rotate(radians(mowerAzimuth));
   line(0, 0, 0, -30);
   popMatrix();
