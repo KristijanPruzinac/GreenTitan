@@ -1,3 +1,5 @@
+//Main task
+
 long mowerLon = -5672328;
 long mowerLat = 3376391;
 
@@ -73,6 +75,9 @@ void GenerateGcode(){
       if (yVal > terrainMaxY){terrainMaxY = yVal;}
     }
   }
+  
+  //Infill
+  int numOfLines = ceil(abs(terrainMaxY - terrainMinY) / MOWER_OVERLAP);
   
   //long[][][] outlinesFilled = new long[MAX_OUTLINE_COUNT][MAX_POINT_COUNT * 2][2];
 }

@@ -3,10 +3,14 @@ String String(long val){return str(val);}
 String String(int val){return str(val);}
 String String(float val){return str(val);}
 
+int translateYVal;
+
 void setup(){
   size(800, 800);
   
   GenerateGcode();
+  
+  translateYVal = height * 6 / 7;
 }
 
 long adjustX(long in){
@@ -20,9 +24,38 @@ void mousePressed(){
   println("{" + str(int(mouseX - width / 2 + mowerLon)) + ", " + str(int(mouseY - height * 6 / 7 + mowerLat)) + "},");
 }
 
+void keyPressed(){
+  //Test different coordinates
+  if (key == 'q'){
+    for (int i = 0; i < outlines.length; i++){
+      for (int j = 0; j < outlines[i].length; j++){
+        outlines[i][j][0] = -outlines[i][j][0];
+      }
+    }
+    baseLon = -baseLon;
+    mowerLon = - mowerLon;
+    
+    GenerateGcode();
+  }
+  if (key == 'w'){
+    for (int i = 0; i < outlines.length; i++){
+      for (int j = 0; j < outlines[i].length; j++){
+        outlines[i][j][1] = -outlines[i][j][1];
+      }
+    }
+    
+    baseLat = -baseLat;
+    mowerLat = -mowerLat;
+    
+    translateYVal = height - translateYVal;
+    
+    GenerateGcode();
+  }
+}
+
 void draw(){
   background(255);
-  translate(width / 2, height * 6 / 7);
+  translate(width / 2, translateYVal);
   
   //Boundaries
   stroke(220);
