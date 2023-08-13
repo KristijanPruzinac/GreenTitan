@@ -20,3 +20,5 @@ void MainStart(){
 void MainRunning(){
   
 }
+
+void QueueMainBluetooth(){}

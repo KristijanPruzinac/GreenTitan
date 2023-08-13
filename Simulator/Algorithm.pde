@@ -42,5 +42,4 @@ long[][][] outlines = new long[][][]{
 }
 }; //20 50 2
 
-//outlines[0][0][0] = -5672428; //REMOVE
-//outlines[0][0][1] = 3376291; //REMOVE
+long[][][]  = new long[20][50][];
