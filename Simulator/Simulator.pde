@@ -8,9 +8,9 @@ int translateYVal;
 void setup(){
   size(800, 800);
   
-  GenerateGcode();
-  
   translateYVal = height * 6 / 7;
+  
+  MainPowerOn();
 }
 
 long adjustX(long in){
@@ -27,9 +27,9 @@ void mousePressed(){
 void keyPressed(){
   //Test different coordinates
   if (key == 'q'){
-    for (int i = 0; i < outlines.length; i++){
-      for (int j = 0; j < outlines[i].length; j++){
-        outlines[i][j][0] = -outlines[i][j][0];
+    for (int i = 0; i < outlines.size(); i++){
+      for (int j = 0; j < outlines.get(i).size(); j++){
+        outlines.get(i).get(j).set(0, -outlines.get(i).get(j).get(0));
       }
     }
     baseLon = -baseLon;
@@ -38,9 +38,9 @@ void keyPressed(){
     GenerateGcode();
   }
   if (key == 'w'){
-    for (int i = 0; i < outlines.length; i++){
-      for (int j = 0; j < outlines[i].length; j++){
-        outlines[i][j][1] = -outlines[i][j][1];
+    for (int i = 0; i < outlines.size(); i++){
+      for (int j = 0; j < outlines.get(i).size(); j++){
+        outlines.get(i).get(j).set(1, -outlines.get(i).get(j).get(1));
       }
     }
     
@@ -66,24 +66,31 @@ void draw(){
   line(adjustX(terrainMinX), adjustY(terrainMinY), adjustX(terrainMinX), adjustY(terrainMaxY));
   line(adjustX(terrainMaxX), adjustY(terrainMinY), adjustX(terrainMaxX), adjustY(terrainMaxY));
   
+  //Infill lines
+  stroke(220, 0, 0);
+  strokeWeight(1);
+  for (int i = 1; i < numOfLines; i++){
+    line(adjustX(terrainMinX), adjustY(terrainMinY) + ((float)(terrainMaxY - terrainMinY)) / numOfLines * i, adjustX(terrainMaxX), adjustY(terrainMinY) + ((float)(terrainMaxY - terrainMinY)) / numOfLines * i);
+  }
+  
   //Points
   noStroke();
   fill(200);
-  for (int i = 0; i < outlines.length; i++){
-    for (int j = 0; j < outlines[i].length; j++){
-      circle(adjustX(outlines[i][j][0]), adjustY(outlines[i][j][1]), 15);
+  for (int i = 0; i < outlines.size(); i++){
+    for (int j = 0; j < outlines.get(i).size(); j++){
+      circle(adjustX(outlines.get(i).get(j).get(0)), adjustY(outlines.get(i).get(j).get(1)), 15);
     }
   }
   
   //Lines
   stroke(200);
   strokeWeight(1);
-  for (int i = 0; i < outlines.length; i++){
-    for (int j = 0; j < outlines[i].length - 1; j++){
-      line(adjustX(outlines[i][j][0]), adjustY(outlines[i][j][1]), adjustX(outlines[i][j + 1][0]), adjustY(outlines[i][j + 1][1]));
+  for (int i = 0; i < outlines.size(); i++){
+    for (int j = 0; j < outlines.get(i).size() - 1; j++){
+      line(adjustX(outlines.get(i).get(j).get(0)), adjustY(outlines.get(i).get(j).get(1)), adjustX(outlines.get(i).get(j + 1).get(0)), adjustY(outlines.get(i).get(j + 1).get(1)));
     }
-    if (outlines[i].length > 1){
-      line(adjustX(outlines[i][0][0]), adjustY(outlines[i][0][1]), adjustX(outlines[i][outlines[i].length - 1][0]), adjustY(outlines[i][outlines[i].length - 1][1]));
+    if (outlines.get(i).size() > 1){
+      line(adjustX(outlines.get(i).get(0).get(0)), adjustY(outlines.get(i).get(0).get(1)), adjustX(outlines.get(i).get(outlines.get(i).size() - 1).get(0)), adjustY(outlines.get(i).get(outlines.get(i).size() - 1).get(1)));
     }
   }
   
@@ -94,7 +101,7 @@ void draw(){
   
   noStroke();
   fill(100, 150, 200);
-  circle(adjustX(outlines[0][0][0]), adjustY(outlines[0][0][1]), 15);
+  circle(adjustX(outlines.get(0).get(0).get(0)), adjustY(outlines.get(0).get(0).get(1)), 15);
   
   //Mower
   noStroke();
@@ -110,6 +117,6 @@ void draw(){
   
   noStroke();
   fill(0, 0, 0);
-  text(mode, width - 100, height - 50);
+  text(Mode, width - 100, height - 50);
   
 }

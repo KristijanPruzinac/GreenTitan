@@ -1,11 +1,14 @@
-String mode = "CHARGING";
-/* CHARGING STOP PAUSE START RUNNING */
+String Mode = "POWER_ON";
+/* CHARGING STOP PAUSE START RUNNING POWER_ON*/
 
 void MainCharging(){}
 void MainStop(){}
 void MainPause(){}
 void MainStart(){}
 void MainRunning(){}
-void PowerOn(){}
+void MainPowerOn(){
+  LoadConfiguration();
+  GenerateGcode(); //TODO: REMOVE
+}
 
 void QueueMainBluetooth(){}
