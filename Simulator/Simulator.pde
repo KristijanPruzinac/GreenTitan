@@ -69,16 +69,23 @@ void draw(){
   //Infill lines
   stroke(220, 0, 0);
   strokeWeight(1);
-  for (int i = 1; i < numOfLines; i++){
-    line(adjustX(terrainMinX), adjustY(terrainMinY) + ((float)(terrainMaxY - terrainMinY)) / numOfLines * i, adjustX(terrainMaxX), adjustY(terrainMinY) + ((float)(terrainMaxY - terrainMinY)) / numOfLines * i);
+  for (int i = 0; i < numOfLines; i++){
+    line(adjustX(terrainMinX), adjustY((long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0)), adjustX(terrainMaxX), adjustY((long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0)));
   }
   
   //Points
   noStroke();
+  fill(200, 0, 0);
+  for (int i = 0; i < extOutlines.size(); i++){
+    for (int j = 0; j < extOutlines.get(i).size(); j++){
+      circle(adjustX(extOutlines.get(i).get(j).get(0)), adjustY(extOutlines.get(i).get(j).get(1)), 10);
+    }
+  }
+  noStroke();
   fill(200);
   for (int i = 0; i < outlines.size(); i++){
     for (int j = 0; j < outlines.get(i).size(); j++){
-      circle(adjustX(outlines.get(i).get(j).get(0)), adjustY(outlines.get(i).get(j).get(1)), 15);
+      circle(adjustX(outlines.get(i).get(j).get(0)), adjustY(outlines.get(i).get(j).get(1)), 10);
     }
   }
   

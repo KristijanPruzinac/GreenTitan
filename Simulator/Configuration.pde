@@ -1,7 +1,7 @@
 //Main task
 
 //ALGORITHM SETTINGS
-int MOWER_OVERLAP = 60;
+int MOWER_OVERLAP = 85;
 
 void SaveConfiguration(){}
 void LoadConfiguration(){
