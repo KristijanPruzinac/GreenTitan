@@ -10,11 +10,11 @@ The project currently uses the C94-M8P RTK GPS development board by u-blox, avai
 As the project is open-source there is not much competition for it except for other open source projects. Unfortunately other projects seem to either feature software for an already made machine or only the 3d printed case, not both. My goal is to provide both with documentation to enable anyone to make it themselves.
 
 # Credits
-MODELS  
+### MODELS  
 Ublox C94-Mp8-4 case with openings - CC BY 4.0 - Scorbin - https://www.thingiverse.com/scorbin/designs  
 Einhell battery adapter - GNU GPL v3 - Hans - https://www.printables.com/social/193091-hans/about
 
-SOFTWARE  
+### SOFTWARE  
 Recieve NAV_POSLLH message - iforce2d - https://www.youtube.com/watch?v=TwhCX0c8Xe0
 
 # Development process
