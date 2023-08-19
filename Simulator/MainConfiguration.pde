@@ -9,7 +9,7 @@ void LoadConfiguration(){
   //TODO: READ CONFIGURATION FILE (LittleFS)
   String ConfigurationData;
   
-  //HARDCODED: SIMULATOR DATA
+  //TODO: REMOVE SIMULATOR DATA
   ConfigurationData = new String(loadBytes("config.txt"));
   
   //Parse data

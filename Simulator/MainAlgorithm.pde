@@ -23,11 +23,7 @@ long terrainMaxX;
 long terrainMinY;
 long terrainMaxY;
 
-void GenerateGcode(){
-  //Error conditions
-  if (outlines.size() < 1){return;}
-  if (outlines.get(0).size() <= 2){return;}
-  
+void FindTerrainBounds(){
   //Find terrain bounds
   terrainMinX = outlines.get(0).get(0).get(0);
   terrainMaxX = outlines.get(0).get(0).get(0);
@@ -46,7 +42,9 @@ void GenerateGcode(){
       if (yVal > terrainMaxY){terrainMaxY = yVal;}
     }
   }
-  
+}
+
+void FindOutlineIntersections(){
   //Extend outlines with intersection points
   extOutlines = new ArrayList<ArrayList<ArrayList<Long>>>();
   for (int i = 0; i < outlines.size(); i++){
@@ -61,7 +59,7 @@ void GenerateGcode(){
     }
   }
   
-  numOfLines = ceil(abs(terrainMaxY - terrainMinY) / MOWER_OVERLAP);
+  numOfLines = ceil(abs(terrainMaxY - terrainMinY) / (MOWER_OVERLAP * 1.109)); //1.109 is gps latitude scaling factor
 
   for (int i = 0; i < numOfLines; i++)
   {
@@ -149,4 +147,18 @@ void GenerateGcode(){
       }
     }
   }
+}
+
+void GeneratePaths(){
+  
+}
+
+void GenerateGcode(){
+  //Error conditions
+  if (outlines.size() < 1){return;}
+  if (outlines.get(0).size() <= 2){return;}
+  
+  FindTerrainBounds();
+  FindOutlineIntersections();
+  GeneratePaths();
 }
