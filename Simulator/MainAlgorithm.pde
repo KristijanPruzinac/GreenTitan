@@ -9,20 +9,27 @@ long mowerLat = 3376391;
 float mowerAzimuth = 270.0 + 45.0;
 
 //Charging station
-long baseLon = -5672328; //REMOVE
+long baseLon = -5672328; //REMOVE (Filled in setup process)
 long baseLat = 3376391; //REMOVE
 
 //Globals
 int numOfLines;
 
+//Algorithm
+String algorithmTarget = "FORWARD"; // FORWARD, BASE
+String algorithmMode = "OUTLINE";
+// FORWARD: OUTLINE, SEEK, INFILL
+// BASE: SEEK, HOME
+
+int algorithmInfillIndex; //Only in INFILL step
+int algorithmCurrentOutline;
+int algorithmCurrentPoint;
+
 //Outlines - First point is the charging station exit point
-//FILL ON POWER UP FROM CONFIGURATION FILE
 ArrayList<ArrayList<ArrayList<Long>>> outlines = new ArrayList<ArrayList<ArrayList<Long>>>();
 ArrayList<ArrayList<ArrayList<Long>>> extOutlines = new ArrayList<ArrayList<ArrayList<Long>>>(); //Outlines with intersection points inserted
 
 ArrayList<ArrayList<ArrayList<Long>>> intersectionPaths = new ArrayList<ArrayList<ArrayList<Long>>>(); //Collections of points where infill intersects terrain
-
-ArrayList<ArrayList<Long>> gcode = new ArrayList<ArrayList<Long>>();
 
 long terrainMinX;
 long terrainMaxX;
@@ -87,26 +94,26 @@ void FindOutlineIntersections(){
     long currentY = (long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
     
     //Traverse outlines and extend outlines with intersections
-    for (int o = 0; o < outlines.size(); o++){
+    for (int o = 0; o < extOutlines.size(); o++){
       
       ArrayList<ArrayList<Long>> intersections = new ArrayList<ArrayList<Long>>();
       // X1, Y1, NX, NY
       
       //Find intersections for current outline
-      for (int p = 0; p < outlines.get(o).size(); p++){
-        long p1X = outlines.get(o).get(p).get(0);
-        long p1Y = outlines.get(o).get(p).get(1);
+      for (int p = 0; p < extOutlines.get(o).size(); p++){
+        long p1X = extOutlines.get(o).get(p).get(0);
+        long p1Y = extOutlines.get(o).get(p).get(1);
         
         long p2X, p2Y;
         
         //First-last case
-        if (p == outlines.get(o).size() - 1){
-          p2X = outlines.get(o).get(0).get(0);
-          p2Y = outlines.get(o).get(0).get(1);
+        if (p == extOutlines.get(o).size() - 1){
+          p2X = extOutlines.get(o).get(0).get(0);
+          p2Y = extOutlines.get(o).get(0).get(1);
         }
         else {
-          p2X = outlines.get(o).get(p + 1).get(0);
-          p2Y = outlines.get(o).get(p + 1).get(1);
+          p2X = extOutlines.get(o).get(p + 1).get(0);
+          p2Y = extOutlines.get(o).get(p + 1).get(1);
         }
         
         //Check if lines intersect, and add intersection
@@ -195,7 +202,7 @@ void GeneratePaths(){
   
   //Sort by longitude
   for (int d = 0; d < intersectionPaths.size(); d++){
-    Collections.sort(intersectionPaths.get(d), new Comparator<ArrayList<Long>>() {    
+    Collections.sort(intersectionPaths.get(d), new Comparator<ArrayList<Long>>() {
       @Override
       public int compare(ArrayList<Long> o1, ArrayList<Long> o2) {
           return o1.get(2).compareTo(o2.get(2));
@@ -210,7 +217,38 @@ void GenerateGcode(){
   if (outlines.get(0).size() <= 2){return;}
   
   FindTerrainBounds();
-  ClearInterference(); //Makes sure no point in outlines is directly on infill Y for less problems later
+  ClearInterference(); //Makes sure no point in outlines is directly on infill Y (Patch for intersection check in FindOutlineIntersections)
   FindOutlineIntersections();
   GeneratePaths();
+}
+
+ArrayList<Long> AlgorithmNextPoint(){
+  long NextX = 0;
+  long NextY = 0;
+  
+  if (algorithmTarget == "FORWARD"){
+    if (algorithmMode == "OUTLINE"){
+      algorithmCurrentPoint++;
+      
+      if (algorithmCurrentPoint >= extOutlines.get(0).size()){
+        algorithmCurrentPoint = 0;
+        
+        //Start seeking first infill start
+        algorithmMode = "SEEK";
+      }
+    }
+    else if (algorithmMode == "SEEK"){
+      
+    }
+    else if (algorithmMode == "INFILL"){
+      
+    }
+  }
+  else if (algorithmTarget == "BASE"){
+    
+  }
+  
+  ArrayList<Long> returnList = new ArrayList<Long>();
+  returnList.add(NextX); returnList.add(NextY);
+  return returnList;
 }
