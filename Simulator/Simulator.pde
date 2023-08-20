@@ -7,6 +7,7 @@ int translateYVal;
 
 void setup(){
   size(800, 800);
+  frameRate(60);
   
   translateYVal = height * 6 / 7;
   
@@ -126,4 +127,5 @@ void draw(){
   fill(0, 0, 0);
   text(Mode, width - 100, height - 50);
   
+  circle(adjustX(extOutlines.get(2).get((int) (frameCount / 60)).get(0)), adjustY(extOutlines.get(2).get((int) (frameCount / 60)).get(1)), 20);
 }

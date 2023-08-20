@@ -1,5 +1,8 @@
 //Main task
 
+import java.io.*;
+import java.util.*;
+
 long mowerLon = -5672328;
 long mowerLat = 3376391;
 
@@ -9,12 +12,15 @@ float mowerAzimuth = 270.0 + 45.0;
 long baseLon = -5672328; //REMOVE
 long baseLat = 3376391; //REMOVE
 
+//Globals
 int numOfLines;
 
 //Outlines - First point is the charging station exit point
 //FILL ON POWER UP FROM CONFIGURATION FILE
 ArrayList<ArrayList<ArrayList<Long>>> outlines = new ArrayList<ArrayList<ArrayList<Long>>>();
-ArrayList<ArrayList<ArrayList<Long>>> extOutlines; //Outlines with intersection points inserted
+ArrayList<ArrayList<ArrayList<Long>>> extOutlines = new ArrayList<ArrayList<ArrayList<Long>>>(); //Outlines with intersection points inserted
+
+ArrayList<ArrayList<ArrayList<Long>>> intersectionPaths = new ArrayList<ArrayList<ArrayList<Long>>>(); //Collections of points where infill intersects terrain
 
 ArrayList<ArrayList<Long>> gcode = new ArrayList<ArrayList<Long>>();
 
@@ -40,6 +46,21 @@ void FindTerrainBounds(){
       
       if (xVal > terrainMaxX){terrainMaxX = xVal;}
       if (yVal > terrainMaxY){terrainMaxY = yVal;}
+    }
+  }
+}
+
+void ClearInterference(){
+  for (int i = 0; i < numOfLines; i++)
+  {
+    long currentY = (long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
+    
+    for (int o = 0; o < extOutlines.size(); o++){
+      for (int p = 0; p < extOutlines.get(o).size(); p++){
+        if (extOutlines.get(o).get(p).get(1) == currentY){
+          extOutlines.get(o).get(p).set(1, extOutlines.get(o).get(p).get(1) + 1);
+        }
+      }
     }
   }
 }
@@ -138,7 +159,7 @@ void FindOutlineIntersections(){
             appendList.add(intersections.get(it).get(2));
             appendList.add(intersections.get(it).get(3));
             
-            extOutlines.get(o).add(p, appendList);
+            extOutlines.get(o).add(p + 1, appendList);
             p++;
           }
         }
@@ -150,7 +171,37 @@ void FindOutlineIntersections(){
 }
 
 void GeneratePaths(){
+  intersectionPaths = new ArrayList<ArrayList<ArrayList<Long>>>();
   
+  //Scan and find intersections
+  for (int i = 0; i < numOfLines; i++)
+  {
+    long currentY = (long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
+      
+    intersectionPaths.add(new ArrayList<ArrayList<Long>>());
+    
+    for (int o = 0; o < extOutlines.size(); o++){
+      for (int p = 0; p < extOutlines.get(o).size(); p++){
+        if (extOutlines.get(o).get(p).get(1) == currentY){
+          //O, P, NX
+          intersectionPaths.get(intersectionPaths.size() - 1).add(new ArrayList<Long>());
+          intersectionPaths.get(intersectionPaths.size() - 1).get(intersectionPaths.get(intersectionPaths.size() - 1).size() - 1).add((long) o);
+          intersectionPaths.get(intersectionPaths.size() - 1).get(intersectionPaths.get(intersectionPaths.size() - 1).size() - 1).add((long) p);
+          intersectionPaths.get(intersectionPaths.size() - 1).get(intersectionPaths.get(intersectionPaths.size() - 1).size() - 1).add((long) extOutlines.get(o).get(p).get(0));
+        }
+      }
+    }
+  }
+  
+  //Sort by longitude
+  for (int d = 0; d < intersectionPaths.size(); d++){
+    Collections.sort(intersectionPaths.get(d), new Comparator<ArrayList<Long>>() {    
+      @Override
+      public int compare(ArrayList<Long> o1, ArrayList<Long> o2) {
+          return o1.get(2).compareTo(o2.get(2));
+      }         
+    });
+  }
 }
 
 void GenerateGcode(){
@@ -159,6 +210,7 @@ void GenerateGcode(){
   if (outlines.get(0).size() <= 2){return;}
   
   FindTerrainBounds();
+  ClearInterference(); //Makes sure no point in outlines is directly on infill Y for less problems later
   FindOutlineIntersections();
   GeneratePaths();
 }
