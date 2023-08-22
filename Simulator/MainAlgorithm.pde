@@ -22,8 +22,11 @@ String algorithmMode = "OUTLINE";
 // BASE: SEEK, HOME
 
 int algorithmInfillIndex; //Only in INFILL step
-int algorithmCurrentOutline;
-int algorithmCurrentPoint;
+int algorithmInfillPoint;
+int algorithmInfillDirection;
+
+int algorithmCurrentOutline = 0;
+int algorithmCurrentPoint = 0;
 
 //Outlines - First point is the charging station exit point
 ArrayList<ArrayList<ArrayList<Long>>> outlines = new ArrayList<ArrayList<ArrayList<Long>>>();
@@ -222,6 +225,85 @@ void GenerateGcode(){
   GeneratePaths();
 }
 
+//negative - decreasing index
+//positive - increasing index
+
+//WARNING:
+/*
+OUTLINE MUST EXIST.
+OUTLINE NEEDS TO HAVE AT LEAST 2 POINTS.
+POINTS MUST BE IN OUTLINE
+*/
+long ShortestOutlinePath(int outline_index, int current_point, int target_point){
+  float path_length_inc = 0;
+  float path_length_dec = 0;
+  
+  int tmp_index;
+  
+  //Increasing
+  tmp_index = current_point;
+  
+  while (tmp_index != target_point) {
+    
+    //End of list
+    if (tmp_index == extOutlines.get(outline_index).size() - 1){
+      
+      path_length_inc += (float) sqrt(pow(extOutlines.get(outline_index).get(extOutlines.get(outline_index).size() - 1).get(0) - extOutlines.get(outline_index).get(0).get(0), 2) + pow(extOutlines.get(outline_index).get(extOutlines.get(outline_index).size() - 1).get(1) - extOutlines.get(outline_index).get(0).get(1), 2));
+      
+      tmp_index = 0;
+      continue;
+    }
+    
+    path_length_inc += (float) sqrt(pow(extOutlines.get(outline_index).get(tmp_index).get(0) - extOutlines.get(outline_index).get(tmp_index + 1).get(0), 2) + pow(extOutlines.get(outline_index).get(tmp_index).get(1) - extOutlines.get(outline_index).get(tmp_index + 1).get(1), 2));
+    tmp_index++;
+  }
+  
+  //Decreasing
+  tmp_index = current_point;
+  
+  while (tmp_index != target_point) {
+    
+    //End of list
+    if (tmp_index == 0){
+      
+      path_length_dec += (float) sqrt(pow(extOutlines.get(outline_index).get(extOutlines.get(outline_index).size() - 1).get(0) - extOutlines.get(outline_index).get(0).get(0), 2) + pow(extOutlines.get(outline_index).get(extOutlines.get(outline_index).size() - 1).get(1) - extOutlines.get(outline_index).get(0).get(1), 2));
+      
+      tmp_index = extOutlines.get(outline_index).size() - 1;
+      continue;
+    }
+    
+    path_length_dec += (float) sqrt(pow(extOutlines.get(outline_index).get(tmp_index).get(0) - extOutlines.get(outline_index).get(tmp_index - 1).get(0), 2) + pow(extOutlines.get(outline_index).get(tmp_index).get(1) - extOutlines.get(outline_index).get(tmp_index - 1).get(1), 2));
+    tmp_index--;
+  }
+  
+  if (path_length_inc < path_length_dec){
+    return (long) ceil(path_length_inc);
+  }
+  else {
+    return (long) -ceil(path_length_dec);
+  }
+}
+
+int OutlineTraverseInc(int outline_index, int current_point, int amount){
+  for (int i = 0; i < amount; i++){
+    current_point++;
+    
+    if (current_point >= extOutlines.get(outline_index).size()){current_point = 0;}
+  }
+  
+  return current_point;
+}
+
+int OutlineTraverseDec(int outline_index, int current_point, int amount){
+  for (int i = 0; i < amount; i++){
+    current_point--;
+    
+    if (current_point < 0){current_point = extOutlines.get(outline_index).size() - 1;}
+  }
+  
+  return current_point;
+}
+
 ArrayList<Long> AlgorithmNextPoint(){
   long NextX = 0;
   long NextY = 0;
@@ -235,13 +317,122 @@ ArrayList<Long> AlgorithmNextPoint(){
         
         //Start seeking first infill start
         algorithmMode = "SEEK";
+        algorithmInfillIndex = 0;
       }
+      
+      NextX = extOutlines.get(algorithmCurrentOutline).get(algorithmCurrentPoint).get(0);
+      NextY = extOutlines.get(algorithmCurrentOutline).get(algorithmCurrentPoint).get(1);
     }
     else if (algorithmMode == "SEEK"){
+      //Calculate distances
+      long distInfillA = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.get(algorithmInfillIndex).get(0).get(1)));
+      long distInfillB = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.get(algorithmInfillIndex).get(intersectionPaths.get(algorithmInfillIndex).size() - 1).get(1)));
       
+      long shortestPath;
+      
+      //Choose shortest path
+      if (abs(distInfillA) < abs(distInfillB)){
+        shortestPath = distInfillA;
+      }
+      else {
+        shortestPath = distInfillB;
+      }
+      
+      //Traverse in shortest direction
+      if (shortestPath > 0){
+        algorithmCurrentPoint = OutlineTraverseInc(algorithmCurrentOutline, algorithmCurrentPoint, 1);
+      }
+      else {
+        algorithmCurrentPoint = OutlineTraverseDec(algorithmCurrentOutline, algorithmCurrentPoint, 1);
+      }
+      
+      //If reached infill, switch mode
+      if (algorithmCurrentPoint == int(intersectionPaths.get(algorithmInfillIndex).get(0).get(1))){
+        algorithmMode = "INFILL";
+        algorithmInfillPoint = 0;
+        algorithmInfillDirection = 1;
+      }
+      else if (algorithmCurrentPoint == int(intersectionPaths.get(algorithmInfillIndex).get(intersectionPaths.get(algorithmInfillIndex).size() - 1).get(1))){
+        algorithmMode = "INFILL";
+        algorithmInfillPoint = intersectionPaths.get(algorithmInfillIndex).size() - 1;
+        algorithmInfillDirection = 0;
+      }
+      
+      NextX = extOutlines.get(algorithmCurrentOutline).get(algorithmCurrentPoint).get(0);
+      NextY = extOutlines.get(algorithmCurrentOutline).get(algorithmCurrentPoint).get(1);
     }
     else if (algorithmMode == "INFILL"){
+      //Jump outlines
+      if (algorithmInfillPoint % 2 == 0){
+        if (algorithmInfillDirection == 1){
+          algorithmInfillPoint++;
+        }
+        else {
+          algorithmInfillPoint--;
+        }
+        
+        algorithmCurrentOutline = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(0));
+        algorithmCurrentPoint = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1));
+      }
+      //Traverse outline
+      else {
+        //Calculate distances
+        long shortestPath;
+        int nextInfillPoint;
+        
+        //Find next infill point
+        if (algorithmInfillDirection == 1){
+          nextInfillPoint = algorithmInfillPoint + 1;
+        }
+        else {
+          nextInfillPoint = algorithmInfillPoint - 1;
+        }
+        
+        //Find shortest path to the next infill point
+        shortestPath = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.get(algorithmInfillIndex).get(nextInfillPoint).get(1)));
+        
+        //Traverse in shortest direction
+        if (shortestPath > 0){
+          algorithmCurrentPoint = OutlineTraverseInc(algorithmCurrentOutline, algorithmCurrentPoint, 1);
+        }
+        else {
+          algorithmCurrentPoint = OutlineTraverseDec(algorithmCurrentOutline, algorithmCurrentPoint, 1);
+        }
+        
+        //Reached continuation of infill
+        if (algorithmCurrentPoint == int(intersectionPaths.get(algorithmInfillIndex).get(nextInfillPoint).get(1))){
+          if (algorithmInfillDirection == 1){
+            algorithmInfillPoint++;
+          }
+          else {
+            algorithmInfillPoint--;
+          }
+          
+          algorithmCurrentOutline = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(0));
+          algorithmCurrentPoint = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1));
+        }
+      }
       
+      //End of infill
+      if (algorithmInfillDirection == 1 && algorithmInfillPoint == intersectionPaths.get(algorithmInfillIndex).size() - 1){
+        algorithmMode = "SEEK";
+        
+        algorithmCurrentOutline = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(0));
+        algorithmCurrentPoint = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1));
+        
+        algorithmInfillIndex++; //WARNING: Infill index overflow
+      }
+      else if (algorithmInfillDirection == 0 && algorithmInfillPoint == 0){
+        algorithmMode = "SEEK";
+        
+        algorithmCurrentOutline = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(0));
+        algorithmCurrentPoint = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1));
+        
+        algorithmInfillIndex++; //WARNING: Infill index overflow
+      }
+      
+      NextX = extOutlines.get(algorithmCurrentOutline).get(algorithmCurrentPoint).get(0);
+      NextY = extOutlines.get(algorithmCurrentOutline).get(algorithmCurrentPoint).get(1);
     }
   }
   else if (algorithmTarget == "BASE"){

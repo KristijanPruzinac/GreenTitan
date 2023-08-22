@@ -5,29 +5,20 @@ String String(float val){return str(val);}
 
 int translateYVal;
 
+boolean MirrorX = false;
+boolean MirrorY = false;
+
 void setup(){
   size(800, 800);
   frameRate(60);
   
   translateYVal = height * 6 / 7;
   
+  //Program start
   MainPowerOn();
-}
-
-long adjustX(long in){
-  return in - baseLon;
-}
-long adjustY(long in){
-  return in - baseLat;
-}
-
-void mousePressed(){
-  println("{" + str(int(mouseX - width / 2 + mowerLon)) + ", " + str(int(mouseY - height * 6 / 7 + mowerLat)) + "},");
-}
-
-void keyPressed(){
-  //Test different coordinates
-  if (key == 'q'){
+  
+  //Mirroring
+  if (MirrorX){
     for (int i = 0; i < outlines.size(); i++){
       for (int j = 0; j < outlines.get(i).size(); j++){
         outlines.get(i).get(j).set(0, -outlines.get(i).get(j).get(0));
@@ -38,7 +29,7 @@ void keyPressed(){
     
     GenerateGcode();
   }
-  if (key == 'w'){
+  if (MirrorY){
     for (int i = 0; i < outlines.size(); i++){
       for (int j = 0; j < outlines.get(i).size(); j++){
         outlines.get(i).get(j).set(1, -outlines.get(i).get(j).get(1));
@@ -54,8 +45,24 @@ void keyPressed(){
   }
 }
 
+long adjustX(long in){
+  return in - baseLon;
+}
+long adjustY(long in){
+  return in - baseLat;
+}
+
+void mousePressed(){
+  ArrayList<Long> mowerPoint = AlgorithmNextPoint();
+  mowerLon = mowerPoint.get(0);
+  mowerLat = mowerPoint.get(1);
+  
+  //println("{" + str(int(mouseX - width / 2 + mowerLon)) + ", " + str(int(mouseY - height * 6 / 7 + mowerLat)) + "},");
+}
+
 void draw(){
   background(255);
+  pushMatrix();
   translate(width / 2, translateYVal);
   
   //Boundaries
@@ -128,4 +135,9 @@ void draw(){
   text(Mode, width - 100, height - 50);
   
   //circle(adjustX(extOutlines.get(2).get((int) (frameCount / 60)).get(0)), adjustY(extOutlines.get(2).get((int) (frameCount / 60)).get(1)), 20);
+  
+  popMatrix();
+  
+  fill(0);
+  text(algorithmMode, width - 100, height - 50);
 }
