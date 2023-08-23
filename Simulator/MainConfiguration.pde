@@ -1,5 +1,3 @@
-//Main task
-
 //ALGORITHM SETTINGS
 int MOWER_OVERLAP = 85;
 

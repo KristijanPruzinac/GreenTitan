@@ -1,16 +1,9 @@
-//Main task
-
 import java.io.*;
 import java.util.*;
 
-long mowerLon = -5672328;
-long mowerLat = 3376391;
-
-float mowerAzimuth = 270.0 + 45.0;
-
 //Charging station
-long baseLon = -5672328; //TODO: REMOVE HARDCODED (Filled in setup process)
-long baseLat = 3376391; //TODO: REMOVE HARDCODED
+long baseLon = -5672328; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
+long baseLat = 3376391; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
 
 //Globals
 int numOfLines;
@@ -454,11 +447,28 @@ ArrayList<Long> AlgorithmNextPoint(){
     }
   }
   else if (algorithmTarget == "BASE"){
-    else if (algorithmMode == "INFILL"){
+    if (algorithmMode == "INFILL"){
       
     }
     else if (algorithmMode == "SEEK"){
+      //If reached charging station exit point
+      if (algorithmCurrentPoint == 0){
+        MainChargingStart();
+      }
       
+      //Find shortest path to the charging station exit point
+      long shortestPath = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, 0);
+      
+      //Traverse in shortest direction
+      if (shortestPath > 0){
+        algorithmCurrentPoint = OutlineTraverseInc(algorithmCurrentOutline, algorithmCurrentPoint, 1);
+      }
+      else {
+        algorithmCurrentPoint = OutlineTraverseDec(algorithmCurrentOutline, algorithmCurrentPoint, 1);
+      }
+      
+      NextX = extOutlines.get(algorithmCurrentOutline).get(algorithmCurrentPoint).get(0);
+      NextY = extOutlines.get(algorithmCurrentOutline).get(algorithmCurrentPoint).get(1);
     }
   }
   

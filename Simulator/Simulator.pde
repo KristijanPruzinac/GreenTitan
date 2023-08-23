@@ -43,6 +43,8 @@ void setup(){
     
     GenerateGcode();
   }
+  
+  mowerAzimuth = angleBetweenPoints(mowerLon, mowerLat, outlines.get(0).get(0).get(0), outlines.get(0).get(0).get(1));
 }
 
 long adjustX(long in){
