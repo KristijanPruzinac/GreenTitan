@@ -60,6 +60,16 @@ void mousePressed(){
   //println("{" + str(int(mouseX - width / 2 + mowerLon)) + ", " + str(int(mouseY - height * 6 / 7 + mowerLat)) + "},");
 }
 
+void keyPressed(){
+  if (keyCode == RIGHT){
+    for (int i = 0; i < 5; i++){
+      ArrayList<Long> mowerPoint = AlgorithmNextPoint();
+      mowerLon = mowerPoint.get(0);
+      mowerLat = mowerPoint.get(1);
+    }
+  }
+}
+
 void draw(){
   background(255);
   pushMatrix();
@@ -87,6 +97,7 @@ void draw(){
   for (int i = 0; i < extOutlines.size(); i++){
     for (int j = 0; j < extOutlines.get(i).size(); j++){
       circle(adjustX(extOutlines.get(i).get(j).get(0)), adjustY(extOutlines.get(i).get(j).get(1)), 10);
+      text(str(i) + ", " + str(j), adjustX(extOutlines.get(i).get(j).get(0)) + 10, adjustY(extOutlines.get(i).get(j).get(1)) - 10);
     }
   }
   noStroke();
@@ -139,5 +150,7 @@ void draw(){
   popMatrix();
   
   fill(0);
+  text(algorithmInfillPoint, width - 100, height - 100);
+  text(algorithmCurrentPoint, width - 100, height - 75);
   text(algorithmMode, width - 100, height - 50);
 }

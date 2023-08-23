@@ -9,8 +9,8 @@ long mowerLat = 3376391;
 float mowerAzimuth = 270.0 + 45.0;
 
 //Charging station
-long baseLon = -5672328; //REMOVE (Filled in setup process)
-long baseLat = 3376391; //REMOVE
+long baseLon = -5672328; //TODO: REMOVE HARDCODED (Filled in setup process)
+long baseLat = 3376391; //TODO: REMOVE HARDCODED
 
 //Globals
 int numOfLines;
@@ -19,9 +19,17 @@ int numOfLines;
 String algorithmTarget = "FORWARD"; // FORWARD, BASE
 String algorithmMode = "OUTLINE";
 // FORWARD: OUTLINE, SEEK, INFILL
-// BASE: SEEK, HOME
+// BASE: INFILL, SEEK
 
-int algorithmInfillIndex; //Only in INFILL step
+/*
+Explanation:
+OUTLINE - Mows whole outline
+SEEK - Searches for point along outer outline
+INFILL - Mows infill
+*/
+
+//Only in INFILL mode
+int algorithmInfillIndex;
 int algorithmInfillPoint;
 int algorithmInfillDirection;
 
@@ -58,6 +66,8 @@ void FindTerrainBounds(){
       if (yVal > terrainMaxY){terrainMaxY = yVal;}
     }
   }
+  
+  numOfLines = ceil(abs(terrainMaxY - terrainMinY) / (MOWER_OVERLAP * 1.109)); //1.109 is gps latitude scaling factor
 }
 
 void ClearInterference(){
@@ -65,10 +75,10 @@ void ClearInterference(){
   {
     long currentY = (long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
     
-    for (int o = 0; o < extOutlines.size(); o++){
-      for (int p = 0; p < extOutlines.get(o).size(); p++){
-        if (extOutlines.get(o).get(p).get(1) == currentY){
-          extOutlines.get(o).get(p).set(1, extOutlines.get(o).get(p).get(1) + 1);
+    for (int o = 0; o < outlines.size(); o++){
+      for (int p = 0; p < outlines.get(o).size(); p++){
+        if (outlines.get(o).get(p).get(1) == currentY){
+          outlines.get(o).get(p).set(1, outlines.get(o).get(p).get(1) + 1);
         }
       }
     }
@@ -89,8 +99,6 @@ void FindOutlineIntersections(){
       }
     }
   }
-  
-  numOfLines = ceil(abs(terrainMaxY - terrainMinY) / (MOWER_OVERLAP * 1.109)); //1.109 is gps latitude scaling factor
 
   for (int i = 0; i < numOfLines; i++)
   {
@@ -363,7 +371,7 @@ ArrayList<Long> AlgorithmNextPoint(){
     }
     else if (algorithmMode == "INFILL"){
       //Jump outlines
-      if (algorithmInfillPoint % 2 == 0){
+      if ((algorithmInfillDirection == 1 && algorithmInfillPoint % 2 == 0) || (algorithmInfillDirection == 0 && algorithmInfillPoint % 2 == 1)){
         if (algorithmInfillDirection == 1){
           algorithmInfillPoint++;
         }
@@ -420,7 +428,12 @@ ArrayList<Long> AlgorithmNextPoint(){
         algorithmCurrentOutline = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(0));
         algorithmCurrentPoint = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1));
         
-        algorithmInfillIndex++; //WARNING: Infill index overflow
+        algorithmInfillIndex++;
+        
+        if (algorithmInfillIndex >= intersectionPaths.size()){
+          algorithmTarget = "BASE";
+          algorithmMode = "SEEK";
+        }
       }
       else if (algorithmInfillDirection == 0 && algorithmInfillPoint == 0){
         algorithmMode = "SEEK";
@@ -428,7 +441,12 @@ ArrayList<Long> AlgorithmNextPoint(){
         algorithmCurrentOutline = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(0));
         algorithmCurrentPoint = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1));
         
-        algorithmInfillIndex++; //WARNING: Infill index overflow
+        algorithmInfillIndex++;
+        
+        if (algorithmInfillIndex >= intersectionPaths.size()){
+          algorithmTarget = "BASE";
+          algorithmMode = "SEEK";
+        }
       }
       
       NextX = extOutlines.get(algorithmCurrentOutline).get(algorithmCurrentPoint).get(0);
@@ -436,7 +454,12 @@ ArrayList<Long> AlgorithmNextPoint(){
     }
   }
   else if (algorithmTarget == "BASE"){
-    
+    else if (algorithmMode == "INFILL"){
+      
+    }
+    else if (algorithmMode == "SEEK"){
+      
+    }
   }
   
   ArrayList<Long> returnList = new ArrayList<Long>();
