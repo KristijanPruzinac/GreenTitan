@@ -55,9 +55,9 @@ long adjustY(long in){
 }
 
 void mousePressed(){
-  ArrayList<Long> mowerPoint = AlgorithmNextPoint();
-  mowerLon = mowerPoint.get(0);
-  mowerLat = mowerPoint.get(1);
+  ArrayList<Long> targetPoint = AlgorithmNextPoint();
+  mowerLon = targetPoint.get(0);
+  mowerLon = targetPoint.get(1); //TODO: Motion set taget
   
   //println("{" + str(int(mouseX - width / 2 + mowerLon)) + ", " + str(int(mouseY - height * 6 / 7 + mowerLat)) + "},");
 }
@@ -69,6 +69,9 @@ void keyPressed(){
       mowerLon = mowerPoint.get(0);
       mowerLat = mowerPoint.get(1);
     }
+  }
+  else if (keyCode == LEFT){
+    AlgorithmAbort(false);
   }
 }
 
@@ -154,5 +157,6 @@ void draw(){
   fill(0);
   text(algorithmInfillPoint, width - 100, height - 100);
   text(algorithmCurrentPoint, width - 100, height - 75);
-  text(algorithmMode, width - 100, height - 50);
+  text(algorithmTarget, width - 100, height - 50);
+  text(algorithmMode, width - 100, height - 25);
 }

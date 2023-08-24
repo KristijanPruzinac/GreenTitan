@@ -14,6 +14,8 @@ String algorithmMode = "OUTLINE";
 // FORWARD: OUTLINE, SEEK, INFILL
 // BASE: INFILL, SEEK
 
+boolean algorithmAbortFull = false;
+
 /*
 Explanation:
 OUTLINE - Mows whole outline
@@ -448,7 +450,94 @@ ArrayList<Long> AlgorithmNextPoint(){
   }
   else if (algorithmTarget == "BASE"){
     if (algorithmMode == "INFILL"){
+      //Jump outlines
+      if ((algorithmInfillDirection == 0 && algorithmInfillPoint % 2 == 0 && algorithmCurrentPoint == intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1)) || (algorithmInfillDirection == 1 && algorithmInfillPoint % 2 == 1 && algorithmCurrentPoint == intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1))){ //<>//
+        if (algorithmInfillDirection == 1){
+          algorithmInfillPoint--;
+        }
+        else {
+          algorithmInfillPoint++;
+        }
+        
+        algorithmCurrentOutline = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(0));
+        algorithmCurrentPoint = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1));
+      }
+      //Traverse outline
+      else {
+        //Jump outline skip
+        if ((algorithmInfillDirection == 0 && algorithmInfillPoint % 2 == 1 && algorithmCurrentPoint == intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1)) || (algorithmInfillDirection == 1 && algorithmInfillPoint % 2 == 0 && algorithmCurrentPoint == intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1))){
+          if (algorithmInfillDirection == 1){
+            algorithmInfillPoint--;
+          }
+          else {
+            algorithmInfillPoint++;
+          }
+        }
+        
+        //Reached continuation of infill
+        if (algorithmCurrentPoint == int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1))){
+          if (algorithmInfillDirection == 1){
+            algorithmInfillPoint--;
+          }
+          else {
+            algorithmInfillPoint++;
+          }
+          
+          algorithmCurrentOutline = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(0));
+          algorithmCurrentPoint = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1));
+        }
+        
+        //Calculate distances
+        long shortestPath;
+        
+        //Find shortest path to the next infill point
+        shortestPath = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1)));
+        
+        //Traverse in shortest direction
+        if (shortestPath > 0){
+          algorithmCurrentPoint = OutlineTraverseInc(algorithmCurrentOutline, algorithmCurrentPoint, 1);
+        }
+        else {
+          algorithmCurrentPoint = OutlineTraverseDec(algorithmCurrentOutline, algorithmCurrentPoint, 1);
+        }
+      }
       
+      //End of infill
+      if (algorithmInfillDirection == 0 && algorithmInfillPoint == intersectionPaths.get(algorithmInfillIndex).size() - 1){
+        if (!algorithmAbortFull){
+          algorithmTarget = "FORWARD";
+        }
+        
+        algorithmMode = "SEEK";
+        
+        algorithmCurrentOutline = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(0));
+        algorithmCurrentPoint = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1));
+        
+        algorithmInfillIndex++;
+        
+        if (algorithmInfillIndex >= intersectionPaths.size()){
+          algorithmAbortFull = true;
+        }
+      }
+      else if (algorithmInfillDirection == 1 && algorithmInfillPoint == 0){
+        if (!algorithmAbortFull){
+          algorithmTarget = "FORWARD";
+        }
+        
+        algorithmMode = "SEEK";
+        
+        algorithmCurrentOutline = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(0));
+        algorithmCurrentPoint = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1));
+        
+        algorithmInfillIndex++;
+        
+        if (algorithmInfillIndex >= intersectionPaths.size()){
+          algorithmAbortFull = true;
+        }
+      }
+      
+      NextX = extOutlines.get(algorithmCurrentOutline).get(algorithmCurrentPoint).get(0);
+      NextY = extOutlines.get(algorithmCurrentOutline).get(algorithmCurrentPoint).get(1);
     }
     else if (algorithmMode == "SEEK"){
       //If reached charging station exit point
@@ -475,4 +564,34 @@ ArrayList<Long> AlgorithmNextPoint(){
   ArrayList<Long> returnList = new ArrayList<Long>();
   returnList.add(NextX); returnList.add(NextY);
   return returnList;
+}
+
+void AlgorithmAbort(boolean full_abort){
+  if (full_abort){
+    algorithmAbortFull = true;
+  }
+  else {
+    algorithmAbortFull = false;
+  }
+  
+  algorithmTarget = "BASE";
+  
+  if (algorithmMode == "OUTLINE"){
+    algorithmMode = "SEEK";
+  }
+  else if (algorithmMode == "INFILL"){
+    //End of infill
+    if (algorithmInfillPoint == 0 || algorithmInfillPoint == intersectionPaths.get(algorithmInfillIndex).size() - 1){
+      if (!algorithmAbortFull){
+        algorithmTarget = "FORWARD";
+      }
+        
+      algorithmMode = "SEEK";
+      
+      algorithmCurrentOutline = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(0));
+      algorithmCurrentPoint = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1));
+      
+      algorithmInfillIndex++;
+    }
+  }
 }
