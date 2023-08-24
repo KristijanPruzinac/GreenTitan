@@ -8,6 +8,11 @@ int translateYVal;
 boolean MirrorX = false;
 boolean MirrorY = false;
 
+String MotorEmulation = "MOVING";
+float TurnAmountLeft = 0;
+float TurnAmountRight = 0;
+boolean MotorMowing = false;
+
 void setup(){
   size(800, 800);
   frameRate(60);
@@ -56,8 +61,10 @@ long adjustY(long in){
 
 void mousePressed(){
   ArrayList<Long> targetPoint = AlgorithmNextPoint();
-  mowerLon = targetPoint.get(0);
-  mowerLon = targetPoint.get(1); //TODO: Motion set taget
+  targetPointLon = targetPoint.get(0);
+  targetPointLat = targetPoint.get(1);
+  
+  MotionMoveToTarget();
   
   //println("{" + str(int(mouseX - width / 2 + mowerLon)) + ", " + str(int(mouseY - height * 6 / 7 + mowerLat)) + "},");
 }
@@ -66,8 +73,8 @@ void keyPressed(){
   if (keyCode == RIGHT){
     for (int i = 0; i < 5; i++){
       ArrayList<Long> mowerPoint = AlgorithmNextPoint();
-      mowerLon = mowerPoint.get(0);
-      mowerLat = mowerPoint.get(1);
+      targetPointLon = mowerPoint.get(0); mowerLon = targetPointLon;
+      targetPointLat = mowerPoint.get(1); mowerLat = targetPointLat;
     }
   }
   else if (keyCode == LEFT){
@@ -76,6 +83,20 @@ void keyPressed(){
 }
 
 void draw(){
+  if (MotorEmulation == "MOVING"){
+    MotionMoveToTarget();
+    mowerAzimuth = NormalizeAngle(mowerAzimuth - (TurnAmountRight - TurnAmountLeft) * 5);
+    
+    if (frameCount % 5 == 0){
+      mowerLon += cos(radians(NormalizeAngle(mowerAzimuth - 90))) * 5;
+      mowerLat += sin(radians(NormalizeAngle(mowerAzimuth - 90))) * 5;
+    }
+  }
+  else if (MotorEmulation == "ROTATING"){
+    MotionRotateToTarget();
+    mowerAzimuth = NormalizeAngle(mowerAzimuth - (TurnAmountRight - TurnAmountLeft) * 5);
+  }
+  
   background(255);
   pushMatrix();
   translate(width / 2, translateYVal);
@@ -102,7 +123,7 @@ void draw(){
   for (int i = 0; i < extOutlines.size(); i++){
     for (int j = 0; j < extOutlines.get(i).size(); j++){
       circle(adjustX(extOutlines.get(i).get(j).get(0)), adjustY(extOutlines.get(i).get(j).get(1)), 10);
-      text(str(i) + ", " + str(j), adjustX(extOutlines.get(i).get(j).get(0)) + 10, adjustY(extOutlines.get(i).get(j).get(1)) - 10);
+      //text(str(i) + ", " + str(j), adjustX(extOutlines.get(i).get(j).get(0)) + 10, adjustY(extOutlines.get(i).get(j).get(1)) - 10);
     }
   }
   noStroke();
@@ -136,7 +157,12 @@ void draw(){
   
   //Mower
   noStroke();
-  fill(100, 200, 100);
+  if (MotorMowing){
+    fill(100, 230, 100);
+  }
+  else {
+    fill(100, 150, 100);
+  }
   circle(adjustX(mowerLon), adjustY(mowerLat), 15);
   
   stroke(100, 200, 100);
@@ -145,6 +171,11 @@ void draw(){
   rotate(radians(mowerAzimuth));
   line(0, 0, 0, -30);
   popMatrix();
+  
+  //Target
+  noStroke();
+  fill(150, 100, 100);
+  circle(adjustX(targetPointLon), adjustY(targetPointLat), 15);
   
   noStroke();
   fill(0, 0, 0);
@@ -159,4 +190,5 @@ void draw(){
   text(algorithmCurrentPoint, width - 100, height - 75);
   text(algorithmTarget, width - 100, height - 50);
   text(algorithmMode, width - 100, height - 25);
+  text(ShortestRotation(mowerAzimuth, angleBetweenPoints(mowerLon, mowerLat, targetPointLon, targetPointLat)), width - 100, height - 0);
 }

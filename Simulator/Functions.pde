@@ -46,7 +46,7 @@ float absAngle(float angle){
 
 //Returns how much current angle needs to rotate to reach target angle
 //Returns positive if angle needs to rotate clockwise
-float ShortestRotation(float currentAngle, float targetAngle){
+float ShortestRotation(float targetAngle, float currentAngle){
   float CW = 0, CCW = 0;
   if (currentAngle < targetAngle){
     CW = targetAngle - currentAngle;

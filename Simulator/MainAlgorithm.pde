@@ -5,6 +5,9 @@ import java.util.*;
 long baseLon = -5672328; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
 long baseLat = 3376391; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
 
+long prevPointLon = 0;
+long prevPointLat = 0;
+
 //Globals
 int numOfLines;
 
@@ -561,12 +564,21 @@ ArrayList<Long> AlgorithmNextPoint(){
     }
   }
   
+  prevPointLon = targetPointLon;
+  prevPointLat = targetPointLat;
+  
   ArrayList<Long> returnList = new ArrayList<Long>();
   returnList.add(NextX); returnList.add(NextY);
   return returnList;
 }
 
 void AlgorithmAbort(boolean full_abort){
+  //TODO: WHEN ABORTING, REVERT TO PREVIOUS POINT AS TARGET
+  //TODO: Mower reverse for a bit from obstacle
+  targetPointLon = prevPointLon;
+  targetPointLat = prevPointLat;
+  MotionRotateToTarget();
+  
   if (full_abort){
     algorithmAbortFull = true;
   }
