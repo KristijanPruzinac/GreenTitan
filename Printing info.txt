@@ -1,0 +1,26 @@
+-----------------------------------------------------
+REQUIRED
+
+Minimum build plate area - 20cm * 20cm
+
+-----------------------------------------------------
+PRINT SETTINGS
+
+Top / Bottom - 2 layers each
+0.3mm layer height
+Adhesion - Brim
+Infill pattern - lines
+Material - PLA, 200deg print temperature
+
+
+-----------------------------------------------------
+PART SETTINGS
+
+Double battery adapter (Einhell) - Weight 24g, Printing time 1:30 | Infill 30%
+C94 M8P Case - Weight 20g, Printing time 0:47 | Infill 20%
+
+FRAME Front bumper - Weight 135g, Printing time 6:53 | Infill 10% | Enable supports, Support placement Everywhere, Support structure Normal, Support inteface full, Support Branch Distance 4mm, Support density 10%
+FRAME Side - , Printing time 18:49
+FRAME Back - 353g, Printing time 20:28
+
+Minimum support area 50mm2
