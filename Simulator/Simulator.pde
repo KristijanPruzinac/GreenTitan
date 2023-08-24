@@ -8,7 +8,7 @@ int translateYVal;
 boolean MirrorX = false;
 boolean MirrorY = false;
 
-String MotorEmulation = "MOVING";
+String MotorEmulation = "ROTATING";
 float TurnAmountLeft = 0;
 float TurnAmountRight = 0;
 boolean MotorMowing = false;
@@ -84,10 +84,10 @@ void keyPressed(){
 
 void draw(){
   if (MotorEmulation == "MOVING"){
-    MotionMoveToTarget();
-    mowerAzimuth = NormalizeAngle(mowerAzimuth - (TurnAmountRight - TurnAmountLeft) * 5);
-    
     if (frameCount % 5 == 0){
+      MotionMoveToTarget();
+      mowerAzimuth = NormalizeAngle(mowerAzimuth - (TurnAmountRight - TurnAmountLeft) * 5);
+    
       mowerLon += cos(radians(NormalizeAngle(mowerAzimuth - 90))) * 5;
       mowerLat += sin(radians(NormalizeAngle(mowerAzimuth - 90))) * 5;
     }
@@ -190,5 +190,4 @@ void draw(){
   text(algorithmCurrentPoint, width - 100, height - 75);
   text(algorithmTarget, width - 100, height - 50);
   text(algorithmMode, width - 100, height - 25);
-  text(ShortestRotation(mowerAzimuth, angleBetweenPoints(mowerLon, mowerLat, targetPointLon, targetPointLat)), width - 100, height - 0);
 }
