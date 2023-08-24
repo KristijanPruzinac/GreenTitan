@@ -12,10 +12,10 @@ float mowerAzimuth = 0;
 void MotorStop(){MotorEmulation = "STOPPED";}
 void MotorMainOn(){MotorMowing = true;}
 void MotorMainOff(){MotorMowing = false;}
-void MotorTurnLeft(){MotorEmulation = "MOVING"; TurnAmountLeft = 0; TurnAmountRight = 1;}
-void MotorStaticTurnLeft(){MotorEmulation = "ROTATING"; TurnAmountLeft = 0; TurnAmountRight = 1;}
-void MotorTurnRight(){MotorEmulation = "MOVING"; TurnAmountLeft = 1; TurnAmountRight = 0;}
-void MotorStaticTurnRight(){MotorEmulation = "ROTATING"; TurnAmountLeft = 1; TurnAmountRight = 0;}
+void MotorPivotLeft(){MotorEmulation = "MOVING"; TurnAmountLeft = 0; TurnAmountRight = 1;}
+void MotorTurnLeft(){MotorEmulation = "ROTATING"; TurnAmountLeft = 0; TurnAmountRight = 1;}
+void MotorPivotRight(){MotorEmulation = "MOVING"; TurnAmountLeft = 1; TurnAmountRight = 0;}
+void MotorTurnRight(){MotorEmulation = "ROTATING"; TurnAmountLeft = 1; TurnAmountRight = 0;}
 // -------------------------------
 
 void MotionMoveToTarget(){
@@ -32,10 +32,10 @@ void MotionMoveToTarget(){
   }
   else {
     if (RotationAngle < 0){
-      MotorTurnLeft();
+      MotorPivotLeft();
     }
     else {
-      MotorTurnRight();
+      MotorPivotRight();
     }
   }
 }
@@ -48,10 +48,10 @@ void MotionRotateToTarget(){
   }
   else {
     if (RotationAngle < 0){
-      MotorStaticTurnLeft();
+      MotorTurnLeft();
     }
     else {
-      MotorStaticTurnRight();
+      MotorTurnRight();
     }
   }
 }

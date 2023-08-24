@@ -573,12 +573,6 @@ ArrayList<Long> AlgorithmNextPoint(){
 }
 
 void AlgorithmAbort(boolean full_abort){
-  //TODO: WHEN ABORTING, REVERT TO PREVIOUS POINT AS TARGET
-  //TODO: Mower reverse for a bit from obstacle
-  targetPointLon = prevPointLon;
-  targetPointLat = prevPointLat;
-  MotionRotateToTarget();
-  
   if (full_abort){
     algorithmAbortFull = true;
   }
@@ -606,4 +600,12 @@ void AlgorithmAbort(boolean full_abort){
       algorithmInfillIndex++;
     }
   }
+  
+  //TODO: WHEN ABORTING, REVERT TO PREVIOUS POINT AS TARGET
+  //TODO: Mower reverse for a bit from obstacle
+  ArrayList<Long> targetPoint = AlgorithmNextPoint();
+  targetPointLon = targetPoint.get(0);
+  targetPointLat = targetPoint.get(1);
+  
+  MotionRotateToTarget();
 }
