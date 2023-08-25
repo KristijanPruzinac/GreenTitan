@@ -1,4 +1,4 @@
-import java.io.*;
+import java.io.*; //<>//
 import java.util.*;
 
 //Charging station
@@ -152,6 +152,7 @@ void FindOutlineIntersections(){
         long p1X = extOutlines.get(o).get(p).get(0);
         long p1Y = extOutlines.get(o).get(p).get(1);
         
+        /*
         long p2X, p2Y;
         
         //First-last case
@@ -163,6 +164,7 @@ void FindOutlineIntersections(){
           p2X = extOutlines.get(o).get(p + 1).get(0);
           p2Y = extOutlines.get(o).get(p + 1).get(1);
         }
+        */
         
         //Check corresponding intersections
         for (int it = 0; it < intersections.size(); it++){
@@ -316,6 +318,8 @@ ArrayList<Long> AlgorithmNextPoint(){
   
   if (algorithmTarget == "FORWARD"){
     if (algorithmMode == "OUTLINE"){
+      MotorMainOn();
+      
       algorithmCurrentPoint++;
       
       if (algorithmCurrentPoint >= extOutlines.get(0).size()){
@@ -330,6 +334,8 @@ ArrayList<Long> AlgorithmNextPoint(){
       NextY = extOutlines.get(algorithmCurrentOutline).get(algorithmCurrentPoint).get(1);
     }
     else if (algorithmMode == "SEEK"){
+      MotorMainOff();
+      
       //Calculate distances
       long distInfillA = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.get(algorithmInfillIndex).get(0).get(1)));
       long distInfillB = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.get(algorithmInfillIndex).get(intersectionPaths.get(algorithmInfillIndex).size() - 1).get(1)));
@@ -368,6 +374,8 @@ ArrayList<Long> AlgorithmNextPoint(){
       NextY = extOutlines.get(algorithmCurrentOutline).get(algorithmCurrentPoint).get(1);
     }
     else if (algorithmMode == "INFILL"){
+      MotorMainOn();
+      
       //Jump outlines
       if ((algorithmInfillDirection == 1 && algorithmInfillPoint % 2 == 0) || (algorithmInfillDirection == 0 && algorithmInfillPoint % 2 == 1)){
         if (algorithmInfillDirection == 1){
@@ -452,6 +460,8 @@ ArrayList<Long> AlgorithmNextPoint(){
     }
   }
   else if (algorithmTarget == "BASE"){
+    MotorMainOff();
+    
     if (algorithmMode == "INFILL"){
       //Jump outlines
       if ((algorithmInfillDirection == 0 && algorithmInfillPoint % 2 == 0 && algorithmCurrentPoint == intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1)) || (algorithmInfillDirection == 1 && algorithmInfillPoint % 2 == 1 && algorithmCurrentPoint == intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1))){ //<>//
@@ -573,39 +583,41 @@ ArrayList<Long> AlgorithmNextPoint(){
 }
 
 void AlgorithmAbort(boolean full_abort){
-  if (full_abort){
-    algorithmAbortFull = true;
-  }
-  else {
-    algorithmAbortFull = false;
-  }
-  
-  algorithmTarget = "BASE";
-  
-  if (algorithmMode == "OUTLINE"){
-    algorithmMode = "SEEK";
-  }
-  else if (algorithmMode == "INFILL"){
-    //End of infill
-    if (algorithmInfillPoint == 0 || algorithmInfillPoint == intersectionPaths.get(algorithmInfillIndex).size() - 1){
-      if (!algorithmAbortFull){
-        algorithmTarget = "FORWARD";
-      }
-        
-      algorithmMode = "SEEK";
-      
-      algorithmCurrentOutline = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(0));
-      algorithmCurrentPoint = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1));
-      
-      algorithmInfillIndex++;
+  if (algorithmTarget != "BASE"){
+    if (full_abort){
+      algorithmAbortFull = true;
     }
+    else {
+      algorithmAbortFull = false;
+    }
+    
+    algorithmTarget = "BASE";
+    
+    if (algorithmMode == "OUTLINE"){
+      algorithmMode = "SEEK";
+    }
+    else if (algorithmMode == "INFILL"){
+      //End of infill
+      if (algorithmInfillPoint == 0 || algorithmInfillPoint == intersectionPaths.get(algorithmInfillIndex).size() - 1){
+        if (!algorithmAbortFull){
+          algorithmTarget = "FORWARD";
+        }
+          
+        algorithmMode = "SEEK";
+        
+        algorithmCurrentOutline = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(0));
+        algorithmCurrentPoint = int(intersectionPaths.get(algorithmInfillIndex).get(algorithmInfillPoint).get(1));
+        
+        algorithmInfillIndex++;
+      }
+    }
+    
+    //TODO: WHEN ABORTING, REVERT TO PREVIOUS POINT AS TARGET
+    //TODO: Mower reverse for a bit from obstacle
+    ArrayList<Long> targetPoint = AlgorithmNextPoint();
+    targetPointLon = targetPoint.get(0);
+    targetPointLat = targetPoint.get(1);
+    
+    MotionRotateToTarget();
   }
-  
-  //TODO: WHEN ABORTING, REVERT TO PREVIOUS POINT AS TARGET
-  //TODO: Mower reverse for a bit from obstacle
-  ArrayList<Long> targetPoint = AlgorithmNextPoint();
-  targetPointLon = targetPoint.get(0);
-  targetPointLat = targetPoint.get(1);
-  
-  MotionRotateToTarget();
 }
