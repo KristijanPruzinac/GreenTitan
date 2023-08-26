@@ -28,5 +28,12 @@ FRAME Back - 353g, Printing time 20:28
 Adjust minimum support area so supports are generated properly, but small holes aren't filled with supports (It is a pain to remove)
 
 -----------------------------------------------------
+ADVICE
+
+Print every part so its interior side is facing the build plate, when supports are used on the exterior it looks pretty bad
+
+The only parts I printed with exterior side facing build plate are the 2 back pieces and I printed their charging port facing the build plate, it looks tolerable
+
+-----------------------------------------------------
 
 TOTAL PLASTIC REQUIRED - LESS THAN 3KG
