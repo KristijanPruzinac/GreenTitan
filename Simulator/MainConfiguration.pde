@@ -1,5 +1,6 @@
 //ALGORITHM SETTINGS
 int MOWER_OVERLAP = 85;
+int MAX_DEVIATION = 50;
 
 void SaveConfiguration(){}
 void LoadConfiguration(){
@@ -18,10 +19,6 @@ void LoadConfiguration(){
     //OUTLINE START
     if (lines[lineIndex].charAt(0) == 'O'){
       outlines.add(new ArrayList<ArrayList<Long>>());
-    }
-    //GCODE START
-    else if (lines[lineIndex].charAt(0) == 'G'){
-      //TODO: READ GCODE
     }
     else {
       String[] dataXY = splitStringByCharacters(lines[lineIndex], " ");

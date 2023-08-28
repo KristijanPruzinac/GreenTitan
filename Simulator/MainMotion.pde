@@ -28,6 +28,9 @@ void MotionMoveToTarget(){
   float DistAlong = MowerTargetDist * cos(radians(abs(AngleDiff)));
   float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff)));
   
+  //STRAYED FROM PATH
+  if (DistOffset > MAX_DEVIATION){MainStop();}
+  
   float RotationAngle = ShortestRotation(mowerAzimuth, MowerTargetAngle);
   
   //float DistanceToTarget = sqrt(pow(targetPointLon - mowerLon, 2) + pow(targetPointLat - mowerLat, 2));

@@ -6,7 +6,7 @@ void MainChargingStart(){
   println("Charging start");
 }
 void MainChargingStop(){}
-void MainStop(){}
+void MainStop(){println("Strayed from path (STOP)");}
 void MainPause(){}
 void MainStart(){}
 void MainRunning(){}
