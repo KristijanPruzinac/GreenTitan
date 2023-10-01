@@ -23,9 +23,9 @@ String BluetoothRead(){
 void BluetoothWrite(String message){
   SerialBT.print(message + "<");
 }
-void Respond(String MessageGroup, String ActionGroup){
+void BluetoothRespond(String MessageGroup, String ActionGroup){
   BluetoothWrite(MessageGroup + "/" + ActionGroup);
 }
-void Respond(String MessageGroup, String ActionGroup, String DataGroup){
+void BluetoothRespond(String MessageGroup, String ActionGroup, String DataGroup){
   BluetoothWrite(MessageGroup + "/" + ActionGroup + "/" + DataGroup);
 }

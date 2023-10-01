@@ -32,7 +32,7 @@ void calcChecksum(unsigned char* CK) {
   }
 }
 
-bool processGPS() {
+bool GPSRead() {
   static int fpos = 0;
   static unsigned char checksum[2];
   const int payloadSize = sizeof(NAV_POSLLH);
