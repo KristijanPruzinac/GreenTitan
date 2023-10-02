@@ -1,3 +1,17 @@
+void InitMotors(){
+  pinMode(MOTOR_left_A, OUTPUT);
+  pinMode(MOTOR_left_B, OUTPUT);
+  pinMode(MOTOR_right_A, OUTPUT);
+  pinMode(MOTOR_right_B, OUTPUT);
+  pinMode(MOTOR_main, OUTPUT);
+
+  digitalWrite(MOTOR_left_A, LOW);
+  digitalWrite(MOTOR_left_B, LOW);
+  digitalWrite(MOTOR_right_A, LOW);
+  digitalWrite(MOTOR_right_B, LOW);
+  digitalWrite(MOTOR_main, LOW);
+}
+
 void MotorStop(){
   digitalWrite(MOTOR_left_A, LOW);
   digitalWrite(MOTOR_left_B, LOW);

@@ -1,8 +1,3 @@
-// -------------------------------------------------------- USER VARIABLES ---------------------------------------------------------------
-
-String MowerStatus = "PAUSED";
-bool MowerExecutingPath = false;
-
 // -------------------------------------------------------- PIN DEFINITIONS ---------------------------------------------------------------
 
 //Relay
@@ -15,45 +10,108 @@ bool MowerExecutingPath = false;
 //Battery voltage pin
 #define BATTERY_voltage_pin 32
 
+// -------------------------------------------------------- FREE RTOS ---------------------------------------------------------------
+
+QueueHandle_t BluetoothMainQueue;
+QueueHandle_t MainBluetoothQueue;
+
+QueueHandle_t InterruptsMainQueue;
+
 // -------------------------------------------------------- DEPENDENCIES ---------------------------------------------------------------
-#include "Algorithm.h";
 
-#include "Bluetooth.h";
-
-#include "Sensors.h";
+//Peripherals
 #include "GPS.h";
+#include "Gyro.h";
+#include "Motor.h";
+#include "Battery.h";
+#include "RainSensor.h";
 
-#include "Motors.h";
+//Program dependencies
 #include "Functions.h";
+//#include "Algorithm.h";
+#include "Configuration.h";
+//#include "Motion.h";
 
-#include "Controller.h";
+//Tasks
+#include "MainTask.h";
+#include "BluetoothTask.h";
+#include "InterruptsTask.h";
+
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
 
-void InitPins(){
-  pinMode(MOTOR_left_A, OUTPUT);
-  pinMode(MOTOR_left_B, OUTPUT);
-  pinMode(MOTOR_right_A, OUTPUT);
-  pinMode(MOTOR_right_B, OUTPUT);
-  pinMode(MOTOR_main, OUTPUT);
+void InitFreeRtos(){
 
-  digitalWrite(MOTOR_left_A, LOW);
-  digitalWrite(MOTOR_left_B, LOW);
-  digitalWrite(MOTOR_right_A, LOW);
-  digitalWrite(MOTOR_right_B, LOW);
-  digitalWrite(MOTOR_main, LOW);
+  //CREATE TASKS
+
+  //Main task
+  xTaskCreatePinnedToCore (
+    MainTask,     // Function to implement the task
+    "MainTask",   // Name of the task
+    204800,      // Stack size in bytes
+    NULL,      // Task input parameter
+    2,         // Priority of the task
+    NULL,      // Task handle.
+    0          // Core where the task should run
+  );
+
+  //Interrupts task
+  xTaskCreatePinnedToCore (
+    InterruptsTask,     // Function to implement the task
+    "InterruptsTask",   // Name of the task
+    8192,      // Stack size in bytes
+    NULL,      // Task input parameter
+    1,         // Priority of the task
+    NULL,      // Task handle.
+    0          // Core where the task should run
+  );
+
+  //Bluetooth task
+  xTaskCreatePinnedToCore (
+    BluetoothTask,     // Function to implement the task
+    "BluetoothTask",   // Name of the task
+    8192,      // Stack size in bytes
+    NULL,      // Task input parameter
+    0,         // Priority of the task
+    NULL,      // Task handle.
+    0          // Core where the task should run
+  );
+
+  //CREATE QUEUES
+
+  //BluetoothMain queue
+  BluetoothMainQueue = xQueueCreate(1000, sizeof(char));
+ 
+  if(BluetoothMainQueue == NULL){
+    Serial.println("ERROR: cannot create BluetoothMain queue!");
+  }
+
+  //MainBluetooth queue
+  MainBluetoothQueue = xQueueCreate(1000, sizeof(char));
+ 
+  if(MainBluetoothQueue == NULL){
+    Serial.println("ERROR: cannot create MainBluetooth queue!");
+  }
+
+
+  //InterruptsMain queue
+  InterruptsMainQueue = xQueueCreate(1000, sizeof(char));
+ 
+  if(InterruptsMainQueue == NULL){
+    Serial.println("ERROR: cannot create InterruptsMain queue!");
+  }
+}
+
+// -------------------------------------------------------- PROGRAM START ---------------------------------------------------------------
+void setup() {
+  InitFreeRtos();
+
+  InitMotors();
+  InitGyro();
+  InitGPS();
+  InitBluetooth();
+  InitBattery();
+  InitRainSensor();
 
   Serial.begin(9600);
-}
-
-
-
-// -------------------------------------------------------- MAIN TASK ---------------------------------------------------------------
-void setup() {
-  InitPins();
-  ControllerInit();
-}
-
-void loop() {
-  ControllerUpdate();
 }
 

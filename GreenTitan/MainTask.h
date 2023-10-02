@@ -1,3 +1,4 @@
+/*
 int pointsCount = 0;
 int gcodeIndex = 0;
 long pointsX[50];
@@ -102,38 +103,41 @@ void MainParseBluetooth(){
 
   return;
 }
-
-/*
-void ControllerParseGPS(){
-  processGPS();
-}
-
-void ControllerParseGyro(){
-  GyroRead();
-}
 */
 
-void InitVoltageSensor(){
-  pinMode(BATTERY_voltage_pin, INPUT);
+//TODO: Implement functionality
+String Mode = "POWER_ON";
+/* CHARGING STOP PAUSE START RUNNING POWER_ON SETUP*/
+
+void MainCharging(){}
+void MainChargingStart(){
+  Serial.println("Charging start");
+}
+void MainChargingStop(){}
+void MainStop(){Serial.println("Strayed from path (STOP)");}
+void MainPause(){}
+void MainStart(){}
+void MainRunning(){}
+void MainPowerOn(){
+  //LoadConfiguration();
+  //GenerateGcode();
+}
+void MainSetup(){}
+
+char QueueBluetoothMainReceive(){
+  char returnChar = NULL;
+  xQueueReceive(BluetoothMainQueue, &returnChar, 50);
+
+  return returnChar;
 }
 
-void MainInit(){
-  InitGyro();
-  InitGPS();
-  InitBluetooth();
-  InitVoltageSensor();
+void QueueMainBluetoothSend(char receivedChar){
+  xQueueSend(BluetoothMainQueue, &receivedChar, 50);
 }
 
-void MainTask(){
-  //Sensor tick
-  if (ControllerTickReady()){
-    ControllerParseBluetooth();
-    ControllerParseGPS();
-    //ControllerParseGyro();
-    
-    //MOWER RUNNING
-    if (MowerExecutingPath && MowerStatus == "RUNNING"){
-      
-    }
+void MainTask(void* pvParameters){
+  while (1){
+    Serial.println("Main task");
+    delay(10);
   }
 }

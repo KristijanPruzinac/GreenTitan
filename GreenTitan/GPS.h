@@ -72,7 +72,7 @@ bool GPSRead() {
 
   //Calculate heading if changed
   if (prevLon != posllh.lon || prevLat != posllh.lat){
-    posllhHeading = angleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
+    //posllhHeading = angleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
 
     prevLon = posllh.lon;
     prevLat = posllh.lat;
