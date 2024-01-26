@@ -8,7 +8,10 @@
 #define MOTOR_main 18
 
 //Battery voltage pin
-#define BATTERY_voltage_pin 32
+#define BATTERY_level_pin 36
+
+// -------------------------------------------------------- STATUS INDICATORS ---------------------------------------------------------------
+int STATUS_BATTERY_LOW = false;
 
 // -------------------------------------------------------- FREE RTOS ---------------------------------------------------------------
 
@@ -103,6 +106,8 @@ void InitFreeRtos(){
 
 // -------------------------------------------------------- PROGRAM START ---------------------------------------------------------------
 void setup() {
+  Serial.begin(9600);
+
   InitFreeRtos();
 
   InitMotors();
@@ -111,7 +116,9 @@ void setup() {
   InitBluetooth();
   InitBattery();
   InitRainSensor();
-
-  Serial.begin(9600);
 }
 
+void loop(){
+  Serial.println(STATUS_BATTERY_LOW);
+  delay(100);
+}

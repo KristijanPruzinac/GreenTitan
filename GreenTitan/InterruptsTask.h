@@ -1,10 +1,4 @@
-//TODO: Implement functionality
-void InterruptsTask(void* pvParameters){
-  while (1){
-    Serial.println("Interrupts task");
-    delay(10);
-  }
-}
+#define INTERRUPTS_SAMPLING_RATE 10
 
 void InterruptsSetup(){}
  
@@ -12,9 +6,19 @@ void InterruptsRainSensor(){}
 void InterruptsLowPower(){}
 void InterruptsMowingTimeFrame(){}
 void InterruptsObstacle(){}
-void InterruptsGPSAccLoss(){}
+void InterruptsGPSAccuracyLoss(){}
 void InterruptsMowerLifted(){}
 
-void ReadSensors(){}
- 
 void QueueInterruptsMain(){}
+
+void InterruptsTask(void* pvParameters){
+  while (1){
+    //Read sensors
+    BatteryUpdate();
+
+    //Interrupts
+    if (STATUS_BATTERY_LOW) InterruptsLowPower();
+
+    delay(INTERRUPTS_SAMPLING_RATE);
+  }
+}
