@@ -7,6 +7,10 @@ int battery_readings[battery_sampling_count];
 float batteryLevelMin = 16;
 float batteryLevelMax = 18;
 
+//Last read battery data
+float batteryCurrentLevel = 0;
+float batteryCurrentPercentage = 0;
+
 //Power states
 #define BATTERY_LEVEL_LOW 8
 
@@ -26,7 +30,7 @@ float BatteryRead(){
   }
   avg /= battery_sampling_count;
 
-  return ((avg / 4096.0) * 3.3) / battery_divider_factor;
+  return batteryCurrentLevel = ((avg / 4096.0) * 3.3) / battery_divider_factor;
 }
 
 int BatteryReadPercentage(){
@@ -35,7 +39,7 @@ int BatteryReadPercentage(){
   if (val <= batteryLevelMin){return 0;}
   if (val >= batteryLevelMax){return 100;}
 
-  return (int) ((val - batteryLevelMin) / (batteryLevelMax - batteryLevelMin) * 101.0);
+  return batteryCurrentPercentage = (int) ((val - batteryLevelMin) / (batteryLevelMax - batteryLevelMin) * 101.0);
 }
 
 void BatteryUpdate(){
@@ -54,4 +58,7 @@ void BatteryUpdate(){
   else {
     STATUS_BATTERY_LOW = false;
   }
+
+  //Save last ADC and percentage values
+  BatteryReadPercentage();
 }

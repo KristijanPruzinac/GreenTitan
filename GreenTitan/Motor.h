@@ -26,6 +26,7 @@ void MotorMainOn(){
 void MotorMainOff(){
   digitalWrite(MOTOR_main, LOW);
 }
+/*
 void MotorForward(){
   MotorStop();
 
@@ -74,3 +75,4 @@ void MotorPivotRight(){
   digitalWrite(MOTOR_left_A, LOW);
   digitalWrite(MOTOR_left_B, HIGH);
 }
+*/

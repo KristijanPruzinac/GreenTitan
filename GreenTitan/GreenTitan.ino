@@ -1,6 +1,6 @@
 // -------------------------------------------------------- PIN DEFINITIONS ---------------------------------------------------------------
 
-//Relay
+//Motor
 #define MOTOR_left_A 23
 #define MOTOR_left_B 22
 #define MOTOR_right_A 21
