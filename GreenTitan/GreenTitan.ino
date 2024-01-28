@@ -25,8 +25,8 @@ QueueHandle_t InterruptsMainQueue;
 //Peripherals
 #include "GPS.h";
 #include "Gyro.h";
-#include "Motor.h";
 #include "Battery.h";
+#include "Motor.h";
 #include "RainSensor.h";
 
 //Program dependencies
