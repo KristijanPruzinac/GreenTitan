@@ -1,24 +1,31 @@
-// -------------------------------------------------------- PIN DEFINITIONS ---------------------------------------------------------------
-
-//Motor
-#define MOTOR_left_A 23
-#define MOTOR_left_B 22
-#define MOTOR_right_A 21
-#define MOTOR_right_B 19
-#define MOTOR_main 18
-
-//Battery voltage pin
-#define BATTERY_level_pin 36
+// -------------------------------------------------------- DEFINITIONS ---------------------------------------------------------------
+#include "Defines.h"
 
 // -------------------------------------------------------- STATUS INDICATORS ---------------------------------------------------------------
 int STATUS_BATTERY_LOW = false;
+
+// -------------------------------------------------------- CONFIGURABLES ---------------------------------------------------------------
+int MOWER_OVERLAP = 85;
+int MAX_DEVIATION = 50;
+long BASE_LON = -5672328; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
+long BASE_LAT = 3376391; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
+
+float BATTERY_LEVEL_MIN = 16;
+float BATTERY_LEVEL_MAX = 18;
+
+int SENSORS_SAMPLING_RATE = 10;
+
+bool MOTOR_SIDE_INVERT = true;
+bool MOTOR_LEFT_INVERT = true;
+bool MOTOR_RIGHT_INVERT = true;
+float MOTOR_OPTIMAL_VOLTAGE = 12;
 
 // -------------------------------------------------------- FREE RTOS ---------------------------------------------------------------
 
 QueueHandle_t BluetoothMainQueue;
 QueueHandle_t MainBluetoothQueue;
 
-QueueHandle_t InterruptsMainQueue;
+QueueHandle_t SensorsMainQueue;
 
 // -------------------------------------------------------- DEPENDENCIES ---------------------------------------------------------------
 
@@ -31,14 +38,14 @@ QueueHandle_t InterruptsMainQueue;
 
 //Program dependencies
 #include "Functions.h";
-//#include "Algorithm.h";
+#include "Motion.h";
+#include "Algorithm.h";
 #include "Configuration.h";
-//#include "Motion.h";
 
 //Tasks
 #include "MainTask.h";
 #include "BluetoothTask.h";
-#include "InterruptsTask.h";
+#include "SensorsTask.h";
 
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
 
@@ -57,10 +64,10 @@ void InitFreeRtos(){
     0          // Core where the task should run
   );
 
-  //Interrupts task
+  //Sensors task
   xTaskCreatePinnedToCore (
-    InterruptsTask,     // Function to implement the task
-    "InterruptsTask",   // Name of the task
+    SensorsTask,     // Function to implement the task
+    "SensorsTask",   // Name of the task
     8192,      // Stack size in bytes
     NULL,      // Task input parameter
     1,         // Priority of the task
@@ -96,11 +103,11 @@ void InitFreeRtos(){
   }
 
 
-  //InterruptsMain queue
-  InterruptsMainQueue = xQueueCreate(1000, sizeof(char));
+  //SensorsMain queue
+  SensorsMainQueue = xQueueCreate(1000, sizeof(char));
  
-  if(InterruptsMainQueue == NULL){
-    Serial.println("ERROR: cannot create InterruptsMain queue!");
+  if(SensorsMainQueue == NULL){
+    Serial.println("ERROR: cannot create SensorsMain queue!");
   }
 }
 
