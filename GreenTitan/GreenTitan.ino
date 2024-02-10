@@ -119,6 +119,7 @@ void setup() {
 }
 
 void loop(){
+  //TODO: Remove
   Serial.println(STATUS_BATTERY_LOW);
   delay(100);
 }

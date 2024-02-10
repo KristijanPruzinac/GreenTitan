@@ -1,3 +1,11 @@
+//TODO: Add yaw
+
+//FUNCTION DECLARATIONS
+char* convert_int16_to_str(int16_t i);
+void getAngle(int Ax,int Ay,int Az);
+void InitGyro();
+void GyroRead();
+
 // (c) Michael Schoeffler 2017, http://www.mschoeffler.de
 #include "Wire.h"
 const int MPU_ADDR = 0x68;

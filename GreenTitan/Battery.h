@@ -1,11 +1,19 @@
+//FUNCTIONAL
+
+//FUNCTION DECLARATIONS
+void InitBattery();
+float BatteryRead();
+int BatteryReadPercentage();
+void BatteryUpdate();
+
 //Sampling and voltage divider
 const int battery_sampling_count = 100;
-const float battery_divider_factor = 1.0 / 11.0;
+float battery_divider_factor = 1.0 / 11.0; //GLOBAL
 int battery_readings[battery_sampling_count];
 
 //Operating range
-float batteryLevelMin = 16;
-float batteryLevelMax = 18;
+float batteryLevelMin = 16; //GLOBAL
+float batteryLevelMax = 18; //GLOBAL
 
 //Last read battery data
 float batteryCurrentLevel = 0;

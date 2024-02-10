@@ -1,3 +1,13 @@
+//TODO: Port to wifi server
+
+//FUNCTION DECLARATIONS
+void InitBluetooth();
+char BluetoothRead();
+void BluetoothWrite(char msgChar);
+void QueueBluetoothMainSend(char receivedChar);
+char QueueMainBluetoothReceive();
+void BluetoothTask(void* pvParameters);
+
 #include "BluetoothSerial.h"
 
 #if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)

@@ -1,5 +1,9 @@
-float PI = 3.1415926;
+float angleBetweenPoints(long x1, long y1, long x2, long y2);
+float NormalizeAngle(float angle);
+float absAngle(float angle);
+float ShortestRotation(float targetAngle, float currentAngle);
 
+/*
 String[] splitStringByCharacters(String input, String separators) {
   ArrayList<String> result = new ArrayList<String>();
   int startIndex = 0;
@@ -15,7 +19,7 @@ String[] splitStringByCharacters(String input, String separators) {
   result.add(input.substring(startIndex));
   
   return result.toArray(new String[result.size()]);
-}
+}*/
 
 // Angle is 0 for NORTH and revolves 360 degrees clockwise
 float angleBetweenPoints(long x1, long y1, long x2, long y2) {

@@ -1,9 +1,14 @@
+//FUNCTION DECLARATIONS
+void SaveConfiguration();
+void LoadConfiguration();
+
 //ALGORITHM SETTINGS
-int MOWER_OVERLAP = 85;
-int MAX_DEVIATION = 50;
+int MOWER_OVERLAP = 85; //GLOBAL
+int MAX_DEVIATION = 50; //GLOBAL
 
 void SaveConfiguration(){}
 void LoadConfiguration(){
+  /*
 
   //TODO: READ CONFIGURATION FILE (LittleFS)
   String ConfigurationData;
@@ -32,4 +37,5 @@ void LoadConfiguration(){
     
     lineIndex++;
   }
+  */
 }

@@ -1,3 +1,17 @@
+//FUNCTION DECLARATIONS
+void MainCharging();
+void MainChargingStart();
+void MainChargingStop();
+void MainStop();
+void MainPause();
+void MainStart();
+void MainRunning();
+void MainPowerOn();
+void MainSetup();
+char QueueBluetoothMainReceive();
+void QueueMainBluetoothSend(char receivedChar);
+void MainTask(void* pvParameters);
+
 /*
 int pointsCount = 0;
 int gcodeIndex = 0;

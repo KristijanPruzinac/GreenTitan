@@ -1,3 +1,10 @@
+//FUNCTIONAL
+
+//FUNCTION DECLARATIONS
+void calcChecksum(unsigned char* CK);
+bool GPSRead();
+void InitGPS();
+
 #include <HardwareSerial.h>
 
 HardwareSerial SerialGPS(2);

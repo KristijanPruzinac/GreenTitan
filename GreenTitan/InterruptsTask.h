@@ -1,4 +1,15 @@
-#define INTERRUPTS_SAMPLING_RATE 10
+//FUNCTION DECLARATIONS
+void InterruptsSetup();
+void InterruptsRainSensor();
+void InterruptsLowPower();
+void InterruptsMowingTimeFrame();
+void InterruptsObstacle();
+void InterruptsGPSAccuracyLoss();
+void InterruptsMowerLifted();
+void QueueInterruptsMain();
+void InterruptsTask(void* pvParameters);
+
+int INTERRUPTS_SAMPLING_RATE = 10;  //GLOBAL
 
 void InterruptsSetup(){}
  

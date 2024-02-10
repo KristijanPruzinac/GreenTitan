@@ -1,11 +1,21 @@
+//FUNCTIONAL
+
+//FUNCTION DECLARATIONS
+void MotorDriveAngle(float angle, bool forward, float speedFactor);
+void MotorRotate(bool direction, float speedFactor);
+void InitMotors();
+void MotorStop();
+void MotorMainOn();
+void MotorMainOff();
+
 #define LEFT 0
 #define RIGHT 1
 
-bool MOTOR_SIDE_INVERT = true;
-bool MOTOR_LEFT_INVERT = true;
-bool MOTOR_RIGHT_INVERT = true;
+bool MOTOR_SIDE_INVERT = true; //GLOBAL
+bool MOTOR_LEFT_INVERT = true; //GLOBAL
+bool MOTOR_RIGHT_INVERT = true; //GLOBAL
 
-const float motorOptimalVoltage = 12;
+const float motorOptimalVoltage = 12; //GLOBAL
 
 void MotorDriveAngle(float angle, bool forward, float speedFactor = 1){
   //SpeedFactor

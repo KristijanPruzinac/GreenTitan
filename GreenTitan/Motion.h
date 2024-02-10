@@ -1,3 +1,14 @@
+//FUNCTION DECLARATIONS
+void MotorStop();
+void MotorMainOn();
+void MotorMainOff();
+void MotorGradualLeft(float amount);
+void MotorTurnLeft();
+void MotorGradualRight(float amount);
+void MotorTurnRight();
+void MotionMoveToTarget();
+void MotionRotateToTarget();
+
 //TODO: REMOVE HARDCODED VALUES (Filled at power on)
 long mowerLon = -5672328;
 long mowerLat = 3376391;
