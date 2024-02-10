@@ -19,7 +19,7 @@ String[] splitStringByCharacters(String input, String separators) {
 }*/
 
 // Angle is 0 for NORTH and revolves 360 degrees clockwise
-float angleBetweenPoints(long x1, long y1, long x2, long y2) {
+float angleBetweenPoints(int x1, int y1, int x2, int y2) {
   // Calculate the angle in radians
   float angleRad = atan2(y2 - y1, x2 - x1);
 

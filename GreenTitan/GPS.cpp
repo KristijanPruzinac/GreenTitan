@@ -21,8 +21,8 @@ NAV_POSLLH posllh;
 
 float posllhHeading = 0;
 
-long prevLon = 0;
-long prevLat = 0;
+int prevLon = 0;
+int prevLat = 0;
 
 void calcChecksum(unsigned char* CK) {
   memset(CK, 0, 2);
@@ -74,8 +74,8 @@ bool GPSRead() {
   if (prevLon != posllh.lon || prevLat != posllh.lat){
     //posllhHeading = angleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
 
-    prevLon = posllh.lon;
-    prevLat = posllh.lat;
+    prevLon = (int) posllh.lon;
+    prevLat = (int) posllh.lat;
   }
 
   return false;

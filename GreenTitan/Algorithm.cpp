@@ -1,12 +1,12 @@
 #include "Algorithm.h"
 
 //Charging station
-long prevPointLon = 0;
-long prevPointLat = 0;
+int prevPointLon = 0;
+int prevPointLat = 0;
 
 //Target
-long targetPointLon = BASE_LON;
-long targetPointLat = BASE_LAT;
+int targetPointLon = BASE_LON;
+int targetPointLat = BASE_LAT;
 
 //Globals
 int numOfLines;
@@ -22,7 +22,7 @@ bool algorithmAbortFull = false;
 /*
 Explanation:
 OUTLINE - Mows outer outline
-SEEK - Searches for point along outer outline where infill line starts
+SEEK - Searches for point aint outer outline where infill line starts
 INFILL - Mows infill line and inside outlines
 */
 
@@ -34,17 +34,23 @@ int algorithmInfillDirection;
 int algorithmCurrentOutline = 0;
 int algorithmCurrentPoint = 0;
 
+const int MAX_OUTLINES_COUNT = 20;
+const int MAX_OUTLINES_POINT_COUNT = 30;
+const int MAX_INTERSECTIONS_COUNT = 300;
+const int MAX_INTERSECTIONS_POINT_COUNT = 10;
+
 //Outlines - First point is the charging station exit point
-Array<Array<Array<long, 2>, 50>, 50> outlines;
-Array<Array<Array<long, 2>, 50>, 50> extOutlines; //Outlines with intersection points inserted
-Array<Array<Array<long, 4>, 10>, 400> intersectionPaths; //Collections of points where infill intersects terrain and outer outline
+Array<Array<Array<int, 2>, MAX_OUTLINES_POINT_COUNT>, MAX_OUTLINES_COUNT> outlines;
+Array<Array<Array<int, 2>, MAX_OUTLINES_POINT_COUNT>, MAX_OUTLINES_COUNT> extOutlines; //Outlines with intersection points inserted
+Array<Array<Array<int, 4>, MAX_INTERSECTIONS_POINT_COUNT>, MAX_INTERSECTIONS_COUNT> intersectionPaths; //Collections of points where infill intersects terrain and outer outline
+Array<Array<int, 4>, 350> intersections;
 
-//40 + 40 + 128KB = 208KB RAM
+//MAX 50M HEIGHT
 
-long terrainMinX;
-long terrainMaxX;
-long terrainMinY;
-long terrainMaxY;
+int terrainMinX;
+int terrainMaxX;
+int terrainMinY;
+int terrainMaxY;
 
 void FindTerrainBounds(){
   //Find terrain bounds
@@ -55,8 +61,8 @@ void FindTerrainBounds(){
   
   for (int i = 0; i < outlines.size(); i++){
     for (int j = 0; j < outlines.at(i).size(); j++){
-      long xVal = outlines.at(i).at(j).at(0);
-      long yVal = outlines.at(i).at(j).at(1);
+      int xVal = outlines.at(i).at(j).at(0);
+      int yVal = outlines.at(i).at(j).at(1);
       
       if (xVal < terrainMinX){terrainMinX = xVal;}
       if (yVal < terrainMinY){terrainMinY = yVal;}
@@ -72,7 +78,7 @@ void FindTerrainBounds(){
 void ClearInterference(){
   for (int i = 0; i < numOfLines; i++)
   {
-    long currentY = (long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
+    int currentY = (int) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
     
     for (int o = 0; o < outlines.size(); o++){
       for (int p = 0; p < outlines.at(o).size(); p++){
@@ -84,15 +90,24 @@ void ClearInterference(){
   }
 }
 
-void FindOutlineIntersections(){
+bool FindOutlineIntersections(){
   //Extend outlines with intersection points
   for (int i = 0; i < outlines.size(); i++){
-    extOutlines.push_back(Array<Array<long, 2>, 50>());
+    //Index out of bounds, stop algorithm
+    if (extOutlines.full()){return false;}
+
+    extOutlines.push_back(Array<Array<int, 2>, MAX_OUTLINES_POINT_COUNT>());
 
     for (int j = 0; j < outlines.at(i).size(); j++){
-      extOutlines.at(i).push_back(Array<long, 2>());
+      //Index out of bounds, stop algorithm
+      if (extOutlines.at(i).full()){return false;}
+
+      extOutlines.at(i).push_back(Array<int, 2>());
       
       for (int k = 0; k < outlines.at(i).at(j).size(); k++){
+        //Index out of bounds, stop algorithm
+        if (extOutlines.at(i).at(j).full()){return false;}
+
         extOutlines.at(i).at(j).push_back(outlines.at(i).at(j).at(k));
       }
     }
@@ -100,20 +115,20 @@ void FindOutlineIntersections(){
 
   for (int i = 0; i < numOfLines; i++)
   {
-    long currentY = (long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
+    int currentY = (int) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
     
     //Traverse outlines and extend outlines with intersections
     for (int o = 0; o < extOutlines.size(); o++){
       
-      Array<Array<long, 4>, 500> intersections; //16KB RAM
+      intersections.clear();
       // X1, Y1, NX, NY
       
       //Find intersections for current outline
       for (int p = 0; p < extOutlines.at(o).size(); p++){
-        long p1X = extOutlines.at(o).at(p).at(0);
-        long p1Y = extOutlines.at(o).at(p).at(1);
+        int p1X = extOutlines.at(o).at(p).at(0);
+        int p1Y = extOutlines.at(o).at(p).at(1);
         
-        long p2X, p2Y;
+        int p2X, p2Y;
         
         //First-last case
         if (p == extOutlines.at(o).size() - 1){
@@ -128,13 +143,16 @@ void FindOutlineIntersections(){
         //Check if lines intersect, and add intersection
         if ((currentY >= p1Y && currentY <= p2Y) || (currentY <= p1Y && currentY >= p2Y))
         {
-            intersections.push_back(Array<long, 4>());
+            //Index out of bounds, stop algorithm
+            if (intersections.full()){return false;}
 
-            long thisX;
+            intersections.push_back(Array<int, 4>());
+
+            int thisX;
 
             if (p1X != p2X)
             {
-                thisX = (long)((currentY - p1Y) / (float)(p2Y - p1Y) * (p2X - p1X) + p1X);
+                thisX = (int)((currentY - p1Y) / (float)(p2Y - p1Y) * (p2X - p1X) + p1X);
             }
             else { thisX = p1X; } //Vertical slope
 
@@ -149,11 +167,11 @@ void FindOutlineIntersections(){
       //Insert intersections into list
       int p = 0;
       while (p < extOutlines.at(o).size()){
-        long p1X = extOutlines.at(o).at(p).at(0);
-        long p1Y = extOutlines.at(o).at(p).at(1);
+        int p1X = extOutlines.at(o).at(p).at(0);
+        int p1Y = extOutlines.at(o).at(p).at(1);
         
         /*
-        long p2X, p2Y;
+        int p2X, p2Y;
         
         //First-last case
         if (p == extOutlines.at(o).size() - 1){
@@ -173,11 +191,21 @@ void FindOutlineIntersections(){
           if ((intersections.at(it).at(0) == p1X) &&
               (intersections.at(it).at(1) == p1Y))
           {
-            Array<long, 2> appendList;
+            Array<int, 2> appendList;
             appendList.push_back(intersections.at(it).at(2));
             appendList.push_back(intersections.at(it).at(3));
             
-            extOutlines.at(o).push_back(p + 1, appendList);
+            //Insert functionality to insert appendList
+
+            //Index out of bounds, stop algorithm
+            if (extOutlines.at(o).full()){return false;}
+
+            extOutlines.at(o).push_back(0);
+            for (int i = p + 1; i < extOutlines.at(o).size() - 1; i++){
+              extOutlines.at(o).at(i + 1) = extOutlines.at(o).at(i);
+            }
+            extOutlines.at(o).at(p + 1) = appendList;
+
             p++;
           }
         }
@@ -186,44 +214,56 @@ void FindOutlineIntersections(){
       }
     }
   }
+
+  return true;
 }
 
-void GeneratePaths(){
+bool GeneratePaths(){
   //Scan and find intersections
   for (int i = 0; i < numOfLines; i++)
   {
-    long currentY = (long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
+    int currentY = (int) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
+
+    //Index out of bounds, stop algorithm
+    if (intersectionPaths.full()){return false;}
       
-    intersectionPaths.push_back(Array<Array<long, 4>, 50>());
+    intersectionPaths.push_back(Array<Array<int, 4>, MAX_INTERSECTIONS_POINT_COUNT>());
     
     for (int o = 0; o < extOutlines.size(); o++){
       for (int p = 0; p < extOutlines.at(o).size(); p++){
         if (extOutlines.at(o).at(p).at(1) == currentY){
+          //Index out of bounds, stop algorithm
+          if (intersectionPaths.at(intersectionPaths.size() - 1).full()){return false;}
+
           //O, P, NX
-          intersectionPaths.at(intersectionPaths.size() - 1).push_back(Array<long, 4>());
-          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((long) o);
-          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((long) p);
-          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((long) extOutlines.at(o).at(p).at(0));
+          intersectionPaths.at(intersectionPaths.size() - 1).push_back(Array<int, 4>());
+          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((int) o);
+          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((int) p);
+          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((int) extOutlines.at(o).at(p).at(0));
         }
       }
     }
   }
   
-  //Sort by longitude
+  //Sort by intitude
   for (int d = 0; d < intersectionPaths.size(); d++){
-    ace_sorting::quickSortMiddle(intersectionPaths.at(d).data(), (uint16_t) intersectionPaths.at(d).size(), [](Array<long, 4> o1, Array<long, 4> o2) { return o1.at(2) < o2.at(2); });
+    ace_sorting::quickSortMiddle(intersectionPaths.at(d).data(), (uint16_t) intersectionPaths.at(d).size(), [](Array<int, 4> o1, Array<int, 4> o2) { return o1.at(2) < o2.at(2); });
   }
+
+  return true;
 }
 
-void GenerateGcode(){
+bool GenerateGcode(){
   //Error conditions
-  if (outlines.size() < 1){return;}
-  if (outlines.at(0).size() <= 2){return;}
+  if (outlines.size() < 1){return false;}
+  if (outlines.at(0).size() <= 2){return false;}
   
   FindTerrainBounds();
   ClearInterference(); //Makes sure no point in outlines is directly on infill Y (Patch for intersection check in FindOutlineIntersections)
-  FindOutlineIntersections();
-  GeneratePaths();
+  if (!FindOutlineIntersections()){return false;}
+  if (!GeneratePaths()){return false;}
+
+  return true;
 }
 
 //negative - decreasing index
@@ -235,7 +275,7 @@ OUTLINE MUST EXIST.
 OUTLINE NEEDS TO HAVE AT LEAST 2 POINTS.
 POINTS MUST BE IN OUTLINE
 */
-long ShortestOutlinePath(int outline_index, int current_point, int target_point){
+int ShortestOutlinePath(int outline_index, int current_point, int target_point){
   float path_length_inc = 0;
   float path_length_dec = 0;
   
@@ -278,10 +318,10 @@ long ShortestOutlinePath(int outline_index, int current_point, int target_point)
   }
   
   if (path_length_inc < path_length_dec){
-    return (long) ceil(path_length_inc);
+    return (int) ceil(path_length_inc);
   }
   else {
-    return (long) -ceil(path_length_dec);
+    return (int) -ceil(path_length_dec);
   }
 }
 
@@ -305,9 +345,9 @@ int OutlineTraverseDec(int outline_index, int current_point, int amount){
   return current_point;
 }
 
-Array<long, 2> AlgorithmNextPoint(){
-  long NextX = 0;
-  long NextY = 0;
+Array<int, 2> AlgorithmNextPoint(){
+  int NextX = 0;
+  int NextY = 0;
   
   if (algorithmTarget == "FORWARD"){
     if (algorithmMode == "INFILL"){
@@ -362,7 +402,7 @@ Array<long, 2> AlgorithmNextPoint(){
         //Traverse outline
         else {
           //Calculate distances
-          long shortestPath;
+          int shortestPath;
           int nextInfillPoint;
           
           //Find next infill point
@@ -406,10 +446,10 @@ Array<long, 2> AlgorithmNextPoint(){
       MotorMainOff();
       
       //Calculate distances
-      long distInfillA = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.at(algorithmInfillIndex).at(0).at(1)));
-      long distInfillB = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.at(algorithmInfillIndex).at(intersectionPaths.at(algorithmInfillIndex).size() - 1).at(1)));
+      int distInfillA = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.at(algorithmInfillIndex).at(0).at(1)));
+      int distInfillB = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.at(algorithmInfillIndex).at(intersectionPaths.at(algorithmInfillIndex).size() - 1).at(1)));
       
-      long shortestPath;
+      int shortestPath;
       
       //Choose shortest path
       if (abs(distInfillA) < abs(distInfillB)){
@@ -501,7 +541,7 @@ Array<long, 2> AlgorithmNextPoint(){
         }
         
         //Calculate distances
-        long shortestPath;
+        int shortestPath;
         
         //Find shortest path to the next infill point
         shortestPath = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1)));
@@ -559,7 +599,7 @@ Array<long, 2> AlgorithmNextPoint(){
       }
       
       //Find shortest path to the charging station exit point
-      long shortestPath = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, 0);
+      int shortestPath = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, 0);
       
       //Traverse in shortest direction
       if (shortestPath > 0){
@@ -577,7 +617,7 @@ Array<long, 2> AlgorithmNextPoint(){
   prevPointLon = targetPointLon;
   prevPointLat = targetPointLat;
   
-  Array<long, 2> returnList;
+  Array<int, 2> returnList;
   returnList.push_back(NextX); returnList.push_back(NextY);
   return returnList;
 }
@@ -633,7 +673,7 @@ void AlgorithmAbort(bool full_abort){
     }
     
     //TODO: Mower reverse for a bit from obstacle
-    Array<long, 2> targetPoint = AlgorithmNextPoint();
+    Array<int, 2> targetPoint = AlgorithmNextPoint();
     targetPointLon = targetPoint.at(0);
     targetPointLat = targetPoint.at(1);
     

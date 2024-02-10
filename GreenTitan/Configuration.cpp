@@ -17,16 +17,16 @@ void LoadConfiguration(){
   while (lineIndex < lines.length){
     //OUTLINE START
     if (lines[lineIndex].charAt(0) == 'O'){
-      outlines.add(new ArrayList<ArrayList<Long>>());
+      outlines.add(new ArrayList<ArrayList<int>>());
     }
     else {
       String[] dataXY = splitStringByCharacters(lines[lineIndex], " ");
       
-      ArrayList<ArrayList<Long>> outline = outlines.get(outlines.size() - 1);
+      ArrayList<ArrayList<int>> outline = outlines.get(outlines.size() - 1);
       
-      outline.add(new ArrayList<Long>());
-      outline.get(outline.size() - 1).add(Long.parseLong((dataXY[0].trim()))); //WARNING: USE .toInt() in arduino
-      outline.get(outline.size() - 1).add(Long.parseLong((dataXY[1].trim())));
+      outline.add(new ArrayList<int>());
+      outline.get(outline.size() - 1).add(int.parseint((dataXY[0].trim()))); //WARNING: USE .toInt() in arduino
+      outline.get(outline.size() - 1).add(int.parseint((dataXY[1].trim())));
     }
     
     lineIndex++;

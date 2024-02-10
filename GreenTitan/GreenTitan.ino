@@ -7,8 +7,8 @@ int STATUS_BATTERY_LOW = false;
 // -------------------------------------------------------- CONFIGURABLES ---------------------------------------------------------------
 int MOWER_OVERLAP = 85;
 int MAX_DEVIATION = 50;
-long BASE_LON = -5672328; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
-long BASE_LAT = 3376391; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
+int BASE_LON = -5672328; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
+int BASE_LAT = 3376391; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
 
 float BATTERY_LEVEL_MIN = 16;
 float BATTERY_LEVEL_MAX = 18;

@@ -3,8 +3,8 @@
 /*
 int pointsCount = 0;
 int gcodeIndex = 0;
-long pointsX[50];
-long pointsY[50];
+int pointsX[50];
+int pointsY[50];
 
 //Parse bluetooth messages
 void MainParseBluetooth(){

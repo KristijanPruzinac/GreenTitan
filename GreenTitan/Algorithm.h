@@ -10,15 +10,20 @@
 #include <Array.h>
 #include <math.h>
 
+extern int MOWER_OVERLAP;
+extern int MAX_DEVIATION;
+extern int BASE_LON;
+extern int BASE_LAT;
+
 void FindTerrainBounds();
 void ClearInterference();
-void FindOutlineIntersections();
-void GeneratePaths();
-void GenerateGcode();
-long ShortestOutlinePath(int outline_index, int current_point, int target_point);
+bool FindOutlineIntersections();
+bool GeneratePaths();
+bool GenerateGcode();
+int ShortestOutlinePath(int outline_index, int current_point, int target_point);
 int OutlineTraverseInc(int outline_index, int current_point, int amount);
 int OutlineTraverseDec(int outline_index, int current_point, int amount);
-Array<long, 2> AlgorithmNextPoint();
+Array<int, 2> AlgorithmNextPoint();
 void AlgorithmAbort(bool full_abort);
 
 #endif

@@ -11,7 +11,7 @@ void MotionMoveToTarget(){
   
   float MowerTargetDist = sqrt(pow(mowerLon - targetPointLon, 2) + pow(mowerLat - targetPointLat, 2));
   
-  float DistAlong = MowerTargetDist * cos(radians(abs(AngleDiff)));
+  float DistAint = MowerTargetDist * cos(radians(abs(AngleDiff)));
   float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff)));
   
   //STRAYED FROM PATH
@@ -21,8 +21,8 @@ void MotionMoveToTarget(){
   
   //float DistanceToTarget = sqrt(pow(targetPointLon - mowerLon, 2) + pow(targetPointLat - mowerLat, 2));
   
-  if (DistAlong < 3 || AngleDiff > 90.0){
-    ArrayList<Long> targetPoint = AlgorithmNextPoint();
+  if (DistAint < 3 || AngleDiff > 90.0){
+    ArrayList<int> targetPoint = AlgorithmNextPoint();
     targetPointLon = targetPoint.get(0);
     targetPointLat = targetPoint.get(1);
     
