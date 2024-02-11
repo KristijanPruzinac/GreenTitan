@@ -7,13 +7,16 @@
 #include "MainTask.h"
 
 #include <AceSorting.h>
-#include <Array.h>
+#include <vector>
 #include <math.h>
 
 extern int MOWER_OVERLAP;
 extern int MAX_DEVIATION;
 extern int BASE_LON;
 extern int BASE_LAT;
+
+extern int GpsGetLon();
+extern int GpsGetLat();
 
 void FindTerrainBounds();
 void ClearInterference();
@@ -23,7 +26,14 @@ bool GenerateGcode();
 int ShortestOutlinePath(int outline_index, int current_point, int target_point);
 int OutlineTraverseInc(int outline_index, int current_point, int amount);
 int OutlineTraverseDec(int outline_index, int current_point, int amount);
-Array<int, 2> AlgorithmNextPoint();
+std::vector<int> AlgorithmNextPoint();
 void AlgorithmAbort(bool full_abort);
+
+void AlgorithmCaptureStart();
+void AlgorithmCaptureNewOutline();
+void AlgorithmCaptureNewPoint(); void AlgorithmCaptureSetNewPoint(int lon, int lat);
+bool AlgorithmCaptureRemoveOutline();
+bool AlgorithmCaptureRemovePoint();
+bool AlgorithmCaptureEnd();
 
 #endif

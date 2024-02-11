@@ -1,6 +1,7 @@
 #include "Motor.h"
 
 void MotorDriveAngle(float angle, bool forward, float speedFactor = 1){
+  /*
   //SpeedFactor
   if (speedFactor < 0) speedFactor = 0;
   if (speedFactor > 1) speedFactor = 1;
@@ -96,9 +97,11 @@ void MotorDriveAngle(float angle, bool forward, float speedFactor = 1){
       }
     }
   }
+  */
 }
 
 void MotorRotate(bool direction, float speedFactor = 1){
+  /*
   //SpeedFactor
   if (speedFactor < 0) speedFactor = 0;
   if (speedFactor > 1) speedFactor = 1;
@@ -187,6 +190,7 @@ void MotorRotate(bool direction, float speedFactor = 1){
       }
     }
   }
+  */
 }
 
 void InitMotors(){
@@ -204,16 +208,22 @@ void InitMotors(){
 }
 
 void MotorStop(){
+  /*
   digitalWrite(MOTOR_LEFT_A, LOW);
   digitalWrite(MOTOR_LEFT_B, LOW);
 
   digitalWrite(MOTOR_RIGHT_A, LOW);
   digitalWrite(MOTOR_RIGHT_B, LOW);
+  */
 }
 
 void MotorMainOn(){
+  /*
   digitalWrite(MOTOR_MAIN, HIGH);
+  */
 }
 void MotorMainOff(){
+  /*
   digitalWrite(MOTOR_MAIN, LOW);
+  */
 }

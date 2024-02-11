@@ -1,6 +1,8 @@
 // -------------------------------------------------------- DEFINITIONS ---------------------------------------------------------------
 #include "Defines.h"
 
+#include <vector> //TODO: Remove
+
 // -------------------------------------------------------- STATUS INDICATORS ---------------------------------------------------------------
 int STATUS_BATTERY_LOW = false;
 
@@ -123,10 +125,57 @@ void setup() {
   InitBluetooth();
   InitBattery();
   InitRainSensor();
+
+  //Points
+  // Start the first outline
+    AlgorithmCaptureStart();
+
+    // Set points for the first outline
+    AlgorithmCaptureSetNewPoint(-5672428, 3376291);
+    AlgorithmCaptureSetNewPoint(-5672337, 3376280);
+    AlgorithmCaptureSetNewPoint(-5672243, 3376319);
+    AlgorithmCaptureSetNewPoint(-5672130, 3376305);
+    AlgorithmCaptureSetNewPoint(-5672130, 3376240);
+    AlgorithmCaptureSetNewPoint(-5672184, 3376188);
+    AlgorithmCaptureSetNewPoint(-5672143, 3375989);
+    AlgorithmCaptureSetNewPoint(-5672291, 3375864);
+    AlgorithmCaptureSetNewPoint(-5672455, 3375851);
+    AlgorithmCaptureSetNewPoint(-5672405, 3375956);
+    AlgorithmCaptureSetNewPoint(-5672501, 3375991);
+    AlgorithmCaptureSetNewPoint(-5672613, 3375940);
+    AlgorithmCaptureSetNewPoint(-5672609, 3376093);
+    AlgorithmCaptureSetNewPoint(-5672548, 3376230);
+
+    // End the first outline
+    AlgorithmCaptureNewOutline();
+
+    // Set points for the second outline
+    AlgorithmCaptureSetNewPoint(-5672355, 3376011);
+    AlgorithmCaptureSetNewPoint(-5672368, 3375913);
+    AlgorithmCaptureSetNewPoint(-5672262, 3375942);
+    AlgorithmCaptureSetNewPoint(-5672215, 3376036);
+    AlgorithmCaptureSetNewPoint(-5672315, 3376075);
+
+    // End the second outline
+    AlgorithmCaptureNewOutline();
+
+    // Set points for the third outline
+    AlgorithmCaptureSetNewPoint(-5672408, 3376080);
+    AlgorithmCaptureSetNewPoint(-5672564, 3376021);
+    AlgorithmCaptureSetNewPoint(-5672496, 3376222);
+    AlgorithmCaptureSetNewPoint(-5672460, 3376164);
+    AlgorithmCaptureSetNewPoint(-5672371, 3376208);
+    AlgorithmCaptureSetNewPoint(-5672340, 3376148);
+
+    // End the third outline
+    if (AlgorithmCaptureEnd()){
+      for (int i = 0; i < 100; i++){
+        std::vector<int> nextPoint = AlgorithmNextPoint();
+        Serial.println(String(nextPoint.at(0)) + " " + String(nextPoint.at(1)));
+      }
+    }
 }
 
 void loop(){
-  //TODO: Remove
-  Serial.println(STATUS_BATTERY_LOW);
   delay(100);
 }

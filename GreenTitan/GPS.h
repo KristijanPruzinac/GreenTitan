@@ -11,5 +11,7 @@
 void calcChecksum(unsigned char* CK);
 bool GPSRead();
 void InitGPS();
+int GpsGetLon();
+int GpsGetLat();
 
 #endif

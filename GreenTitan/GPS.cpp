@@ -81,6 +81,14 @@ bool GPSRead() {
   return false;
 }
 
+int GpsGetLon(){
+  return prevLon;
+}
+
+int GpsGetLat(){
+  return prevLat;
+}
+
 void InitGPS(){
   SerialGPS.begin(19200);
 

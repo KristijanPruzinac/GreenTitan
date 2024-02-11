@@ -34,16 +34,11 @@ int algorithmInfillDirection;
 int algorithmCurrentOutline = 0;
 int algorithmCurrentPoint = 0;
 
-const int MAX_OUTLINES_COUNT = 20;
-const int MAX_OUTLINES_POINT_COUNT = 30;
-const int MAX_INTERSECTIONS_COUNT = 300;
-const int MAX_INTERSECTIONS_POINT_COUNT = 10;
-
 //Outlines - First point is the charging station exit point
-Array<Array<Array<int, 2>, MAX_OUTLINES_POINT_COUNT>, MAX_OUTLINES_COUNT> outlines;
-Array<Array<Array<int, 2>, MAX_OUTLINES_POINT_COUNT>, MAX_OUTLINES_COUNT> extOutlines; //Outlines with intersection points inserted
-Array<Array<Array<int, 4>, MAX_INTERSECTIONS_POINT_COUNT>, MAX_INTERSECTIONS_COUNT> intersectionPaths; //Collections of points where infill intersects terrain and outer outline
-Array<Array<int, 4>, 350> intersections;
+std::vector<std::vector<std::vector<int>>> outlines;
+std::vector<std::vector<std::vector<int>>> extOutlines; //Outlines with intersection points inserted
+std::vector<std::vector<std::vector<int>>> intersectionPaths; //Collections of points where infill intersects terrain and outer outline
+std::vector<std::vector<int>> intersections;
 
 //MAX 50M HEIGHT
 
@@ -93,21 +88,12 @@ void ClearInterference(){
 bool FindOutlineIntersections(){
   //Extend outlines with intersection points
   for (int i = 0; i < outlines.size(); i++){
-    //Index out of bounds, stop algorithm
-    if (extOutlines.full()){return false;}
-
-    extOutlines.push_back(Array<Array<int, 2>, MAX_OUTLINES_POINT_COUNT>());
+    extOutlines.push_back( std::vector<std::vector<int>>());
 
     for (int j = 0; j < outlines.at(i).size(); j++){
-      //Index out of bounds, stop algorithm
-      if (extOutlines.at(i).full()){return false;}
-
-      extOutlines.at(i).push_back(Array<int, 2>());
+      extOutlines.at(i).push_back( std::vector<int>());
       
       for (int k = 0; k < outlines.at(i).at(j).size(); k++){
-        //Index out of bounds, stop algorithm
-        if (extOutlines.at(i).at(j).full()){return false;}
-
         extOutlines.at(i).at(j).push_back(outlines.at(i).at(j).at(k));
       }
     }
@@ -143,10 +129,7 @@ bool FindOutlineIntersections(){
         //Check if lines intersect, and add intersection
         if ((currentY >= p1Y && currentY <= p2Y) || (currentY <= p1Y && currentY >= p2Y))
         {
-            //Index out of bounds, stop algorithm
-            if (intersections.full()){return false;}
-
-            intersections.push_back(Array<int, 4>());
+            intersections.push_back( std::vector<int>());
 
             int thisX;
 
@@ -191,20 +174,11 @@ bool FindOutlineIntersections(){
           if ((intersections.at(it).at(0) == p1X) &&
               (intersections.at(it).at(1) == p1Y))
           {
-            Array<int, 2> appendList;
+            std::vector<int> appendList;
             appendList.push_back(intersections.at(it).at(2));
             appendList.push_back(intersections.at(it).at(3));
             
-            //Insert functionality to insert appendList
-
-            //Index out of bounds, stop algorithm
-            if (extOutlines.at(o).full()){return false;}
-
-            extOutlines.at(o).push_back(0);
-            for (int i = p + 1; i < extOutlines.at(o).size() - 1; i++){
-              extOutlines.at(o).at(i + 1) = extOutlines.at(o).at(i);
-            }
-            extOutlines.at(o).at(p + 1) = appendList;
+            extOutlines.at(o).insert(extOutlines[o].begin() + p + 1, appendList);
 
             p++;
           }
@@ -224,19 +198,13 @@ bool GeneratePaths(){
   {
     int currentY = (int) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
 
-    //Index out of bounds, stop algorithm
-    if (intersectionPaths.full()){return false;}
-      
-    intersectionPaths.push_back(Array<Array<int, 4>, MAX_INTERSECTIONS_POINT_COUNT>());
+    intersectionPaths.push_back( std::vector<std::vector<int>>());
     
     for (int o = 0; o < extOutlines.size(); o++){
       for (int p = 0; p < extOutlines.at(o).size(); p++){
         if (extOutlines.at(o).at(p).at(1) == currentY){
-          //Index out of bounds, stop algorithm
-          if (intersectionPaths.at(intersectionPaths.size() - 1).full()){return false;}
-
           //O, P, NX
-          intersectionPaths.at(intersectionPaths.size() - 1).push_back(Array<int, 4>());
+          intersectionPaths.at(intersectionPaths.size() - 1).push_back( std::vector<int>());
           intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((int) o);
           intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((int) p);
           intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((int) extOutlines.at(o).at(p).at(0));
@@ -247,7 +215,7 @@ bool GeneratePaths(){
   
   //Sort by intitude
   for (int d = 0; d < intersectionPaths.size(); d++){
-    ace_sorting::quickSortMiddle(intersectionPaths.at(d).data(), (uint16_t) intersectionPaths.at(d).size(), [](Array<int, 4> o1, Array<int, 4> o2) { return o1.at(2) < o2.at(2); });
+    ace_sorting::quickSortMiddle(intersectionPaths.at(d).data(), (uint16_t) intersectionPaths.at(d).size(), [](std::vector<int> o1, std::vector<int> o2) { return o1.at(2) < o2.at(2); });
   }
 
   return true;
@@ -345,7 +313,7 @@ int OutlineTraverseDec(int outline_index, int current_point, int amount){
   return current_point;
 }
 
-Array<int, 2> AlgorithmNextPoint(){
+std::vector<int> AlgorithmNextPoint(){
   int NextX = 0;
   int NextY = 0;
   
@@ -617,7 +585,7 @@ Array<int, 2> AlgorithmNextPoint(){
   prevPointLon = targetPointLon;
   prevPointLat = targetPointLat;
   
-  Array<int, 2> returnList;
+  std::vector<int> returnList;
   returnList.push_back(NextX); returnList.push_back(NextY);
   return returnList;
 }
@@ -673,10 +641,53 @@ void AlgorithmAbort(bool full_abort){
     }
     
     //TODO: Mower reverse for a bit from obstacle
-    Array<int, 2> targetPoint = AlgorithmNextPoint();
+    std::vector<int> targetPoint = AlgorithmNextPoint();
     targetPointLon = targetPoint.at(0);
     targetPointLat = targetPoint.at(1);
     
     MotionRotateToTarget();
   }
+}
+
+void AlgorithmCaptureStart(){
+  outlines.clear();
+
+  AlgorithmCaptureNewOutline();
+}
+
+void AlgorithmCaptureNewOutline(){
+  outlines.push_back( std::vector<std::vector<int>>());
+}
+void AlgorithmCaptureNewPoint(){
+  outlines.back().push_back( std::vector<int>());
+
+  outlines.back().back().push_back(GpsGetLon());
+  outlines.back().back().push_back(GpsGetLat());
+}
+void AlgorithmCaptureSetNewPoint(int lon, int lat){
+  outlines.back().push_back( std::vector<int>());
+
+  outlines.back().back().push_back(lon);
+  outlines.back().back().push_back(lat);
+}
+bool AlgorithmCaptureRemoveOutline(){
+  //Index out of bounds, failed
+  if (outlines.size() == 0){return false;}
+
+  outlines.pop_back();
+  
+  return true;
+}
+
+bool AlgorithmCaptureRemovePoint(){
+  //Index out of bounds, stop algorithm
+  if (outlines.back().size() == 0){return false;} 
+
+  outlines.back().pop_back();
+  
+  return true;
+}
+
+bool AlgorithmCaptureEnd(){
+  return GenerateGcode();
 }
