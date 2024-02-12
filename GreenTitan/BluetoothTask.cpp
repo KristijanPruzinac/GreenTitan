@@ -8,7 +8,6 @@ BluetoothSerial SerialBT;
 
 void InitBluetooth() {
   SerialBT.begin("GreenTitan"); //Bluetooth device name
-  Serial.println("Bluetooth started");
 
   SerialBT.setTimeout(50);
 }

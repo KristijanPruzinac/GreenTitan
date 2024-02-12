@@ -16,4 +16,19 @@
 #define LEFT 0
 #define RIGHT 1
 
+enum FileResult {
+    SUCCESS,
+    FAILED_OPEN,
+    NOT_A_DIRECTORY,
+    MKDIR_FAILED,
+    RMDIR_FAILED,
+    FAILED_READ,
+    FAILED_WRITE,
+    APPEND_FAILED,
+    RENAME_FAILED,
+    DELETE_FAILED,
+    INIT_FAILED,
+    ALGORITHM_FAILED
+};
+
 #endif

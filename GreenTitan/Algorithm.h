@@ -36,4 +36,7 @@ bool AlgorithmCaptureRemoveOutline();
 bool AlgorithmCaptureRemovePoint();
 bool AlgorithmCaptureEnd();
 
+String AlgorithmGetPathString();
+bool AlgorithmPopulatePathFromString(String& readData);
+
 #endif

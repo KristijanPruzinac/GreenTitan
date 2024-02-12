@@ -6,7 +6,16 @@
 // -------------------------------------------------------- STATUS INDICATORS ---------------------------------------------------------------
 int STATUS_BATTERY_LOW = false;
 
-// -------------------------------------------------------- CONFIGURABLES ---------------------------------------------------------------
+// -------------------------------------------------------- CONFIGURATION ---------------------------------------------------------------
+
+bool CONFIG_PATH = false;
+bool CONFIG_BATTERY = false;
+bool CONFIG_MOTORS = false;
+bool CONFIG_GYRO = false;
+bool CONFIG_RAIN_SENSOR = false;
+
+// -------------------------------------------------------- GLOBALS ---------------------------------------------------------------
+
 int MOWER_OVERLAP = 85;
 int MAX_DEVIATION = 50;
 int BASE_LON = -5672328; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
@@ -119,6 +128,12 @@ void setup() {
 
   InitFreeRtos();
 
+  FileResult result = InitConfiguration();
+  if (result != SUCCESS){
+    //TODO: Implement proper error handling
+    Serial.println("Configuration failed to initialize with error " + String(result) + " Rebooting...");
+    abort();
+  }
   InitMotors();
   InitGyro();
   InitGPS();
@@ -128,6 +143,8 @@ void setup() {
 
   //Points
   // Start the first outline
+
+  /*
     AlgorithmCaptureStart();
 
     // Set points for the first outline
@@ -167,13 +184,17 @@ void setup() {
     AlgorithmCaptureSetNewPoint(-5672371, 3376208);
     AlgorithmCaptureSetNewPoint(-5672340, 3376148);
 
-    // End the third outline
-    if (AlgorithmCaptureEnd()){
-      for (int i = 0; i < 100; i++){
-        std::vector<int> nextPoint = AlgorithmNextPoint();
-        Serial.println(String(nextPoint.at(0)) + " " + String(nextPoint.at(1)));
-      }
+    AlgorithmCaptureEnd();
+    */
+
+    LoadConfiguration();
+
+/*
+    for (int i = 0; i < 100; i++){
+      std::vector<int> nextPoint = AlgorithmNextPoint();
+      Serial.println(String(nextPoint.at(0)) + " " + String(nextPoint.at(1)));
     }
+    */
 }
 
 void loop(){

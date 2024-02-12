@@ -691,3 +691,43 @@ bool AlgorithmCaptureRemovePoint(){
 bool AlgorithmCaptureEnd(){
   return GenerateGcode();
 }
+
+String AlgorithmGetPathString(){
+  String PathString = "";
+
+  for (int i = 0; i < outlines.size(); i++){
+    PathString += "O\n";
+
+    for (int j = 0; j < outlines.at(i).size(); j++){
+      PathString += String(outlines.at(i).at(j).at(0)) + " " + String(outlines.at(i).at(j).at(1)) + "\n";
+    }
+  }
+
+  return PathString;
+}
+
+bool AlgorithmPopulatePathFromString(String& readData){
+  outlines.clear();
+
+  int newlineIndex = 0;
+  while ((newlineIndex = readData.indexOf('\n')) != -1) {
+        String line = readData.substring(0, newlineIndex);
+        readData = readData.substring(newlineIndex + 1);
+
+        if (line[0] == 'O'){
+          AlgorithmCaptureNewOutline();
+        }
+        else {
+          // Split each line by space and assign values to variables
+          int spaceIndex = line.indexOf(' ');
+          if (spaceIndex != -1) {
+              String variableValue1 = line.substring(0, spaceIndex);
+              String variableValue2 = line.substring(spaceIndex + 1);
+
+              AlgorithmCaptureSetNewPoint(variableValue1.toInt(), variableValue2.toInt());
+          }
+        }
+    }
+
+    return AlgorithmCaptureEnd();
+}
