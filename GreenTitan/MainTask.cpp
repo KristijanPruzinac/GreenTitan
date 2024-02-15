@@ -1,35 +1,13 @@
-//Timers
-unsigned long UpdateInterval = 200; //Delay in ms before the MCU reads new sensor data
-unsigned long PreviousTime = 0;
-unsigned long CurrentTime = 0;
+#include "MainTask.h"
 
+/*
 int pointsCount = 0;
 int gcodeIndex = 0;
-long pointsX[50];
-long pointsY[50];
-
-//Check if controller should read new sensor data
-bool ControllerTickReady(){
-  CurrentTime = millis();
-
-  //If overflow happened (every 50 days), tick
-  if (CurrentTime < PreviousTime){
-    PreviousTime = millis();
-    CurrentTime = millis();
-    return true;
-  }
-  //If update interval time passed, tick
-  else if (CurrentTime >= PreviousTime + UpdateInterval){
-    PreviousTime = millis();
-    CurrentTime = millis();
-    return true;
-  }
-
-  return false;
-}
+int pointsX[50];
+int pointsY[50];
 
 //Parse bluetooth messages
-void ControllerParseBluetooth(){
+void MainParseBluetooth(){
   while (true){
     String message = BluetoothRead(); if (message.length() == 0 || message.equals("")){ break; }
 
@@ -127,65 +105,40 @@ void ControllerParseBluetooth(){
 
   return;
 }
+*/
 
-void ControllerParseGPS(){
-  processGPS();
+//TODO: Implement functionality
+String Mode = "POWER_ON";
+/* CHARGING STOP PAUSE START RUNNING POWER_ON SETUP*/
+
+void MainCharging(){}
+void MainChargingStart(){
+  Serial.println("Charging start");
+}
+void MainChargingStop(){}
+void MainStop(){Serial.println("Strayed from path (STOP)");}
+void MainPause(){}
+void MainStart(){}
+void MainRunning(){}
+void MainPowerOn(){
+  //LoadConfiguration();
+  //GenerateGcode();
+}
+void MainSetup(){}
+
+char QueueBluetoothMainReceive(){
+  char returnChar = NULL;
+  xQueueReceive(BluetoothMainQueue, &returnChar, 50);
+
+  return returnChar;
 }
 
-void ControllerParseGyro(){
-  GyroRead();
+void QueueMainBluetoothSend(char receivedChar){
+  xQueueSend(BluetoothMainQueue, &receivedChar, 50);
 }
 
-void InitVoltageSensor(){
-  pinMode(BATTERY_voltage_pin, INPUT);
-}
-
-void ControllerInit(){
-  InitGyro();
-  InitGPS();
-  InitBluetooth();
-  InitVoltageSensor();
-}
-
-//Update
-void ControllerUpdate(){
-  //Sensor tick
-  if (ControllerTickReady()){
-    ControllerParseBluetooth();
-    ControllerParseGPS();
-    //ControllerParseGyro();
-    
-    //GCODE
-    if (MowerExecutingPath && MowerStatus == "RUNNING"){
-      //End of path
-      if (gcodeIndex >= pointsCount){
-        MowerExecutingPath = false;
-        return;
-      }
-
-      //Current on point (+- 5cm)
-      if (absVal(posllh.lon - pointsX[gcodeIndex]) < 5 && absVal(posllh.lat - pointsY[gcodeIndex]) < 5){
-        //Increment index
-        gcodeIndex++;
-        return;
-      }
-
-      //Adjust angle
-      float currentAngle = posllhHeading;
-      float targetAngle = angleBetweenPoints(posllh.lon, posllh.lat, pointsX[gcodeIndex], pointsY[gcodeIndex]);
-
-      //Shortest rotation
-      String rotationDirection = ShortestRotation(currentAngle, targetAngle);
-
-      if (rotationDirection == "STRAIGHT"){
-        MotorForward();
-      }
-      else if (rotationDirection == "CW"){
-        MotorPivotRight();
-      }
-      else if (rotationDirection == "CCW"){
-        MotorPivotLeft();
-      }
-    }
+void MainTask(void* pvParameters){
+  while (1){
+    delay(10);
   }
 }
