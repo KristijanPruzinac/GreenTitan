@@ -6,11 +6,11 @@
 #include "Arduino.h"
 #include "Defines.h"
 
-#include "Wire.h"
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <Wire.h>
 
-char* convert_int16_to_str(int16_t i);
-void getAngle(int Ax,int Ay,int Az);
-void InitGyro();
+bool InitGyro();
 void GyroRead();
 
 #endif

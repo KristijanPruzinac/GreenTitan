@@ -20,6 +20,9 @@ extern int MAX_DEVIATION;
 extern int BASE_LON;
 extern int BASE_LAT;
 
+extern int GPS_ACC_THRESHOLD;
+extern int GPS_STABILITY_CHECK_DURATION;
+
 extern float BATTERY_LEVEL_MIN;
 extern float BATTERY_LEVEL_MAX;
 

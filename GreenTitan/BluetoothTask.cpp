@@ -51,8 +51,11 @@ char QueueMainBluetoothReceive(){
 }
 
 void BluetoothTask(void* pvParameters){
+  InitBluetooth();
+  
   while (1){
     //If write queue is not empty send data
+    /*
     char sendChar = QueueMainBluetoothReceive();
     if (sendChar != NULL){
       BluetoothWrite(sendChar);
@@ -63,5 +66,8 @@ void BluetoothTask(void* pvParameters){
     if (receivedChar != NULL){
       QueueBluetoothMainSend(receivedChar);
     }
+    */
+
+    delay(10);
   }
 }

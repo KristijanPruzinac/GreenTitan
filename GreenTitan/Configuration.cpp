@@ -105,6 +105,8 @@ FileResult InitConfiguration(){
     return INIT_FAILED;
   }
 
+  LoadConfiguration();
+
   return SUCCESS;
 }
 
@@ -114,6 +116,8 @@ FileResult SaveConfiguration() {
     ConfigWriteString += "MAX_DEVIATION " + String(MAX_DEVIATION) + "\n";
     ConfigWriteString += "BASE_LON " + String(BASE_LON) + "\n";
     ConfigWriteString += "BASE_LAT " + String(BASE_LAT) + "\n";
+    ConfigWriteString += "GPS_ACC_THRESHOLD " + String(GPS_ACC_THRESHOLD) + "\n";
+    ConfigWriteString += "GPS_STABILITY_CHECK_DURATION " + String(GPS_STABILITY_CHECK_DURATION) + "\n";
     ConfigWriteString += "BATTERY_LEVEL_MIN " + String(BATTERY_LEVEL_MIN) + "\n";
     ConfigWriteString += "BATTERY_LEVEL_MAX " + String(BATTERY_LEVEL_MAX) + "\n";
     ConfigWriteString += "SENSORS_SAMPLING_RATE " + String(SENSORS_SAMPLING_RATE) + "\n";
@@ -164,6 +168,10 @@ FileResult LoadConfiguration() {
                 BASE_LON = variableValue.toInt();
             } else if (variableName == "BASE_LAT") {
                 BASE_LAT = variableValue.toInt();
+            } else if (variableName == "GPS_ACC_THRESHOLD"){
+                GPS_ACC_THRESHOLD = variableValue.toInt();
+            } else if (variableName == "GPS_STABILITY_CHECK_DURATION"){
+                GPS_STABILITY_CHECK_DURATION = variableValue.toInt();
             } else if (variableName == "BATTERY_LEVEL_MIN") {
                 BATTERY_LEVEL_MIN = variableValue.toFloat();
             } else if (variableName == "BATTERY_LEVEL_MAX") {

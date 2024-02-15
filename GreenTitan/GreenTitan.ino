@@ -5,6 +5,8 @@
 
 // -------------------------------------------------------- STATUS INDICATORS ---------------------------------------------------------------
 int STATUS_BATTERY_LOW = false;
+int GPS_ACCURACY_STABLE = false;
+
 
 // -------------------------------------------------------- CONFIGURATION ---------------------------------------------------------------
 
@@ -20,6 +22,9 @@ int MOWER_OVERLAP = 85;
 int MAX_DEVIATION = 50;
 int BASE_LON = -5672328; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
 int BASE_LAT = 3376391; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
+
+int GPS_ACC_THRESHOLD = 18;
+int GPS_STABILITY_CHECK_DURATION = 300; //5 minutes
 
 float BATTERY_LEVEL_MIN = 16;
 float BATTERY_LEVEL_MAX = 18;
@@ -122,24 +127,41 @@ void InitFreeRtos(){
   }
 }
 
+extern void InitMotors();
+extern bool InitGyro();
+extern void InitGPS();
+extern void InitBattery();
+extern void InitRainSensor();
+
 // -------------------------------------------------------- PROGRAM START ---------------------------------------------------------------
+void Error(String message){
+  Serial.println("ERROR: " + message);
+  //abort(); TODO: Implement additional user feedback and uncomment
+}
+
 void setup() {
   Serial.begin(9600);
 
-  InitFreeRtos();
-
   FileResult result = InitConfiguration();
   if (result != SUCCESS){
-    //TODO: Implement proper error handling
-    Serial.println("Configuration failed to initialize with error " + String(result) + " Rebooting...");
-    abort();
+    Error("Configuration failed to initialize with error " + String(result) + " Rebooting...");
   }
+
+  Serial.println("Configuration loaded!");
+
   InitMotors();
-  InitGyro();
+  if (!InitGyro()){
+    Error("Gyro failed to initialize!");
+  }
   InitGPS();
-  InitBluetooth();
   InitBattery();
   InitRainSensor();
+
+  Serial.println("Peripherals initialized!");
+
+  InitFreeRtos();
+
+  Serial.println("FreeRtos initialized!");
 
   //Points
   // Start the first outline
@@ -186,17 +208,8 @@ void setup() {
 
     AlgorithmCaptureEnd();
     */
-
-    LoadConfiguration();
-
-/*
-    for (int i = 0; i < 100; i++){
-      std::vector<int> nextPoint = AlgorithmNextPoint();
-      Serial.println(String(nextPoint.at(0)) + " " + String(nextPoint.at(1)));
-    }
-    */
 }
 
 void loop(){
-  delay(100);
+  delay(10);
 }

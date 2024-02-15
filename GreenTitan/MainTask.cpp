@@ -139,7 +139,6 @@ void QueueMainBluetoothSend(char receivedChar){
 
 void MainTask(void* pvParameters){
   while (1){
-    Serial.println("Main task");
     delay(10);
   }
 }

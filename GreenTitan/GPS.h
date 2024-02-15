@@ -13,5 +13,6 @@ bool GPSRead();
 void InitGPS();
 int GpsGetLon();
 int GpsGetLat();
+int GpsGetAcc();
 
 #endif

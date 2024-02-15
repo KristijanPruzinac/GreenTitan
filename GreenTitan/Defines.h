@@ -12,9 +12,14 @@
 #define BATTERY_LEVEL_PIN 36
 #define BATTERY_LEVEL_LOW 8
 
+//Gyro DO NOT CHANGE
+#define GYRO_SDA_PIN 26
+#define GYRO_SCL_PIN 25
+
 //Constants
 #define LEFT 0
 #define RIGHT 1
+#define MILLIS_PER_SECOND 1000
 
 enum FileResult {
     SUCCESS,

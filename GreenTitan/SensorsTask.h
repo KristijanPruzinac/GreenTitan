@@ -4,9 +4,18 @@
 #include "Arduino.h"
 #include "Defines.h"
 
-extern QueueHandle_t SensorsMainQueue;
+extern int SENSORS_SAMPLING_RATE;
+extern int GPS_ACC_THRESHOLD;
+extern int GPS_STABILITY_CHECK_DURATION;
 
-void SensorsSetup();
+extern int GPS_ACCURACY_STABLE;
+
+extern int GpsGetAcc();
+
+extern void BatteryUpdate();
+extern void GyroRead();
+extern bool GPSRead();
+
 void SensorsRainSensor();
 void SensorsLowPower();
 void SensorsMowingTimeFrame();
@@ -15,28 +24,5 @@ void SensorsGPSAccuracyLoss();
 void SensorsMowerLifted();
 void QueueSensorsMain();
 void SensorsTask(void* pvParameters);
-
-void SensorsSetup(){}
- 
-void SensorsRainSensor(){}
-void SensorsLowPower(){}
-void SensorsMowingTimeFrame(){}
-void SensorsObstacle(){}
-void SensorsGPSAccuracyLoss(){}
-void SensorsMowerLifted(){}
-
-void QueueSensorsMain(){}
-
-void SensorsTask(void* pvParameters){
-  while (1){
-    //Read sensors
-    BatteryUpdate();
-
-    //Sensors
-    if (STATUS_BATTERY_LOW) SensorsLowPower();
-
-    delay(SENSORS_SAMPLING_RATE);
-  }
-}
 
 #endif

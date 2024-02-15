@@ -23,6 +23,7 @@ float posllhHeading = 0;
 
 int prevLon = 0;
 int prevLat = 0;
+int prevAcc = 0;
 
 void calcChecksum(unsigned char* CK) {
   memset(CK, 0, 2);
@@ -78,6 +79,8 @@ bool GPSRead() {
     prevLat = (int) posllh.lat;
   }
 
+  prevAcc = (int) posllh.hAcc;
+
   return false;
 }
 
@@ -87,6 +90,10 @@ int GpsGetLon(){
 
 int GpsGetLat(){
   return prevLat;
+}
+
+int GpsGetAcc(){
+  return prevAcc;
 }
 
 void InitGPS(){
