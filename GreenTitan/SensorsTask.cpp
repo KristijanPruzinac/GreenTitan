@@ -22,12 +22,17 @@ void SensorsTask(void* pvParameters){
   TimerGPS = millis();
 
   while (1){
+    TickType_t xLastWakeTime;
+    const TickType_t xPeriod = pdMS_TO_TICKS(1000 / SENSORS_SAMPLING_RATE);
+
+    xLastWakeTime = xTaskGetTickCount();
+
     //Read sensors
-    //BatteryUpdate();
+    BatteryUpdate();
     GyroRead();
 
-    //GPSRead();
-    int gpsAccuracy = GpsGetAcc(); gpsAccuracy = 2; //TODO: REMOVE
+    GPSRead();
+    int gpsAccuracy = GpsGetAcc();
     if (gpsAccuracy <= GPS_ACC_THRESHOLD){ //Check to see if accuracy is within threshold, and if so try to check if it is stable
       if (!GPS_ACCURACY_STABLE){
         if (TimerGPSActive){
@@ -46,10 +51,9 @@ void SensorsTask(void* pvParameters){
       GPS_ACCURACY_STABLE = false;
       TimerGPSActive = false;
     }
+
     //TODO: Implement rain sensor
 
-    Serial.println(String(millis()) + " " + String(GPS_ACCURACY_STABLE));
- 
-    delay(1000 / SENSORS_SAMPLING_RATE);
+    vTaskDelayUntil(&xLastWakeTime, xPeriod);
   }
 }

@@ -29,8 +29,6 @@ int GPS_STABILITY_CHECK_DURATION = 300; //5 minutes
 float BATTERY_LEVEL_MIN = 16;
 float BATTERY_LEVEL_MAX = 18;
 
-int SENSORS_SAMPLING_RATE = 10;
-
 bool MOTOR_SIDE_INVERT = true;
 bool MOTOR_LEFT_INVERT = true;
 bool MOTOR_RIGHT_INVERT = true;
@@ -54,12 +52,11 @@ QueueHandle_t SensorsMainQueue;
 
 //Program dependencies
 #include "Functions.h";
-#include "Motion.h";
 #include "Algorithm.h";
 #include "Configuration.h";
 
 //Tasks
-#include "MainTask.h";
+#include "MotionTask.h";
 #include "BluetoothTask.h";
 #include "SensorsTask.h";
 
@@ -69,10 +66,10 @@ void InitFreeRtos(){
 
   //CREATE TASKS
 
-  //Main task
+  //Motion task
   xTaskCreatePinnedToCore (
-    MainTask,     // Function to implement the task
-    "MainTask",   // Name of the task
+    MotionTask,     // Function to implement the task
+    "MotionTask",   // Name of the task
     204800,      // Stack size in bytes
     NULL,      // Task input parameter
     2,         // Priority of the task
@@ -144,7 +141,7 @@ void setup() {
 
   FileResult result = InitConfiguration();
   if (result != SUCCESS){
-    Error("Configuration failed to initialize with error " + String(result) + " Rebooting...");
+    Error("Configuration failed to initialize with error " + String(result) + ". Rebooting...");
   }
 
   Serial.println("Configuration loaded!");
@@ -162,6 +159,12 @@ void setup() {
   InitFreeRtos();
 
   Serial.println("FreeRtos initialized!");
+
+  digitalWrite(MOTOR_MAIN, HIGH);
+  delay(1000);
+
+  digitalWrite(MOTOR_MAIN, LOW);
+  delay(1000);
 
   //Points
   // Start the first outline
@@ -211,5 +214,5 @@ void setup() {
 }
 
 void loop(){
-  delay(10);
+  delay(100);
 }

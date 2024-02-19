@@ -4,7 +4,6 @@
 #include "Arduino.h"
 #include "Defines.h"
 
-extern int SENSORS_SAMPLING_RATE;
 extern int GPS_ACC_THRESHOLD;
 extern int GPS_STABILITY_CHECK_DURATION;
 
@@ -15,6 +14,8 @@ extern int GpsGetAcc();
 extern void BatteryUpdate();
 extern void GyroRead();
 extern bool GPSRead();
+
+extern float BatteryCurrentVoltage();
 
 void SensorsRainSensor();
 void SensorsLowPower();

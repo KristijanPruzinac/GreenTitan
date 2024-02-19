@@ -120,7 +120,6 @@ FileResult SaveConfiguration() {
     ConfigWriteString += "GPS_STABILITY_CHECK_DURATION " + String(GPS_STABILITY_CHECK_DURATION) + "\n";
     ConfigWriteString += "BATTERY_LEVEL_MIN " + String(BATTERY_LEVEL_MIN) + "\n";
     ConfigWriteString += "BATTERY_LEVEL_MAX " + String(BATTERY_LEVEL_MAX) + "\n";
-    ConfigWriteString += "SENSORS_SAMPLING_RATE " + String(SENSORS_SAMPLING_RATE) + "\n";
     ConfigWriteString += "MOTOR_SIDE_INVERT " + String(MOTOR_SIDE_INVERT) + "\n";
     ConfigWriteString += "MOTOR_LEFT_INVERT " + String(MOTOR_LEFT_INVERT) + "\n";
     ConfigWriteString += "MOTOR_RIGHT_INVERT " + String(MOTOR_RIGHT_INVERT) + "\n";
@@ -176,8 +175,6 @@ FileResult LoadConfiguration() {
                 BATTERY_LEVEL_MIN = variableValue.toFloat();
             } else if (variableName == "BATTERY_LEVEL_MAX") {
                 BATTERY_LEVEL_MAX = variableValue.toFloat();
-            } else if (variableName == "SENSORS_SAMPLING_RATE") {
-                SENSORS_SAMPLING_RATE = variableValue.toInt();
             } else if (variableName == "MOTOR_SIDE_INVERT") {
                 MOTOR_SIDE_INVERT = (variableValue.toInt() != 0);
             } else if (variableName == "MOTOR_LEFT_INVERT") {

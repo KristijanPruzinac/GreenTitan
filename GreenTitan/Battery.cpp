@@ -2,7 +2,7 @@
 
 //Sampling and voltage divider
 const int battery_sampling_count = 100;
-const float battery_divider_factor = 1.0 / 11.0;
+const float battery_divider_factor = 1.0 / 11.0; // 1k ohm MEASURED , 10k ohm
 int battery_readings[battery_sampling_count];
 
 //Last read battery data

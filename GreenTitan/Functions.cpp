@@ -1,22 +1,12 @@
 #include "Functions.h"
 
-/*
-String[] splitStringByCharacters(String input, String separators) {
-  ArrayList<String> result = new ArrayList<String>();
-  int startIndex = 0;
+float RadDeg(float radVal){
+  return (radVal / (2 * PI)) * 360.0;
+}
 
-  for (int i = 0; i < input.length(); i++) {
-    char currentChar = input.charAt(i);
-    if (separators.indexOf(currentChar) != -1) {
-      result.add(input.substring(startIndex, i));
-      startIndex = i + 1;
-    }
-  }
-
-  result.add(input.substring(startIndex));
-  
-  return result.toArray(new String[result.size()]);
-}*/
+float DegRad(float degVal){
+  return (degVal / 360.0) * (2 * PI);
+}
 
 // Angle is 0 for NORTH and revolves 360 degrees clockwise
 float angleBetweenPoints(int x1, int y1, int x2, int y2) {
