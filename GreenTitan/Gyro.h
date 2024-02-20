@@ -10,6 +10,8 @@
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
 
+sensors_event_t g_acc, g_gyro, g_temp;
+
 bool InitGyro();
 void GyroRead();
 

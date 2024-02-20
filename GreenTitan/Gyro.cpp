@@ -15,10 +15,11 @@ bool InitGyro(){
 }
 
 void GyroRead(){
-  sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
+ //a.acceleration.x y z (m/s2),  g.gyro.x y z (rad/s),  temp.temperature (degC)
+  mpu.getEvent(&g_acc, &g_gyro, &g_temp);
 
   /* Print out the values */
+  /*
   Serial.print("Acceleration X: ");
   Serial.print(a.acceleration.x);
   Serial.print(", Y: ");
@@ -38,4 +39,5 @@ void GyroRead(){
   Serial.print("Temperature: ");
   Serial.print(temp.temperature);
   Serial.println(" degC");
+  */
 }

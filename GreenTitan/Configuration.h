@@ -26,8 +26,6 @@ extern int GPS_STABILITY_CHECK_DURATION;
 extern float BATTERY_LEVEL_MIN;
 extern float BATTERY_LEVEL_MAX;
 
-extern int SENSORS_SAMPLING_RATE;
-
 extern bool MOTOR_SIDE_INVERT;
 extern bool MOTOR_LEFT_INVERT;
 extern bool MOTOR_RIGHT_INVERT;

@@ -2,7 +2,7 @@
 
 //Sampling and voltage divider
 const int battery_sampling_count = 100;
-const float battery_divider_factor = 1.0 / 11.0;
+const float battery_divider_factor = 1.0 / 11.0; // 1k ohm MEASURED , 10k ohm
 int battery_readings[battery_sampling_count];
 
 //Last read battery data
@@ -50,14 +50,23 @@ void BatteryUpdate(){
   //Read new value
   battery_readings[battery_sampling_count - 1] = analogRead(BATTERY_LEVEL_PIN);
 
+  //Save last ADC and percentage values
+  BatteryReadPercentage();
+}
+
+void BatteryCheck(){
   int BatPercentage = BatteryReadPercentage();
-  if (BatPercentage < BATTERY_LEVEL_LOW){
+  if (BatPercentage <= BATTERY_LEVEL_LOW){
     STATUS_BATTERY_LOW = true;
   }
   else {
     STATUS_BATTERY_LOW = false;
   }
 
-  //Save last ADC and percentage values
-  BatteryReadPercentage();
+  if (BatPercentage >= BATTERY_LEVEL_CHARGED){
+    STATUS_BATTERY_CHARGED = true;
+  }
+  else {
+    STATUS_BATTERY_CHARGED = false;
+  }
 }

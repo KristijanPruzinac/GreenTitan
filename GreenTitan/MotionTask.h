@@ -1,5 +1,5 @@
-#ifndef MAIN_TASK_H
-#define MAIN_TASK_H
+#ifndef MOTION_TASK_H
+#define MOTION_TASK_H
 
 #include "Arduino.h"
 #include "Defines.h"
