@@ -50,14 +50,23 @@ void BatteryUpdate(){
   //Read new value
   battery_readings[battery_sampling_count - 1] = analogRead(BATTERY_LEVEL_PIN);
 
+  //Save last ADC and percentage values
+  BatteryReadPercentage();
+}
+
+void BatteryCheck(){
   int BatPercentage = BatteryReadPercentage();
-  if (BatPercentage < BATTERY_LEVEL_LOW){
+  if (BatPercentage <= BATTERY_LEVEL_LOW){
     STATUS_BATTERY_LOW = true;
   }
   else {
     STATUS_BATTERY_LOW = false;
   }
 
-  //Save last ADC and percentage values
-  BatteryReadPercentage();
+  if (BatPercentage >= BATTERY_LEVEL_CHARGED){
+    STATUS_BATTERY_CHARGED = true;
+  }
+  else {
+    STATUS_BATTERY_CHARGED = false;
+  }
 }

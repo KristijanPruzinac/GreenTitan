@@ -5,6 +5,7 @@
 
 // -------------------------------------------------------- STATUS INDICATORS ---------------------------------------------------------------
 int STATUS_BATTERY_LOW = false;
+int STATUS_BATTERY_CHARGED = false;
 int GPS_ACCURACY_STABLE = false;
 
 

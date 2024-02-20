@@ -16,5 +16,6 @@ float BatteryRead();
 int BatteryReadPercentage();
 float BatteryCurrentVoltage();
 void BatteryUpdate();
+void BatteryCheck();
 
 #endif

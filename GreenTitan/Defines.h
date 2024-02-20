@@ -24,15 +24,13 @@
 //Rain sensor
 #define RAIN_SENSOR_PIN 39
 
-//Constants
+//CONSTANTS
 #define LEFT 0
 #define RIGHT 1
 #define MILLIS_PER_SECOND 1000
 
-//STATUS
 #define BATTERY_LEVEL_LOW 8
-
-//CONSTANTS
+#define BATTERY_LEVEL_CHARGED 95
 #define SENSORS_SAMPLING_RATE 5
 
 enum FileResult {
