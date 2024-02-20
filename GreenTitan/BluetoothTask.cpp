@@ -39,6 +39,7 @@ void BluetoothRespond(String MessageGroup, String ActionGroup, String DataGroup)
 */
 
 //FreeRTOS
+/*
 void QueueBluetoothMainSend(char receivedChar){
   xQueueSend(BluetoothMainQueue, &receivedChar, 50);
 }
@@ -49,6 +50,7 @@ char QueueMainBluetoothReceive(){
 
   return returnChar;
 }
+*/
 
 void BluetoothTask(void* pvParameters){
   InitBluetooth();

@@ -640,12 +640,15 @@ void AlgorithmAbort(bool full_abort){
       }
     }
     
-    //TODO: Mower reverse for a bit from obstacle
+    //Mower reverse for a bit from obstacle
+    MotorDriveAngle(0, false, 1.0);
+    delay(750);
+    
     std::vector<int> targetPoint = AlgorithmNextPoint();
     targetPointLon = targetPoint.at(0);
     targetPointLat = targetPoint.at(1);
     
-    MotionRotateToTarget();
+    MotionSetTarget(targetPointLon, targetPointLat);
   }
 }
 

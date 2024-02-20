@@ -3,8 +3,6 @@
 
 #include "Arduino.h"
 #include "Defines.h"
-#include "Motion.h"
-#include "MainTask.h"
 
 #include <AceSorting.h>
 #include <vector>
@@ -15,8 +13,21 @@ extern int MAX_DEVIATION;
 extern int BASE_LON;
 extern int BASE_LAT;
 
+//Gps
 extern int GpsGetLon();
 extern int GpsGetLat();
+
+//Motion
+extern void MotionSetTarget(int tLon, int tLat);
+extern void MotionMoveToTarget();
+
+//Motor
+extern void MotorDriveAngle(float angle, bool forward, float speedFactor);
+extern void MotorMainOn();
+extern void MotorMainOff();
+
+//Main
+extern void MainChargingStart();
 
 void FindTerrainBounds();
 void ClearInterference();
@@ -31,7 +42,8 @@ void AlgorithmAbort(bool full_abort);
 
 void AlgorithmCaptureStart();
 void AlgorithmCaptureNewOutline();
-void AlgorithmCaptureNewPoint(); void AlgorithmCaptureSetNewPoint(int lon, int lat);
+void AlgorithmCaptureNewPoint();
+void AlgorithmCaptureSetNewPoint(int lon, int lat);
 bool AlgorithmCaptureRemoveOutline();
 bool AlgorithmCaptureRemovePoint();
 bool AlgorithmCaptureEnd();

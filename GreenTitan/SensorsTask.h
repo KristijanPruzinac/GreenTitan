@@ -5,8 +5,10 @@
 #include "Defines.h"
 
 extern void BatteryUpdate();
-extern void GyroRead();
+extern void BatteryCheck();
+extern void IMURead();
 extern bool GPSRead();
+extern void GPSCheck();
 
 extern float BatteryCurrentVoltage();
 

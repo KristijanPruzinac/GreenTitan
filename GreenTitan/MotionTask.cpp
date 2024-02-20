@@ -1,5 +1,71 @@
 #include "MotionTask.h"
 
+float MotionCurrentAzimuth = 0;
+float MotionTargetAzimuth;
+
+int MotionPrevLon;
+int MotionPrevLat;
+
+int MotionTargetLon;
+int MotionTargetLat;
+
+void MotionUpdateMovingAzimuth(){
+  //MotionCurrentAzimuth += ;
+}
+
+void MotionMoveToTarget(){
+  float PrevTargetAngle = angleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat);
+  float MowerTargetAngle = angleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat);
+  float AngleDiff = ShortestRotation(PrevTargetAngle, MowerTargetAngle);
+  
+  float MowerTargetDist = sqrt(pow(GpsGetLon() - MotionTargetLon, 2) + pow(GpsGetLat() - MotionTargetLat, 2));
+  
+  float DistAint = MowerTargetDist * cos(radians(abs(AngleDiff)));
+  float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff)));
+  
+  //STRAYED FROM PATH
+  if (DistOffset > MAX_DEVIATION){MainStop();}
+  
+  float RotationAngle = ShortestRotation(MotionCurrentAzimuth, MowerTargetAngle);
+  
+  //float DistanceToTarget = sqrt(pow(MotionTargetLon - GpsGetLon(), 2) + pow(MotionTargetLat - GpsGetLat(), 2));
+  
+  /* TODO: Implement proper motion
+  if (DistAint < 3 || AngleDiff > 90.0){
+    std::vector<int> targetPoint = AlgorithmNextPoint();
+    MotionTargetLon = targetPoint.at(0);
+    MotionTargetLat = targetPoint.at(1);
+    
+    MotionRotateToTarget();
+  }
+  else {
+    float RotFactor = DistOffset / 5.0; if (RotFactor > 1){RotFactor = 1;}
+    if (RotationAngle < 0){
+      MotorGradualLeft(1 - RotFactor * 0.7);
+    }
+    else {
+      MotorGradualRight(1 - RotFactor * 0.7);
+    }
+  }
+  */
+}
+
+void MotionRotateToTarget(){
+  float RotationAngle = ShortestRotation(MotionCurrentAzimuth, angleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat));
+  
+  if (abs(RotationAngle) < 5){
+    MotionMoveToTarget();
+  }
+  else {
+    if (RotationAngle < 0){
+      MotorRotate(LEFT, 1.0);
+    }
+    else {
+      MotorRotate(RIGHT, 1.0);
+    }
+  }
+}
+
 /*
 int pointsCount = 0;
 int gcodeIndex = 0;
@@ -106,11 +172,32 @@ void MainParseBluetooth(){
   return;
 }
 */
+void MotionTask(void* pvParameters){
+  while (1){
+    //If write queue is not empty send data
+    /*
+    char sendChar = QueueMainBluetoothReceive();
+    if (sendChar != NULL){
+      BluetoothWrite(sendChar);
+    }
+
+    //Read bluetooth and route all data to queue
+    char receivedChar = BluetoothRead();
+    if (receivedChar != NULL){
+      QueueBluetoothMainSend(receivedChar);
+    }
+    */
+
+    delay(10);
+  }
+}
+
 
 //TODO: Implement functionality
-String Mode = "POWER_ON";
+//String Mode = "POWER_ON";
 /* CHARGING STOP PAUSE START RUNNING POWER_ON SETUP*/
 
+/*
 void MainCharging(){}
 void MainChargingStart(){
   Serial.println("Charging start");
@@ -125,7 +212,8 @@ void MainPowerOn(){
   //GenerateGcode();
 }
 void MainSetup(){}
-
+*/
+/*
 char QueueBluetoothMainReceive(){
   char returnChar = NULL;
   xQueueReceive(BluetoothMainQueue, &returnChar, 50);
@@ -136,9 +224,4 @@ char QueueBluetoothMainReceive(){
 void QueueMainBluetoothSend(char receivedChar){
   xQueueSend(BluetoothMainQueue, &receivedChar, 50);
 }
-
-void MainTask(void* pvParameters){
-  while (1){
-    delay(10);
-  }
-}
+*/

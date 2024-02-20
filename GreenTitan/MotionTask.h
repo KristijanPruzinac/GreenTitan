@@ -3,23 +3,28 @@
 
 #include "Arduino.h"
 #include "Defines.h"
+#include "Functions.h"
 
-extern QueueHandle_t BluetoothMainQueue;
-extern QueueHandle_t MainBluetoothQueue;
+#include <vector>
+#include <math.h>
 
-extern QueueHandle_t SensorsMainQueue;
+extern int MAX_DEVIATION;
 
-void MainCharging();
-void MainChargingStart();
-void MainChargingStop();
-void MainStop();
-void MainPause();
-void MainStart();
-void MainRunning();
-void MainPowerOn();
-void MainSetup();
-char QueueBluetoothMainReceive();
-void QueueMainBluetoothSend(char receivedChar);
-void MainTask(void* pvParameters);
+//Main
+extern void MainStop();
+
+//Gps
+extern int GpsGetLon();
+extern int GpsGetLat();
+
+//Motor
+extern void MotorDriveAngle(float angle, bool forward, float speedFactor);
+extern void MotorRotate(bool direction, float speedFactor);
+extern void MotorStop();
+
+void MotionSetTarget(int tLon, int tLat);
+void MotionMoveToTarget();
+void MotionRotateToTarget();
+void MotionTask(void* pvParameters);
 
 #endif
