@@ -9,61 +9,20 @@ int MotionPrevLat;
 int MotionTargetLon;
 int MotionTargetLat;
 
-void MotionUpdateMovingAzimuth(){
-  //MotionCurrentAzimuth += ;
+int MotionMode = WAITING;
+
+void MotionUpdateAzimuth(){
+  MotionCurrentAzimuth = IMUCurrentAzimuth;
 }
 
-void MotionMoveToTarget(){
-  float PrevTargetAngle = angleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat);
-  float MowerTargetAngle = angleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat);
-  float AngleDiff = ShortestRotation(PrevTargetAngle, MowerTargetAngle);
-  
-  float MowerTargetDist = sqrt(pow(GpsGetLon() - MotionTargetLon, 2) + pow(GpsGetLat() - MotionTargetLat, 2));
-  
-  float DistAint = MowerTargetDist * cos(radians(abs(AngleDiff)));
-  float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff)));
-  
-  //STRAYED FROM PATH
-  if (DistOffset > MAX_DEVIATION){MainStop();}
-  
-  float RotationAngle = ShortestRotation(MotionCurrentAzimuth, MowerTargetAngle);
-  
-  //float DistanceToTarget = sqrt(pow(MotionTargetLon - GpsGetLon(), 2) + pow(MotionTargetLat - GpsGetLat(), 2));
-  
-  /* TODO: Implement proper motion
-  if (DistAint < 3 || AngleDiff > 90.0){
-    std::vector<int> targetPoint = AlgorithmNextPoint();
-    MotionTargetLon = targetPoint.at(0);
-    MotionTargetLat = targetPoint.at(1);
-    
-    MotionRotateToTarget();
-  }
-  else {
-    float RotFactor = DistOffset / 5.0; if (RotFactor > 1){RotFactor = 1;}
-    if (RotationAngle < 0){
-      MotorGradualLeft(1 - RotFactor * 0.7);
-    }
-    else {
-      MotorGradualRight(1 - RotFactor * 0.7);
-    }
-  }
-  */
-}
+void MotionSetTarget(int tLon, int tLat){
+  MotionPrevLon = GpsGetLon();
+  MotionPrevLat = GpsGetLat();
 
-void MotionRotateToTarget(){
-  float RotationAngle = ShortestRotation(MotionCurrentAzimuth, angleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat));
-  
-  if (abs(RotationAngle) < 5){
-    MotionMoveToTarget();
-  }
-  else {
-    if (RotationAngle < 0){
-      MotorRotate(LEFT, 1.0);
-    }
-    else {
-      MotorRotate(RIGHT, 1.0);
-    }
-  }
+  MotionTargetLon = tLon;
+  MotionTargetLat = tLat;
+
+  MotionMode = ROTATING;
 }
 
 /*
@@ -174,21 +133,67 @@ void MainParseBluetooth(){
 */
 void MotionTask(void* pvParameters){
   while (1){
-    //If write queue is not empty send data
-    /*
-    char sendChar = QueueMainBluetoothReceive();
-    if (sendChar != NULL){
-      BluetoothWrite(sendChar);
+    TickType_t xLastWakeTime;
+    const TickType_t xPeriod = pdMS_TO_TICKS(1000 / SENSORS_SAMPLING_RATE);
+
+    xLastWakeTime = xTaskGetTickCount();
+
+    MotionUpdateAzimuth();
+
+    if (MotionMode == ROTATING){
+      float RotationAngle = ShortestRotation(MotionCurrentAzimuth, angleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat));
+      
+      if (abs(RotationAngle) < 5){
+        MotionMode = MOVING;
+      }
+      else {
+        if (RotationAngle < 0){
+          MotorRotate(LEFT, 1.0);
+        }
+        else {
+          MotorRotate(RIGHT, 1.0);
+        }
+      }
+    }
+    else if (MotionMode == MOVING){
+      float PrevTargetAngle = angleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat);
+      float MowerTargetAngle = angleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat);
+      float AngleDiff = ShortestRotation(PrevTargetAngle, MowerTargetAngle);
+      
+      float MowerTargetDist = sqrt(pow(GpsGetLon() - MotionTargetLon, 2) + pow(GpsGetLat() - MotionTargetLat, 2));
+      
+      float DistAint = MowerTargetDist * cos(radians(abs(AngleDiff)));
+      float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff)));
+      
+      //STRAYED FROM PATH
+      if (DistOffset > MAX_DEVIATION){MotorStop(); Error("Mower strayed from path!");}
+      
+      float RotationAngle = ShortestRotation(MotionCurrentAzimuth, MowerTargetAngle);
+      
+      //float DistanceToTarget = sqrt(pow(MotionTargetLon - GpsGetLon(), 2) + pow(MotionTargetLat - GpsGetLat(), 2));
+      
+      if (DistAint < MOTION_ACCEPTED_DIST_TO_POINT || AngleDiff > 90.0){
+        MotionMode = WAITING;
+        /*
+        std::vector<int> targetPoint = AlgorithmNextPoint();
+        MotionTargetLon = targetPoint.at(0);
+        MotionTargetLat = targetPoint.at(1);
+        
+        MotionRotateToTarget();
+        */
+      }
+      else {
+        float RotFactor = DistOffset / 5.0; if (RotFactor > 1){RotFactor = 1;}
+        if (RotationAngle < 0){
+          MotorDriveAngle((-90)*(1 - RotFactor * 0.7), true, 1.0);
+        }
+        else {
+          MotorDriveAngle((90)*(1 - RotFactor * 0.7), true, 1.0);
+        }
+      }
     }
 
-    //Read bluetooth and route all data to queue
-    char receivedChar = BluetoothRead();
-    if (receivedChar != NULL){
-      QueueBluetoothMainSend(receivedChar);
-    }
-    */
-
-    delay(10);
+    vTaskDelayUntil(&xLastWakeTime, xPeriod);
   }
 }
 

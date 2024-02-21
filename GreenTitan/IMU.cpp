@@ -4,6 +4,8 @@ sensors_event_t IMU_acc, IMU_gyro, IMU_temp;
 
 Adafruit_MPU6050 mpu;
 
+float IMUCurrentAzimuth;
+
 bool InitIMU(){
   if (!mpu.begin()) {
     return false;
@@ -13,12 +15,18 @@ bool InitIMU(){
   mpu.setGyroRange(MPU6050_RANGE_500_DEG);
   mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
 
+  IMUCurrentAzimuth = 0;
+
   return true;
 }
 
 void IMURead(){
  //a.acceleration.x y z (m/s2),  g.gyro.x y z (rad/s),  temp.temperature (degC)
   mpu.getEvent(&IMU_acc, &IMU_gyro, &IMU_temp);
+
+  //Update azimuth
+  IMUCurrentAzimuth += IMUGetGyroZ() * (1.0 / SENSORS_SAMPLING_RATE);
+  IMUCurrentAzimuth = NormalizeAngle(IMUCurrentAzimuth);
 }
 
 //Accelerometer

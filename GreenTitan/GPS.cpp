@@ -19,7 +19,8 @@ struct NAV_POSLLH {
 
 NAV_POSLLH posllh;
 
-float posllhHeading = 0;
+float GPS_Heading = 0;
+float GPS_Dist = 0;
 
 int prevLon = 0;
 int prevLat = 0;
@@ -73,7 +74,12 @@ bool GPSRead() {
 
   //Calculate heading if changed
   if (prevLon != posllh.lon || prevLat != posllh.lat){
-    //posllhHeading = angleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
+    GPS_Heading = angleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
+    GPS_Dist = Distance(prevLon, prevLat, posllh.lon, posllh.lat);
+
+    //Correct azimuth
+    IMUCurrentAzimuth += (GPS_Heading - IMUCurrentAzimuth) * GPS_AZIMUTH_CORRECTION_FACTOR * ( abs(GPS_Dist) / (1 + abs(GPS_Dist)) ); //Sensor fuse gps heading to correct IMU azimuth with sigmoid function
+    IMUCurrentAzimuth = NormalizeAngle(IMUCurrentAzimuth);
 
     prevLon = (int) posllh.lon;
     prevLat = (int) posllh.lat;

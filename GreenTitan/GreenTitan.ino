@@ -36,8 +36,8 @@ float MOTOR_OPTIMAL_VOLTAGE = 12;
 // -------------------------------------------------------- DEPENDENCIES ---------------------------------------------------------------
 
 //Peripherals
-#include "GPS.h"
 #include "IMU.h"
+#include "GPS.h"
 #include "Battery.h"
 #include "Motor.h"
 #include "RainSensor.h"
@@ -96,11 +96,6 @@ extern void InitBattery();
 extern void InitRainSensor();
 
 // -------------------------------------------------------- PROGRAM START ---------------------------------------------------------------
-void Error(String message){
-  Serial.println("ERROR: " + message);
-  //abort(); TODO: Implement additional user feedback and uncomment
-}
-
 void setup() {
   Serial.begin(9600);
 
@@ -125,11 +120,7 @@ void setup() {
 
   Serial.println("FreeRtos initialized!");
 
-  digitalWrite(MOTOR_MAIN, HIGH);
-  delay(1000);
-
-  digitalWrite(MOTOR_MAIN, LOW);
-  delay(1000);
+  delay(5000);
 
   //Points
   // Start the first outline

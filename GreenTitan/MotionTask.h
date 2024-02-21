@@ -22,6 +22,10 @@ extern void MotorDriveAngle(float angle, bool forward, float speedFactor);
 extern void MotorRotate(bool direction, float speedFactor);
 extern void MotorStop();
 
+//IMU
+extern float IMUCurrentAzimuth;
+
+void MotionUpdateAzimuth();
 void MotionSetTarget(int tLon, int tLat);
 void MotionMoveToTarget();
 void MotionRotateToTarget();
