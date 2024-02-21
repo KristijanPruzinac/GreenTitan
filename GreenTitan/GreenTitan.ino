@@ -1,8 +1,6 @@
 // -------------------------------------------------------- DEFINITIONS ---------------------------------------------------------------
 #include "Defines.h"
 
-#include <vector> //TODO: Remove
-
 // -------------------------------------------------------- STATUS INDICATORS ---------------------------------------------------------------
 int STATUS_BATTERY_LOW = false;
 int STATUS_BATTERY_CHARGED = false;
@@ -35,38 +33,28 @@ bool MOTOR_LEFT_INVERT = true;
 bool MOTOR_RIGHT_INVERT = true;
 float MOTOR_OPTIMAL_VOLTAGE = 12;
 
-// -------------------------------------------------------- FREE RTOS ---------------------------------------------------------------
-
-QueueHandle_t BluetoothMainQueue;
-QueueHandle_t MainBluetoothQueue;
-
-QueueHandle_t SensorsMainQueue;
-
 // -------------------------------------------------------- DEPENDENCIES ---------------------------------------------------------------
 
 //Peripherals
-#include "GPS.h";
-#include "Gyro.h";
-#include "Battery.h";
-#include "Motor.h";
-#include "RainSensor.h";
+#include "IMU.h"
+#include "GPS.h"
+#include "Battery.h"
+#include "Motor.h"
+#include "RainSensor.h"
 
 //Program dependencies
-#include "Functions.h";
-#include "Algorithm.h";
-#include "Configuration.h";
+#include "Functions.h"
+#include "Algorithm.h"
+#include "Configuration.h"
 
 //Tasks
-#include "MotionTask.h";
-#include "BluetoothTask.h";
-#include "SensorsTask.h";
+#include "MotionTask.h"
+#include "BluetoothTask.h"
+#include "SensorsTask.h"
 
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
 
 void InitFreeRtos(){
-
-  //CREATE TASKS
-
   //Motion task
   xTaskCreatePinnedToCore (
     MotionTask,     // Function to implement the task
@@ -99,44 +87,15 @@ void InitFreeRtos(){
     NULL,      // Task handle.
     0          // Core where the task should run
   );
-
-  //CREATE QUEUES
-
-  //BluetoothMain queue
-  BluetoothMainQueue = xQueueCreate(1000, sizeof(char));
- 
-  if(BluetoothMainQueue == NULL){
-    Serial.println("ERROR: cannot create BluetoothMain queue!");
-  }
-
-  //MainBluetooth queue
-  MainBluetoothQueue = xQueueCreate(1000, sizeof(char));
- 
-  if(MainBluetoothQueue == NULL){
-    Serial.println("ERROR: cannot create MainBluetooth queue!");
-  }
-
-
-  //SensorsMain queue
-  SensorsMainQueue = xQueueCreate(1000, sizeof(char));
- 
-  if(SensorsMainQueue == NULL){
-    Serial.println("ERROR: cannot create SensorsMain queue!");
-  }
 }
 
 extern void InitMotors();
-extern bool InitGyro();
+extern bool InitIMU();
 extern void InitGPS();
 extern void InitBattery();
 extern void InitRainSensor();
 
 // -------------------------------------------------------- PROGRAM START ---------------------------------------------------------------
-void Error(String message){
-  Serial.println("ERROR: " + message);
-  //abort(); TODO: Implement additional user feedback and uncomment
-}
-
 void setup() {
   Serial.begin(9600);
 
@@ -148,7 +107,7 @@ void setup() {
   Serial.println("Configuration loaded!");
 
   InitMotors();
-  if (!InitGyro()){
+  if (!InitIMU()){
     Error("Gyro failed to initialize!");
   }
   InitGPS();
@@ -161,11 +120,7 @@ void setup() {
 
   Serial.println("FreeRtos initialized!");
 
-  digitalWrite(MOTOR_MAIN, HIGH);
-  delay(1000);
-
-  digitalWrite(MOTOR_MAIN, LOW);
-  delay(1000);
+  delay(5000);
 
   //Points
   // Start the first outline
@@ -213,6 +168,16 @@ void setup() {
     AlgorithmCaptureEnd();
     */
 }
+
+void MainCharging();
+void MainChargingStart();
+void MainChargingStop();
+void MainStop();
+void MainPause();
+void MainStart();
+void MainRunning();
+void MainPowerOn();
+void MainSetup();
 
 void loop(){
   delay(100);

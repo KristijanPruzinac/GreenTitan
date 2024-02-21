@@ -8,6 +8,10 @@ float DegRad(float degVal){
   return (degVal / 360.0) * (2 * PI);
 }
 
+float Distance(int x1, int y1, int x2, int y2){
+  return sqrt((y2-y1)*(y2-y1) + (x2-x1)*(x2-x1));
+}
+
 // Angle is 0 for NORTH and revolves 360 degrees clockwise
 float angleBetweenPoints(int x1, int y1, int x2, int y2) {
   // Calculate the angle in radians
@@ -54,4 +58,9 @@ float ShortestRotation(float targetAngle, float currentAngle){
   else {
     return CCW;
   }
+}
+
+void Error(String message){
+  Serial.println("ERROR: " + message);
+  //abort(); TODO: Implement additional user feedback and uncomment
 }

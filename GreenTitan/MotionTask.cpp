@@ -1,5 +1,30 @@
 #include "MotionTask.h"
 
+float MotionCurrentAzimuth = 0;
+float MotionTargetAzimuth;
+
+int MotionPrevLon;
+int MotionPrevLat;
+
+int MotionTargetLon;
+int MotionTargetLat;
+
+int MotionMode = WAITING;
+
+void MotionUpdateAzimuth(){
+  MotionCurrentAzimuth = IMUCurrentAzimuth;
+}
+
+void MotionSetTarget(int tLon, int tLat){
+  MotionPrevLon = GpsGetLon();
+  MotionPrevLat = GpsGetLat();
+
+  MotionTargetLon = tLon;
+  MotionTargetLat = tLat;
+
+  MotionMode = ROTATING;
+}
+
 /*
 int pointsCount = 0;
 int gcodeIndex = 0;
@@ -106,11 +131,78 @@ void MainParseBluetooth(){
   return;
 }
 */
+void MotionTask(void* pvParameters){
+  while (1){
+    TickType_t xLastWakeTime;
+    const TickType_t xPeriod = pdMS_TO_TICKS(1000 / SENSORS_SAMPLING_RATE);
+
+    xLastWakeTime = xTaskGetTickCount();
+
+    MotionUpdateAzimuth();
+
+    if (MotionMode == ROTATING){
+      float RotationAngle = ShortestRotation(MotionCurrentAzimuth, angleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat));
+      
+      if (abs(RotationAngle) < 5){
+        MotionMode = MOVING;
+      }
+      else {
+        if (RotationAngle < 0){
+          MotorRotate(LEFT, 1.0);
+        }
+        else {
+          MotorRotate(RIGHT, 1.0);
+        }
+      }
+    }
+    else if (MotionMode == MOVING){
+      float PrevTargetAngle = angleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat);
+      float MowerTargetAngle = angleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat);
+      float AngleDiff = ShortestRotation(PrevTargetAngle, MowerTargetAngle);
+      
+      float MowerTargetDist = sqrt(pow(GpsGetLon() - MotionTargetLon, 2) + pow(GpsGetLat() - MotionTargetLat, 2));
+      
+      float DistAint = MowerTargetDist * cos(radians(abs(AngleDiff)));
+      float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff)));
+      
+      //STRAYED FROM PATH
+      if (DistOffset > MAX_DEVIATION){MotorStop(); Error("Mower strayed from path!");}
+      
+      float RotationAngle = ShortestRotation(MotionCurrentAzimuth, MowerTargetAngle);
+      
+      //float DistanceToTarget = sqrt(pow(MotionTargetLon - GpsGetLon(), 2) + pow(MotionTargetLat - GpsGetLat(), 2));
+      
+      if (DistAint < MOTION_ACCEPTED_DIST_TO_POINT || AngleDiff > 90.0){
+        MotionMode = WAITING;
+        /*
+        std::vector<int> targetPoint = AlgorithmNextPoint();
+        MotionTargetLon = targetPoint.at(0);
+        MotionTargetLat = targetPoint.at(1);
+        
+        MotionRotateToTarget();
+        */
+      }
+      else {
+        float RotFactor = DistOffset / 5.0; if (RotFactor > 1){RotFactor = 1;}
+        if (RotationAngle < 0){
+          MotorDriveAngle((-90)*(1 - RotFactor * 0.7), true, 1.0);
+        }
+        else {
+          MotorDriveAngle((90)*(1 - RotFactor * 0.7), true, 1.0);
+        }
+      }
+    }
+
+    vTaskDelayUntil(&xLastWakeTime, xPeriod);
+  }
+}
+
 
 //TODO: Implement functionality
-String Mode = "POWER_ON";
+//String Mode = "POWER_ON";
 /* CHARGING STOP PAUSE START RUNNING POWER_ON SETUP*/
 
+/*
 void MainCharging(){}
 void MainChargingStart(){
   Serial.println("Charging start");
@@ -125,7 +217,8 @@ void MainPowerOn(){
   //GenerateGcode();
 }
 void MainSetup(){}
-
+*/
+/*
 char QueueBluetoothMainReceive(){
   char returnChar = NULL;
   xQueueReceive(BluetoothMainQueue, &returnChar, 50);
@@ -136,9 +229,4 @@ char QueueBluetoothMainReceive(){
 void QueueMainBluetoothSend(char receivedChar){
   xQueueSend(BluetoothMainQueue, &receivedChar, 50);
 }
-
-void MainTask(void* pvParameters){
-  while (1){
-    delay(10);
-  }
-}
+*/

@@ -7,6 +7,7 @@
 #include "Defines.h"
 
 extern int STATUS_BATTERY_LOW;
+extern int STATUS_BATTERY_CHARGED;
 
 extern float BATTERY_LEVEL_MIN;
 extern float BATTERY_LEVEL_MAX;
