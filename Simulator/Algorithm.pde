@@ -2,8 +2,8 @@ import java.io.*; //<>//
 import java.util.*;
 
 //Charging station
-long baseLon = -5672328; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
-long baseLat = 3376391; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
+long baseLon = 187123388; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
+long baseLat = 455620210; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
 
 long prevPointLon = 0;
 long prevPointLat = 0;

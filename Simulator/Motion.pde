@@ -1,9 +1,9 @@
 //TODO: REMOVE HARDCODED VALUES (Filled at power on)
-long mowerLon = -5672328;
-long mowerLat = 3376391;
+long mowerLon = 187123388;
+long mowerLat = 455620210;
 
-long targetPointLon = -5672328;
-long targetPointLat = 3376391;
+long targetPointLon = 187124359;
+long targetPointLat = 455617865;
 
 float mowerAzimuth = 0;
 //--------------------------------------------------

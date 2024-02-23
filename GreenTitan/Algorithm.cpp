@@ -9,7 +9,7 @@ int targetPointLon = BASE_LON;
 int targetPointLat = BASE_LAT;
 
 //Globals
-int numOfLines;
+int numOfLines = 1;
 
 //Algorithm
 String algorithmTarget = "FORWARD"; // FORWARD, BASE
@@ -38,14 +38,16 @@ int algorithmCurrentPoint = 0;
 std::vector<std::vector<std::vector<int>>> outlines;
 std::vector<std::vector<std::vector<int>>> extOutlines; //Outlines with intersection points inserted
 std::vector<std::vector<std::vector<int>>> intersectionPaths; //Collections of points where infill intersects terrain and outer outline
-std::vector<std::vector<int>> intersections;
-
-//MAX 50M HEIGHT
 
 int terrainMinX;
 int terrainMaxX;
 int terrainMinY;
 int terrainMaxY;
+
+void ClearOutlines(){
+  extOutlines.clear();
+  intersectionPaths.clear();
+}
 
 void FindTerrainBounds(){
   //Find terrain bounds
@@ -91,10 +93,10 @@ bool FindOutlineIntersections(){
     extOutlines.push_back( std::vector<std::vector<int>>());
 
     for (int j = 0; j < outlines.at(i).size(); j++){
-      extOutlines.at(i).push_back( std::vector<int>());
+      extOutlines.back().push_back( std::vector<int>());
       
       for (int k = 0; k < outlines.at(i).at(j).size(); k++){
-        extOutlines.at(i).at(j).push_back(outlines.at(i).at(j).at(k));
+        extOutlines.back().back().push_back(outlines.at(i).at(j).at(k));
       }
     }
   }
@@ -106,14 +108,14 @@ bool FindOutlineIntersections(){
     //Traverse outlines and extend outlines with intersections
     for (int o = 0; o < extOutlines.size(); o++){
       
-      intersections.clear();
+      std::vector<std::vector<int>> intersections;
       // X1, Y1, NX, NY
       
       //Find intersections for current outline
       for (int p = 0; p < extOutlines.at(o).size(); p++){
         int p1X = extOutlines.at(o).at(p).at(0);
         int p1Y = extOutlines.at(o).at(p).at(1);
-        
+
         int p2X, p2Y;
         
         //First-last case
@@ -125,7 +127,7 @@ bool FindOutlineIntersections(){
           p2X = extOutlines.at(o).at(p + 1).at(0);
           p2Y = extOutlines.at(o).at(p + 1).at(1);
         }
-        
+
         //Check if lines intersect, and add intersection
         if ((currentY >= p1Y && currentY <= p2Y) || (currentY <= p1Y && currentY >= p2Y))
         {
@@ -152,20 +154,6 @@ bool FindOutlineIntersections(){
       while (p < extOutlines.at(o).size()){
         int p1X = extOutlines.at(o).at(p).at(0);
         int p1Y = extOutlines.at(o).at(p).at(1);
-        
-        /*
-        int p2X, p2Y;
-        
-        //First-last case
-        if (p == extOutlines.at(o).size() - 1){
-          p2X = extOutlines.at(o).at(0).at(0);
-          p2Y = extOutlines.at(o).at(0).at(1);
-        }
-        else {
-          p2X = extOutlines.at(o).at(p + 1).at(0);
-          p2Y = extOutlines.at(o).at(p + 1).at(1);
-        }
-        */
         
         //Check corresponding intersections
         for (int it = 0; it < intersections.size(); it++){
@@ -222,6 +210,9 @@ bool GeneratePaths(){
 }
 
 bool GenerateGcode(){
+  //Clean up
+  ClearOutlines();
+
   //Error conditions
   if (outlines.size() < 1){return false;}
   if (outlines.at(0).size() <= 2){return false;}
@@ -654,12 +645,18 @@ void AlgorithmAbort(bool full_abort){
 
 void AlgorithmCaptureStart(){
   outlines.clear();
-
-  AlgorithmCaptureNewOutline();
 }
 
 void AlgorithmCaptureNewOutline(){
   outlines.push_back( std::vector<std::vector<int>>());
+}
+void AlgorithmCaptureBasePoint(){
+  BASE_LON = GpsGetLon();
+  BASE_LAT = GpsGetLat();
+}
+void AlgorithmCaptureBaseExitPoint(){
+  BASE_EXIT_LON = GpsGetLon();
+  BASE_EXIT_LAT = GpsGetLat();
 }
 void AlgorithmCaptureNewPoint(){
   outlines.back().push_back( std::vector<int>());

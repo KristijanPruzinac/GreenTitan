@@ -35,6 +35,8 @@ void calcChecksum(unsigned char* CK) {
 }
 
 bool GPSRead() {
+  bool returnVal = false;
+
   static int fpos = 0;
   static unsigned char checksum[2];
   const int payloadSize = sizeof(NAV_POSLLH);
@@ -63,7 +65,8 @@ bool GPSRead() {
       else if ( fpos == (payloadSize+4) ) {
         fpos = 0;
         if ( c == checksum[1] ) {
-          return true;
+          returnVal = true;
+          break;
         }
       }
       else if ( fpos > (payloadSize+4) ) {
@@ -87,7 +90,7 @@ bool GPSRead() {
 
   prevAcc = (int) posllh.hAcc;
 
-  return false;
+  return returnVal;
 }
 
 unsigned long TimerGPS = -1;
@@ -95,7 +98,7 @@ bool TimerGPSActive = false;
 
 void GPSCheck(){
   int gpsAccuracy = GpsGetAcc();
-    if (gpsAccuracy <= GPS_ACC_THRESHOLD){ //Check to see if accuracy is within threshold, and if so try to check if it is stable
+    if (gpsAccuracy <= GPS_ACC_THRESHOLD && gpsAccuracy >= 0){ //Check to see if accuracy is within threshold, and if so try to check if it is stable
       if (!GPS_ACCURACY_STABLE){
         if (TimerGPSActive){
           if ((millis() - TimerGPS) / MILLIS_PER_SECOND > (unsigned long) GPS_STABILITY_CHECK_DURATION){ //If accuracy is stable for long enough, set GPS_ACCURACY_STABLE to true

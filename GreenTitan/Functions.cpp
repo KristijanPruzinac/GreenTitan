@@ -62,5 +62,8 @@ float ShortestRotation(float targetAngle, float currentAngle){
 
 void Error(String message){
   Serial.println("ERROR: " + message);
-  //abort(); TODO: Implement additional user feedback and uncomment
+  //TODO: Implement additional user feedback and uncomment
+  while (1){
+    delay(100);
+  }
 }

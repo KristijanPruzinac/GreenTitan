@@ -27,7 +27,12 @@
 //CONSTANTS
 #define LEFT 0
 #define RIGHT 1
+#define FORWARD 1
+#define BACKWARD 0
 #define MILLIS_PER_SECOND 1000
+
+#define MOTOR_ANGLE_MIN -90
+#define MOTOR_ANGLE_MAX 90
 
 #define WAITING 0
 #define ROTATING 1

@@ -6,15 +6,10 @@
 #include "Arduino.h"
 #include "Defines.h"
 #include "BluetoothSerial.h"
-/*
-extern QueueHandle_t BluetoothMainQueue;
-extern QueueHandle_t MainBluetoothQueue;
-*/
-void InitBluetooth();
-char BluetoothRead();
-void BluetoothWrite(char msgChar);
-void QueueBluetoothMainSend(char receivedChar);
-char QueueMainBluetoothReceive();
+
+bool InitBluetooth();
+String BluetoothRead();
+void BluetoothWrite(String message);
 void BluetoothTask(void* pvParameters);
 
 #endif

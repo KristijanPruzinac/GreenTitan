@@ -17,10 +17,14 @@ bool CONFIG_RAIN_SENSOR = false;
 
 // -------------------------------------------------------- GLOBALS ---------------------------------------------------------------
 
-int MOWER_OVERLAP = 85;
+bool SETUP_COMPLETED = true;
+
+int MOWER_OVERLAP = 15; //In cm
 int MAX_DEVIATION = 50;
-int BASE_LON = -5672328; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
-int BASE_LAT = 3376391; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
+int BASE_LON = -5672328;
+int BASE_LAT = 3376391;
+int BASE_EXIT_LON = -5672328;
+int BASE_EXIT_LAT = 3376391;
 
 int GPS_ACC_THRESHOLD = 18;
 int GPS_STABILITY_CHECK_DURATION = 300; //5 minutes
@@ -29,7 +33,7 @@ float BATTERY_LEVEL_MIN = 16;
 float BATTERY_LEVEL_MAX = 18;
 
 bool MOTOR_SIDE_INVERT = true;
-bool MOTOR_LEFT_INVERT = true;
+bool MOTOR_LEFT_INVERT = false;
 bool MOTOR_RIGHT_INVERT = true;
 float MOTOR_OPTIMAL_VOLTAGE = 12;
 
@@ -59,7 +63,7 @@ void InitFreeRtos(){
   xTaskCreatePinnedToCore (
     MotionTask,     // Function to implement the task
     "MotionTask",   // Name of the task
-    204800,      // Stack size in bytes
+    8192,      // Stack size in bytes
     NULL,      // Task input parameter
     2,         // Priority of the task
     NULL,      // Task handle.
@@ -97,77 +101,20 @@ extern void InitRainSensor();
 
 // -------------------------------------------------------- PROGRAM START ---------------------------------------------------------------
 void setup() {
-  Serial.begin(9600);
-
-  FileResult result = InitConfiguration();
-  if (result != SUCCESS){
-    Error("Configuration failed to initialize with error " + String(result) + ". Rebooting...");
-  }
-
-  Serial.println("Configuration loaded!");
-
-  InitMotors();
-  if (!InitIMU()){
-    Error("Gyro failed to initialize!");
-  }
-  InitGPS();
-  InitBattery();
-  InitRainSensor();
-
-  Serial.println("Peripherals initialized!");
-
-  InitFreeRtos();
-
-  Serial.println("FreeRtos initialized!");
-
-  delay(5000);
-
-  //Points
-  // Start the first outline
-
-  /*
-    AlgorithmCaptureStart();
-
-    // Set points for the first outline
-    AlgorithmCaptureSetNewPoint(-5672428, 3376291);
-    AlgorithmCaptureSetNewPoint(-5672337, 3376280);
-    AlgorithmCaptureSetNewPoint(-5672243, 3376319);
-    AlgorithmCaptureSetNewPoint(-5672130, 3376305);
-    AlgorithmCaptureSetNewPoint(-5672130, 3376240);
-    AlgorithmCaptureSetNewPoint(-5672184, 3376188);
-    AlgorithmCaptureSetNewPoint(-5672143, 3375989);
-    AlgorithmCaptureSetNewPoint(-5672291, 3375864);
-    AlgorithmCaptureSetNewPoint(-5672455, 3375851);
-    AlgorithmCaptureSetNewPoint(-5672405, 3375956);
-    AlgorithmCaptureSetNewPoint(-5672501, 3375991);
-    AlgorithmCaptureSetNewPoint(-5672613, 3375940);
-    AlgorithmCaptureSetNewPoint(-5672609, 3376093);
-    AlgorithmCaptureSetNewPoint(-5672548, 3376230);
-
-    // End the first outline
-    AlgorithmCaptureNewOutline();
-
-    // Set points for the second outline
-    AlgorithmCaptureSetNewPoint(-5672355, 3376011);
-    AlgorithmCaptureSetNewPoint(-5672368, 3375913);
-    AlgorithmCaptureSetNewPoint(-5672262, 3375942);
-    AlgorithmCaptureSetNewPoint(-5672215, 3376036);
-    AlgorithmCaptureSetNewPoint(-5672315, 3376075);
-
-    // End the second outline
-    AlgorithmCaptureNewOutline();
-
-    // Set points for the third outline
-    AlgorithmCaptureSetNewPoint(-5672408, 3376080);
-    AlgorithmCaptureSetNewPoint(-5672564, 3376021);
-    AlgorithmCaptureSetNewPoint(-5672496, 3376222);
-    AlgorithmCaptureSetNewPoint(-5672460, 3376164);
-    AlgorithmCaptureSetNewPoint(-5672371, 3376208);
-    AlgorithmCaptureSetNewPoint(-5672340, 3376148);
-
-    AlgorithmCaptureEnd();
-    */
+  Serial.begin(115200);
 }
+
+String Mode = "POWER_ON";
+/*
+POWER_ON
+
+SETUP
+
+START
+RUNNING PAUSE
+STOP
+CHARGING
+*/
 
 void MainCharging();
 void MainChargingStart();
@@ -179,6 +126,90 @@ void MainRunning();
 void MainPowerOn();
 void MainSetup();
 
+/*
+O
+187123388 455620210
+187124359 455617865
+187124799 455618322
+*/
+
 void loop(){
-  delay(100);
+  if (Mode == "POWER_ON"){
+    FileResult result = InitConfiguration();
+    if (result != SUCCESS){
+      Error("Configuration failed to initialize with error " + String(result));
+    }
+
+    Serial.println("Configuration loaded!");
+
+    InitMotors();
+    if (!InitIMU()){
+      Error("Gyro failed to initialize!");
+    }
+    InitGPS();
+    InitBattery();
+    InitRainSensor();
+
+    Serial.println("Peripherals initialized!");
+
+    if (!InitBluetooth()){
+      Error("Bluetooth failed to initialize!");
+    }
+    else {
+      Serial.println("Bluetooth initialized!");
+    }
+
+    InitFreeRtos();
+
+    Serial.println("FreeRtos initialized!");
+
+    delay(2500);
+    if (SETUP_COMPLETED){
+      Mode = "START";
+    }
+    else {
+      Mode = "SETUP";
+    }
+  }
+  else if (Mode == "SETUP"){
+
+  }
+  else if (Mode == "START"){
+    String message = BluetoothRead();
+
+    if (message == "GPS_ACC"){
+      BluetoothWrite(String(GpsGetAcc()));
+    }
+    else if (message == "CAPTURE_START") {
+        AlgorithmCaptureStart();
+        BluetoothWrite("Executed!");
+    } else if (message == "CAPTURE_BASE_POINT") {
+        AlgorithmCaptureBasePoint();
+        BluetoothWrite("Executed!");
+    } else if (message == "CAPTURE_BASE_EXIT_POINT") {
+        AlgorithmCaptureBaseExitPoint();
+        BluetoothWrite("Executed!");
+    } else if (message == "CAPTURE_NEW_OUTLINE") {
+        AlgorithmCaptureNewOutline();
+        BluetoothWrite("Executed!");
+    } else if (message == "CAPTURE_NEW_POINT") {
+        AlgorithmCaptureNewPoint();
+        BluetoothWrite("Executed!");
+    } else if (message == "REMOVE_OUTLINE") {
+        bool result = AlgorithmCaptureRemoveOutline();
+        BluetoothWrite(String(result));
+    } else if (message == "REMOVE_POINT") {
+        bool result = AlgorithmCaptureRemovePoint();
+        BluetoothWrite(String(result));
+    } else if (message == "CAPTURE_END") {
+        bool result = AlgorithmCaptureEnd();
+        BluetoothWrite(String(result));
+    } else if (message == "GET_PATH_STRING"){
+        BluetoothWrite(AlgorithmGetPathString());
+    } else if (message == "SAVE_CONFIGURATION"){
+        FileResult result = SaveConfiguration();
+        BluetoothWrite(String(result));
+    }
+  }
+  delay(10);
 }
