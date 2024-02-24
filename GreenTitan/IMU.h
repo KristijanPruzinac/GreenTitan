@@ -12,6 +12,8 @@
 bool InitIMU();
 void IMURead();
 
+float IMUGetAzimuth();
+
 float IMUGetAccX();
 float IMUGetAccY();
 float IMUGetAccZ();

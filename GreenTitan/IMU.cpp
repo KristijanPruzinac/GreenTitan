@@ -13,7 +13,7 @@ bool InitIMU(){
 
   mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
   mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+  mpu.setFilterBandwidth(MPU6050_BAND_10_HZ);
 
   IMUCurrentAzimuth = 0;
 
@@ -25,8 +25,12 @@ void IMURead(){
   mpu.getEvent(&IMU_acc, &IMU_gyro, &IMU_temp);
 
   //Update azimuth
-  IMUCurrentAzimuth += IMUGetGyroZ() * (1.0 / SENSORS_SAMPLING_RATE);
+  IMUCurrentAzimuth -= IMUGetGyroZ() * (1.0 / SENSORS_SAMPLING_RATE);
   IMUCurrentAzimuth = NormalizeAngle(IMUCurrentAzimuth);
+}
+
+float IMUGetAzimuth(){
+  return IMUCurrentAzimuth;
 }
 
 //Accelerometer

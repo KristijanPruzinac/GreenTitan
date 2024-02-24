@@ -142,6 +142,8 @@ void loop(){
 
     Serial.println("Configuration loaded!");
 
+    delay(200);
+
     InitMotors();
     if (!InitIMU()){
       Error("Gyro failed to initialize!");
@@ -152,12 +154,16 @@ void loop(){
 
     Serial.println("Peripherals initialized!");
 
+    delay(200);
+
     if (!InitBluetooth()){
       Error("Bluetooth failed to initialize!");
     }
     else {
       Serial.println("Bluetooth initialized!");
     }
+
+    delay(200);
 
     InitFreeRtos();
 

@@ -21,4 +21,10 @@ void SensorsMowerLifted();
 void QueueSensorsMain();
 void SensorsTask(void* pvParameters);
 
+extern float IMUGetAzimuth();
+extern int GpsGetLon();
+extern int GpsGetLat();
+extern int GpsGetAcc();
+extern void BluetoothWrite(String message);
+
 #endif

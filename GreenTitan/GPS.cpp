@@ -77,11 +77,11 @@ bool GPSRead() {
 
   //Calculate heading if changed
   if (prevLon != posllh.lon || prevLat != posllh.lat){
-    GPS_Heading = angleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
+    GPS_Heading = AngleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
     GPS_Dist = Distance(prevLon, prevLat, posllh.lon, posllh.lat);
 
     //Correct azimuth
-    IMUCurrentAzimuth += (GPS_Heading - IMUCurrentAzimuth) * GPS_AZIMUTH_CORRECTION_FACTOR * ( abs(GPS_Dist) / (1 + abs(GPS_Dist)) ); //Sensor fuse gps heading to correct IMU azimuth with sigmoid function
+    IMUCurrentAzimuth -= ShortestRotation(GPS_Heading, IMUCurrentAzimuth) * GPS_AZIMUTH_CORRECTION_FACTOR * ( abs(GPS_Dist) / (1 + abs(GPS_Dist)) ); //Sensor fuse gps heading to correct IMU azimuth with sigmoid function
     IMUCurrentAzimuth = NormalizeAngle(IMUCurrentAzimuth);
 
     prevLon = (int) posllh.lon;
@@ -132,6 +132,7 @@ int GpsGetAcc(){
 
 void InitGPS(){
   SerialGPS.begin(19200);
+  SerialGPS.setTimeout(50);
 
   //Dont remove
   posllh.lon = 1;

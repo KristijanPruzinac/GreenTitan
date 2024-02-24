@@ -141,7 +141,7 @@ void MotionTask(void* pvParameters){
     MotionUpdateAzimuth();
 
     if (MotionMode == ROTATING){
-      float RotationAngle = ShortestRotation(MotionCurrentAzimuth, angleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat));
+      float RotationAngle = ShortestRotation(MotionCurrentAzimuth, AngleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat));
       
       if (abs(RotationAngle) < 5){
         MotionMode = MOVING;
@@ -156,8 +156,8 @@ void MotionTask(void* pvParameters){
       }
     }
     else if (MotionMode == MOVING){
-      float PrevTargetAngle = angleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat);
-      float MowerTargetAngle = angleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat);
+      float PrevTargetAngle = AngleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat);
+      float MowerTargetAngle = AngleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat);
       float AngleDiff = ShortestRotation(PrevTargetAngle, MowerTargetAngle);
       
       float MowerTargetDist = sqrt(pow(GpsGetLon() - MotionTargetLon, 2) + pow(GpsGetLat() - MotionTargetLat, 2));
