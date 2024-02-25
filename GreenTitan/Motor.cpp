@@ -17,10 +17,12 @@ void MotorDriveAngle(float angle, bool forward, float speedFactor = 1){
   //Calculate optimal voltage based on battery
   float fullSpeedVal = (MOTOR_OPTIMAL_VOLTAGE / BatteryCurrentVoltage());
   fullSpeedVal = constrain(fullSpeedVal, 0, 1);
-  fullSpeedVal *= 4095;
-  
+
   //Adjust desired speed
   fullSpeedVal *= speedFactor;
+
+  //Scale to DAC
+  fullSpeedVal *= DAC_MAX_VALUE; fullSpeedVal = constrain(fullSpeedVal, 200, DAC_MAX_VALUE);
 
   int leftVal = motorPercentLeft * fullSpeedVal;
   int rightVal = motorPercentRight * fullSpeedVal;
@@ -55,34 +57,42 @@ void MotorRotate(bool direction, float speedFactor = 1){
   //Calculate optimal voltage based on battery
   float fullSpeedVal = (MOTOR_OPTIMAL_VOLTAGE / BatteryCurrentVoltage());
   fullSpeedVal = constrain(fullSpeedVal, 0, 1);
-  fullSpeedVal *= 4095;
-  
+
   //Adjust desired speed
   fullSpeedVal *= speedFactor;
 
+  //Scale to DAC
+  fullSpeedVal *= DAC_MAX_VALUE; fullSpeedVal = constrain(fullSpeedVal, 200, DAC_MAX_VALUE);
+
   bool leftInvert = MOTOR_LEFT_INVERT;
   bool rightInvert = MOTOR_RIGHT_INVERT;
+
+  //Set motors to drive in opposite directions to spin on spot
+  if (direction == RIGHT){
+    leftInvert = !leftInvert;
+    rightInvert = !rightInvert;
+  }
 
   //Switch sides
   if (MOTOR_SIDE_INVERT){
     direction = !direction;
   }
 
-  //Set motors to drive in opposite directions to spin on spot
-  if (direction == LEFT){
-    leftInvert = !leftInvert;
-  }
-  else if (direction == RIGHT){
-    rightInvert = !rightInvert;
-  }
+  //TODO: FIX SWITCHING WIRING / PRETTY SURE IT DOESNT WORK FOR GENERAL CASES
+
+  //TODO: Remove
+  Serial.print(leftInvert); Serial.print(" "); Serial.print(rightInvert); Serial.print(" "); Serial.print(fullSpeedVal);
+  Serial.println();
+
 
   // Left motor
-  analogWrite((!leftInvert) ? MOTOR_LEFT_A : MOTOR_LEFT_B, fullSpeedVal);
+  analogWrite((!leftInvert) ? MOTOR_LEFT_A : MOTOR_LEFT_B, (int) fullSpeedVal);
   analogWrite((!leftInvert) ? MOTOR_LEFT_B : MOTOR_LEFT_A, 0);
 
   // Right motor
-  analogWrite((!rightInvert) ? MOTOR_RIGHT_A : MOTOR_RIGHT_B, fullSpeedVal);
+  analogWrite((!rightInvert) ? MOTOR_RIGHT_A : MOTOR_RIGHT_B, (int) fullSpeedVal);
   analogWrite((!rightInvert) ? MOTOR_RIGHT_B : MOTOR_RIGHT_A, 0);
+  
 }
 
 void InitMotors(){

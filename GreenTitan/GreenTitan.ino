@@ -2,10 +2,10 @@
 #include "Defines.h"
 
 // -------------------------------------------------------- STATUS INDICATORS ---------------------------------------------------------------
+
 int STATUS_BATTERY_LOW = false;
 int STATUS_BATTERY_CHARGED = false;
 int GPS_ACCURACY_STABLE = false;
-
 
 // -------------------------------------------------------- CONFIGURATION ---------------------------------------------------------------
 
@@ -37,6 +37,8 @@ bool MOTOR_LEFT_INVERT = false;
 bool MOTOR_RIGHT_INVERT = true;
 float MOTOR_OPTIMAL_VOLTAGE = 12;
 
+SemaphoreHandle_t AzimuthMutex;
+
 // -------------------------------------------------------- DEPENDENCIES ---------------------------------------------------------------
 
 //Peripherals
@@ -59,6 +61,8 @@ float MOTOR_OPTIMAL_VOLTAGE = 12;
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
 
 void InitFreeRtos(){
+  AzimuthMutex = xSemaphoreCreateMutex();
+
   //Motion task
   xTaskCreatePinnedToCore (
     MotionTask,     // Function to implement the task
@@ -215,6 +219,9 @@ void loop(){
     } else if (message == "SAVE_CONFIGURATION"){
         FileResult result = SaveConfiguration();
         BluetoothWrite(String(result));
+    } else if (message == "TEST"){
+      delay(5000);
+      MotionSetTarget(187124202, 455618564);
     }
   }
   delay(10);

@@ -25,8 +25,10 @@ void IMURead(){
   mpu.getEvent(&IMU_acc, &IMU_gyro, &IMU_temp);
 
   //Update azimuth
+  xSemaphoreTake(AzimuthMutex, portMAX_DELAY);
   IMUCurrentAzimuth -= IMUGetGyroZ() * (1.0 / SENSORS_SAMPLING_RATE);
   IMUCurrentAzimuth = NormalizeAngle(IMUCurrentAzimuth);
+  xSemaphoreGive(AzimuthMutex);
 }
 
 float IMUGetAzimuth(){

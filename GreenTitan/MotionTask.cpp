@@ -12,7 +12,9 @@ int MotionTargetLat;
 int MotionMode = WAITING;
 
 void MotionUpdateAzimuth(){
+  xSemaphoreTake(AzimuthMutex, portMAX_DELAY);
   MotionCurrentAzimuth = IMUCurrentAzimuth;
+  xSemaphoreGive(AzimuthMutex);
 }
 
 void MotionSetTarget(int tLon, int tLat){
@@ -132,6 +134,8 @@ void MainParseBluetooth(){
 }
 */
 void MotionTask(void* pvParameters){
+  String toSend = "";
+  int counter = 0;
   while (1){
     TickType_t xLastWakeTime;
     const TickType_t xPeriod = pdMS_TO_TICKS(1000 / SENSORS_SAMPLING_RATE);
@@ -141,20 +145,41 @@ void MotionTask(void* pvParameters){
     MotionUpdateAzimuth();
 
     if (MotionMode == ROTATING){
+
       float RotationAngle = ShortestRotation(MotionCurrentAzimuth, AngleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat));
+
+      if (counter % 2 == 0){//TODO: Remove
+        toSend += String(RotationAngle) + " " + String(abs(RotationAngle) / 180.0) + "\n";
+      }
+      counter++;
+
+      if (counter >= 10){
+        counter = 0;
+
+        BluetoothWrite(toSend);
+
+        toSend = "";
+      }//
       
-      if (abs(RotationAngle) < 5){
+      if (abs(RotationAngle) <= MOTION_ACCEPTED_ROTATION_TO_POINT){
         MotionMode = MOVING;
+        MotorStop();
+
+        //TODO: Remove
+        BluetoothWrite("Switched to moving.");
       }
       else {
         if (RotationAngle < 0){
-          MotorRotate(LEFT, 1.0);
+          ///MotorDriveAngle(-90, FORWARD, 1.0);
+          MotorRotate(LEFT, abs(RotationAngle) / 180.0 * MOTION_ROTATION_FACTOR);
         }
         else {
-          MotorRotate(RIGHT, 1.0);
+          MotorRotate(RIGHT, abs(RotationAngle) / 180.0 * MOTION_ROTATION_FACTOR);
+          ///MotorDriveAngle(90, FORWARD, 1.0);
         }
       }
     }
+    /*
     else if (MotionMode == MOVING){
       float PrevTargetAngle = AngleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat);
       float MowerTargetAngle = AngleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat);
@@ -173,14 +198,12 @@ void MotionTask(void* pvParameters){
       //float DistanceToTarget = sqrt(pow(MotionTargetLon - GpsGetLon(), 2) + pow(MotionTargetLat - GpsGetLat(), 2));
       
       if (DistAint < MOTION_ACCEPTED_DIST_TO_POINT || AngleDiff > 90.0){
+        MotorStop();
         MotionMode = WAITING;
-        /*
-        std::vector<int> targetPoint = AlgorithmNextPoint();
-        MotionTargetLon = targetPoint.at(0);
-        MotionTargetLat = targetPoint.at(1);
-        
-        MotionRotateToTarget();
-        */
+
+        //TODO: Remove
+        BluetoothWrite("Ended motion.");
+
       }
       else {
         float RotFactor = DistOffset / 5.0; if (RotFactor > 1){RotFactor = 1;}
@@ -192,6 +215,7 @@ void MotionTask(void* pvParameters){
         }
       }
     }
+    */
 
     vTaskDelayUntil(&xLastWakeTime, xPeriod);
   }

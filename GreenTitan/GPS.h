@@ -17,6 +17,8 @@ extern int GPS_ACCURACY_STABLE;
 
 extern float IMUCurrentAzimuth;
 
+extern SemaphoreHandle_t AzimuthMutex;
+
 void calcChecksum(unsigned char* CK);
 bool GPSRead();
 void GPSCheck();

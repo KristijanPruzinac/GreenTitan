@@ -10,6 +10,8 @@
 
 extern int MAX_DEVIATION;
 
+extern SemaphoreHandle_t AzimuthMutex;
+
 //Main
 extern void MainStop();
 
@@ -30,5 +32,8 @@ void MotionSetTarget(int tLon, int tLat);
 void MotionMoveToTarget();
 void MotionRotateToTarget();
 void MotionTask(void* pvParameters);
+
+//TODO: Remove
+extern void BluetoothWrite(String message);
 
 #endif
