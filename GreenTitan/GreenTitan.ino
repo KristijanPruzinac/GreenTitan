@@ -105,7 +105,7 @@ extern void InitRainSensor();
 
 // -------------------------------------------------------- PROGRAM START ---------------------------------------------------------------
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(SERIAL_BAUDRATE);
 }
 
 String Mode = "POWER_ON";
@@ -180,6 +180,10 @@ void loop(){
     else {
       Mode = "SETUP";
     }
+
+    //TODO: Remove
+    delay(50000);
+    MotionSetTarget(455620668, 187124632);
   }
   else if (Mode == "SETUP"){
 

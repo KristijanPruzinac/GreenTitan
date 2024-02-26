@@ -83,7 +83,7 @@ bool GPSRead() {
     //Correct azimuth
     if (!(isnan(GPS_Heading) || isnan(GPS_Dist))){
       xSemaphoreTake(AzimuthMutex, portMAX_DELAY);
-      IMUCurrentAzimuth -= ShortestRotation(GPS_Heading, IMUCurrentAzimuth) * GPS_AZIMUTH_CORRECTION_FACTOR * ( abs(GPS_Dist) / (1 + abs(GPS_Dist)) ); //Sensor fuse gps heading to correct IMU azimuth with sigmoid function
+      IMUCurrentAzimuth -= ShortestRotation(GPS_Heading, IMUCurrentAzimuth) * GPS_AZIMUTH_CORRECTION_FACTOR * ( abs(GPS_Dist / 3) / (1 + abs(GPS_Dist / 3)) ); //Sensor fuse gps heading to correct IMU azimuth with sigmoid function
       IMUCurrentAzimuth = NormalizeAngle(IMUCurrentAzimuth);
       xSemaphoreGive(AzimuthMutex);
     }
@@ -135,8 +135,8 @@ int GpsGetAcc(){
 }
 
 void InitGPS(){
-  SerialGPS.begin(19200);
-  SerialGPS.setTimeout(50);
+  SerialGPS.begin(GPS_BAUDRATE);
+  SerialGPS.setTimeout(COMMUNICATION_TIMEOUT);
 
   //Dont remove
   posllh.lon = 1;

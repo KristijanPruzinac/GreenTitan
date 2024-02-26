@@ -13,7 +13,7 @@ bool InitBluetooth() {
     return false;
   }
 
-  SerialBT.setTimeout(50);
+  SerialBT.setTimeout(COMMUNICATION_TIMEOUT);
 
   return true;
 }

@@ -85,14 +85,86 @@ void MotorRotate(bool direction, float speedFactor = 1){
   Serial.println();
 
 
-  // Left motor
-  analogWrite((!leftInvert) ? MOTOR_LEFT_A : MOTOR_LEFT_B, (int) fullSpeedVal);
-  analogWrite((!leftInvert) ? MOTOR_LEFT_B : MOTOR_LEFT_A, 0);
+  if (direction == LEFT){
+    if (!MOTOR_SIDE_INVERT){
+      if (!MOTOR_LEFT_INVERT){
+        analogWrite(MOTOR_LEFT_B, fullSpeedVal);
+        digitalWrite(MOTOR_LEFT_A, 0);
+      }
+      else {
+        digitalWrite(MOTOR_LEFT_B, 0);
+        analogWrite(MOTOR_LEFT_A, fullSpeedVal);
+      }
 
-  // Right motor
-  analogWrite((!rightInvert) ? MOTOR_RIGHT_A : MOTOR_RIGHT_B, (int) fullSpeedVal);
-  analogWrite((!rightInvert) ? MOTOR_RIGHT_B : MOTOR_RIGHT_A, 0);
-  
+      if (!MOTOR_RIGHT_INVERT){
+        analogWrite(MOTOR_RIGHT_A, fullSpeedVal);
+        digitalWrite(MOTOR_RIGHT_B, 0);
+      }
+      else {
+        digitalWrite(MOTOR_RIGHT_A, 0);
+        analogWrite(MOTOR_RIGHT_B, fullSpeedVal);
+      }
+    }
+    else {
+      if (!MOTOR_LEFT_INVERT){
+        analogWrite(MOTOR_LEFT_A, fullSpeedVal);
+        digitalWrite(MOTOR_LEFT_B, 0);
+      }
+      else {
+        digitalWrite(MOTOR_LEFT_A, 0);
+        analogWrite(MOTOR_LEFT_B, fullSpeedVal);
+      }
+
+      if (!MOTOR_RIGHT_INVERT){
+        analogWrite(MOTOR_RIGHT_B, fullSpeedVal);
+        digitalWrite(MOTOR_RIGHT_A, 0);
+      }
+      else {
+        digitalWrite(MOTOR_RIGHT_B, 0);
+        analogWrite(MOTOR_RIGHT_A, fullSpeedVal);
+      }
+    }
+  }
+  else {
+    if (!MOTOR_SIDE_INVERT){
+      if (!MOTOR_LEFT_INVERT){
+        analogWrite(MOTOR_LEFT_A, fullSpeedVal);
+        digitalWrite(MOTOR_LEFT_B, 0);
+      }
+      else {
+        digitalWrite(MOTOR_LEFT_A, 0);
+        analogWrite(MOTOR_LEFT_B, fullSpeedVal);
+      }
+
+      if (!MOTOR_RIGHT_INVERT){
+        analogWrite(MOTOR_RIGHT_B, fullSpeedVal);
+        digitalWrite(MOTOR_RIGHT_A, 0);
+      }
+      else {
+        digitalWrite(MOTOR_RIGHT_B, 0);
+        analogWrite(MOTOR_RIGHT_A, fullSpeedVal);
+      }
+    }
+    else {
+      if (!MOTOR_LEFT_INVERT){
+        analogWrite(MOTOR_LEFT_B, fullSpeedVal);
+        digitalWrite(MOTOR_LEFT_A, 0);
+      }
+      else {
+        digitalWrite(MOTOR_LEFT_B, 0);
+        analogWrite(MOTOR_LEFT_A, fullSpeedVal);
+      }
+
+      if (!MOTOR_RIGHT_INVERT){
+        analogWrite(MOTOR_RIGHT_A, fullSpeedVal);
+        digitalWrite(MOTOR_RIGHT_B, 0);
+      }
+      else {
+        digitalWrite(MOTOR_RIGHT_A, 0);
+        analogWrite(MOTOR_RIGHT_B, fullSpeedVal);
+      }
+    }
+  }
 }
 
 void InitMotors(){
