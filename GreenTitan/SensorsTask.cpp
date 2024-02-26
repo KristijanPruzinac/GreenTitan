@@ -13,6 +13,8 @@ void SensorsMowerLifted(){}
 void QueueSensorsMain(){}
 
 void SensorsTask(void* pvParameters){
+  //String toSend = "";
+  //int counter = 0;
   while (1){
     TickType_t xLastWakeTime;
     const TickType_t xPeriod = pdMS_TO_TICKS(1000 / SENSORS_SAMPLING_RATE);
@@ -27,6 +29,21 @@ void SensorsTask(void* pvParameters){
 
     GPSRead();
     GPSCheck();
+
+/*
+    if (counter % 2 == 0){
+      toSend += String(GpsGetLon()) + " " + String(GpsGetLat()) + " " + String(IMUGetAzimuth()) + "\n";
+    }
+    counter++;
+
+    if (counter >= 10){
+      counter = 0;
+
+      BluetoothWrite(toSend);
+
+      toSend = "";
+    }
+    */
 
     //TODO: Implement rain sensor
 

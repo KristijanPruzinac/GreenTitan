@@ -12,6 +12,8 @@ extern int MOWER_OVERLAP;
 extern int MAX_DEVIATION;
 extern int BASE_LON;
 extern int BASE_LAT;
+extern int BASE_EXIT_LON;
+extern int BASE_EXIT_LAT;
 
 //Gps
 extern int GpsGetLon();
@@ -29,6 +31,7 @@ extern void MotorMainOff();
 //Main
 extern void MainChargingStart();
 
+void ClearOutlines();
 void FindTerrainBounds();
 void ClearInterference();
 bool FindOutlineIntersections();
@@ -41,6 +44,8 @@ std::vector<int> AlgorithmNextPoint();
 void AlgorithmAbort(bool full_abort);
 
 void AlgorithmCaptureStart();
+void AlgorithmCaptureBasePoint();
+void AlgorithmCaptureBaseExitPoint();
 void AlgorithmCaptureNewOutline();
 void AlgorithmCaptureNewPoint();
 void AlgorithmCaptureSetNewPoint(int lon, int lat);

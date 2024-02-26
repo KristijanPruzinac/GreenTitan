@@ -112,10 +112,13 @@ FileResult InitConfiguration(){
 
 FileResult SaveConfiguration() {
     String ConfigWriteString = "";
+    ConfigWriteString += "SETUP_COMPLETED " + String(SETUP_COMPLETED) + "\n";
     ConfigWriteString += "MOWER_OVERLAP " + String(MOWER_OVERLAP) + "\n";
     ConfigWriteString += "MAX_DEVIATION " + String(MAX_DEVIATION) + "\n";
     ConfigWriteString += "BASE_LON " + String(BASE_LON) + "\n";
     ConfigWriteString += "BASE_LAT " + String(BASE_LAT) + "\n";
+    ConfigWriteString += "BASE_EXIT_LON " + String(BASE_EXIT_LON) + "\n";
+    ConfigWriteString += "BASE_EXIT_LAT " + String(BASE_EXIT_LAT) + "\n";
     ConfigWriteString += "GPS_ACC_THRESHOLD " + String(GPS_ACC_THRESHOLD) + "\n";
     ConfigWriteString += "GPS_STABILITY_CHECK_DURATION " + String(GPS_STABILITY_CHECK_DURATION) + "\n";
     ConfigWriteString += "BATTERY_LEVEL_MIN " + String(BATTERY_LEVEL_MIN) + "\n";
@@ -159,7 +162,9 @@ FileResult LoadConfiguration() {
             String variableValue = line.substring(spaceIndex + 1);
 
             // Convert variableValue to the appropriate type (int or float)
-            if (variableName == "MOWER_OVERLAP") {
+            if (variableName == "SETUP_COMPLETED") {
+                SETUP_COMPLETED = variableValue.toInt();
+            } else if (variableName == "MOWER_OVERLAP") {
                 MOWER_OVERLAP = variableValue.toInt();
             } else if (variableName == "MAX_DEVIATION") {
                 MAX_DEVIATION = variableValue.toInt();
@@ -167,6 +172,10 @@ FileResult LoadConfiguration() {
                 BASE_LON = variableValue.toInt();
             } else if (variableName == "BASE_LAT") {
                 BASE_LAT = variableValue.toInt();
+            } else if (variableName == "BASE_EXIT_LON") {
+                BASE_EXIT_LON = variableValue.toInt();
+            } else if (variableName == "BASE_EXIT_LAT") {
+                BASE_EXIT_LAT = variableValue.toInt();
             } else if (variableName == "GPS_ACC_THRESHOLD"){
                 GPS_ACC_THRESHOLD = variableValue.toInt();
             } else if (variableName == "GPS_STABILITY_CHECK_DURATION"){

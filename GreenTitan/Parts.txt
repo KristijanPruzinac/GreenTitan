@@ -1,0 +1,5 @@
+2x GW370 DC Worm Gear Motor (12V / 80RPM)
+2x Shopping cart wheel (Height must be 10cm, Diameter when rotated should be less than 13cm, top hole should be less than 1cm)
+1x C94 M8P RTK GPS (Choose correct region when buying)
+M3 Allen screw 10mm & nut, 20x (8x)
+M4 Allen screw 25mm & nut, 40x (34x)

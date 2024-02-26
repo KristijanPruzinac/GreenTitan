@@ -9,8 +9,12 @@
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
 
+extern SemaphoreHandle_t AzimuthMutex;
+
 bool InitIMU();
 void IMURead();
+
+float IMUGetAzimuth();
 
 float IMUGetAccX();
 float IMUGetAccY();

@@ -17,5 +17,9 @@ Einhell battery adapter - GNU GPL v3 - Hans - https://www.printables.com/social/
 #### SOFTWARE  
 Recieve NAV_POSLLH message - iforce2d - https://www.youtube.com/watch?v=TwhCX0c8Xe0
 
+#### LIBRARIES  
+Adafruit MPU6050 - https://github.com/adafruit/Adafruit_MPU6050
+AceSorting - https://github.com/bxparks/AceSorting
+
 # Development process
 The project is currently under development and expected to be finished in october.

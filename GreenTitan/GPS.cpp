@@ -19,9 +19,6 @@ struct NAV_POSLLH {
 
 NAV_POSLLH posllh;
 
-float GPS_Heading = 0;
-float GPS_Dist = 0;
-
 int prevLon = 0;
 int prevLat = 0;
 int prevAcc = 0;
@@ -35,6 +32,8 @@ void calcChecksum(unsigned char* CK) {
 }
 
 bool GPSRead() {
+  bool returnVal = false;
+
   static int fpos = 0;
   static unsigned char checksum[2];
   const int payloadSize = sizeof(NAV_POSLLH);
@@ -63,7 +62,8 @@ bool GPSRead() {
       else if ( fpos == (payloadSize+4) ) {
         fpos = 0;
         if ( c == checksum[1] ) {
-          return true;
+          returnVal = true;
+          break;
         }
       }
       else if ( fpos > (payloadSize+4) ) {
@@ -74,12 +74,19 @@ bool GPSRead() {
 
   //Calculate heading if changed
   if (prevLon != posllh.lon || prevLat != posllh.lat){
-    GPS_Heading = angleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
+    float GPS_Heading = 0;
+    float GPS_Dist = 0;
+
+    GPS_Heading = AngleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
     GPS_Dist = Distance(prevLon, prevLat, posllh.lon, posllh.lat);
 
     //Correct azimuth
-    IMUCurrentAzimuth += (GPS_Heading - IMUCurrentAzimuth) * GPS_AZIMUTH_CORRECTION_FACTOR * ( abs(GPS_Dist) / (1 + abs(GPS_Dist)) ); //Sensor fuse gps heading to correct IMU azimuth with sigmoid function
-    IMUCurrentAzimuth = NormalizeAngle(IMUCurrentAzimuth);
+    if (!(isnan(GPS_Heading) || isnan(GPS_Dist))){
+      xSemaphoreTake(AzimuthMutex, portMAX_DELAY);
+      IMUCurrentAzimuth -= ShortestRotation(GPS_Heading, IMUCurrentAzimuth) * GPS_AZIMUTH_CORRECTION_FACTOR * ( abs(GPS_Dist / 3) / (1 + abs(GPS_Dist / 3)) ); //Sensor fuse gps heading to correct IMU azimuth with sigmoid function
+      IMUCurrentAzimuth = NormalizeAngle(IMUCurrentAzimuth);
+      xSemaphoreGive(AzimuthMutex);
+    }
 
     prevLon = (int) posllh.lon;
     prevLat = (int) posllh.lat;
@@ -87,7 +94,7 @@ bool GPSRead() {
 
   prevAcc = (int) posllh.hAcc;
 
-  return false;
+  return returnVal;
 }
 
 unsigned long TimerGPS = -1;
@@ -95,7 +102,7 @@ bool TimerGPSActive = false;
 
 void GPSCheck(){
   int gpsAccuracy = GpsGetAcc();
-    if (gpsAccuracy <= GPS_ACC_THRESHOLD){ //Check to see if accuracy is within threshold, and if so try to check if it is stable
+    if (gpsAccuracy <= GPS_ACC_THRESHOLD && gpsAccuracy >= 0){ //Check to see if accuracy is within threshold, and if so try to check if it is stable
       if (!GPS_ACCURACY_STABLE){
         if (TimerGPSActive){
           if ((millis() - TimerGPS) / MILLIS_PER_SECOND > (unsigned long) GPS_STABILITY_CHECK_DURATION){ //If accuracy is stable for long enough, set GPS_ACCURACY_STABLE to true
@@ -128,7 +135,8 @@ int GpsGetAcc(){
 }
 
 void InitGPS(){
-  SerialGPS.begin(19200);
+  SerialGPS.begin(GPS_BAUDRATE);
+  SerialGPS.setTimeout(COMMUNICATION_TIMEOUT);
 
   //Dont remove
   posllh.lon = 1;

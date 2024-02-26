@@ -13,7 +13,7 @@ float Distance(int x1, int y1, int x2, int y2){
 }
 
 // Angle is 0 for NORTH and revolves 360 degrees clockwise
-float angleBetweenPoints(int x1, int y1, int x2, int y2) {
+float AngleBetweenPoints(int x1, int y1, int x2, int y2) {
   // Calculate the angle in radians
   float angleRad = atan2(y2 - y1, x2 - x1);
 
@@ -62,5 +62,8 @@ float ShortestRotation(float targetAngle, float currentAngle){
 
 void Error(String message){
   Serial.println("ERROR: " + message);
-  //abort(); TODO: Implement additional user feedback and uncomment
+  //TODO: Implement additional user feedback and uncomment
+  while (1){
+    delay(100);
+  }
 }
