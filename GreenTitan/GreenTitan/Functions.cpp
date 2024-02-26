@@ -1,24 +1,19 @@
-float PI = 3.1415926;
+#include "Functions.h"
 
-String[] splitStringByCharacters(String input, String separators) {
-  ArrayList<String> result = new ArrayList<String>();
-  int startIndex = 0;
+float RadDeg(float radVal){
+  return (radVal / (2 * PI)) * 360.0;
+}
 
-  for (int i = 0; i < input.length(); i++) {
-    char currentChar = input.charAt(i);
-    if (separators.indexOf(currentChar) != -1) {
-      result.add(input.substring(startIndex, i));
-      startIndex = i + 1;
-    }
-  }
+float DegRad(float degVal){
+  return (degVal / 360.0) * (2 * PI);
+}
 
-  result.add(input.substring(startIndex));
-  
-  return result.toArray(new String[result.size()]);
+float Distance(int x1, int y1, int x2, int y2){
+  return sqrt((y2-y1)*(y2-y1) + (x2-x1)*(x2-x1));
 }
 
 // Angle is 0 for NORTH and revolves 360 degrees clockwise
-float angleBetweenPoints(long x1, long y1, long x2, long y2) {
+float AngleBetweenPoints(int x1, int y1, int x2, int y2) {
   // Calculate the angle in radians
   float angleRad = atan2(y2 - y1, x2 - x1);
 
@@ -62,5 +57,13 @@ float ShortestRotation(float targetAngle, float currentAngle){
   }
   else {
     return CCW;
+  }
+}
+
+void Error(String message){
+  Serial.println("ERROR: " + message);
+  //TODO: Implement additional user feedback and uncomment
+  while (1){
+    delay(100);
   }
 }
