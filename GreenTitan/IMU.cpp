@@ -26,8 +26,11 @@ void IMURead(){
 
   //Update azimuth
   xSemaphoreTake(AzimuthMutex, portMAX_DELAY);
-  IMUCurrentAzimuth -= IMUGetGyroZ() * (1.0 / SENSORS_SAMPLING_RATE);
-  IMUCurrentAzimuth = NormalizeAngle(IMUCurrentAzimuth);
+  float AddValue = IMUGetGyroZ() * (1.0 / SENSORS_SAMPLING_RATE);
+  if (!isnan(AddValue)){
+    IMUCurrentAzimuth -= AddValue;
+    IMUCurrentAzimuth = NormalizeAngle(IMUCurrentAzimuth);
+  }
   xSemaphoreGive(AzimuthMutex);
 }
 

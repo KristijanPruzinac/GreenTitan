@@ -173,6 +173,7 @@ void loop(){
     else {
       Mode = "SETUP";
     }
+
   }
   else if (Mode == "SETUP"){
 
@@ -186,6 +187,8 @@ void loop(){
     else if (message == "CAPTURE_START") {
         AlgorithmCaptureStart();
         BluetoothWrite("Executed!");
+    } else if (message == "GPS_POS"){
+        BluetoothWrite(String(GpsGetLon()) + " " + String(GpsGetLat()));
     } else if (message == "CAPTURE_BASE_POINT") {
         AlgorithmCaptureBasePoint();
         BluetoothWrite("Executed!");

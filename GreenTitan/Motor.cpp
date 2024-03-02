@@ -3,6 +3,8 @@
 void MotorDriveAngle(float angle, bool forward, float speedFactor = 1){
   // SpeedFactor
   speedFactor = constrain(speedFactor, 0, 1);
+  if (speedFactor < MOTOR_MIN_SPEED)
+    speedFactor = MOTOR_MIN_SPEED;
 
   // Angle measured from North clockwise
   angle = constrain(angle, MOTOR_ANGLE_MIN, MOTOR_ANGLE_MAX);
@@ -53,6 +55,8 @@ void MotorDriveAngle(float angle, bool forward, float speedFactor = 1){
 void MotorRotate(bool direction, float speedFactor = 1){
   //SpeedFactor
   speedFactor = constrain(speedFactor, 0, 1);
+  if (speedFactor < MOTOR_MIN_SPEED)
+    speedFactor = MOTOR_MIN_SPEED;
 
   //Calculate optimal voltage based on battery
   float fullSpeedVal = (MOTOR_OPTIMAL_VOLTAGE / BatteryCurrentVoltage());
@@ -81,8 +85,8 @@ void MotorRotate(bool direction, float speedFactor = 1){
   //TODO: FIX SWITCHING WIRING / PRETTY SURE IT DOESNT WORK FOR GENERAL CASES
 
   //TODO: Remove
-  Serial.print(leftInvert); Serial.print(" "); Serial.print(rightInvert); Serial.print(" "); Serial.print(fullSpeedVal);
-  Serial.println();
+  //Serial.print(leftInvert); Serial.print(" "); Serial.print(rightInvert); Serial.print(" "); Serial.print(fullSpeedVal);
+  //Serial.println();
 
 
   if (direction == LEFT){
@@ -179,6 +183,8 @@ void InitMotors(){
   digitalWrite(MOTOR_RIGHT_A, LOW);
   digitalWrite(MOTOR_RIGHT_B, LOW);
   digitalWrite(MOTOR_MAIN, LOW);
+
+  analogWriteResolution(DAC_MAX_BITS);
 }
 
 void MotorStop(){

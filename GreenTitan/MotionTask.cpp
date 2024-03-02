@@ -9,6 +9,8 @@ int MotionPrevLat;
 int MotionTargetLon;
 int MotionTargetLat;
 
+float MotionPrevRotationAngle = 999;
+
 int MotionMode = WAITING;
 
 void MotionUpdateAzimuth(){
@@ -24,6 +26,7 @@ void MotionSetTarget(int tLon, int tLat){
   MotionTargetLon = tLon;
   MotionTargetLat = tLat;
 
+  MotionPrevRotationAngle = 999;
   MotionMode = ROTATING;
 }
 
@@ -161,8 +164,13 @@ void MotionTask(void* pvParameters){
         toSend = "";
       }//
       
-      if (abs(RotationAngle) <= MOTION_ACCEPTED_ROTATION_TO_POINT){
+      if (abs(RotationAngle) <= MOTION_ACCEPTED_ROTATION_TO_POINT){ //|| abs(RotationAngle) > MotionPrevRotationAngle + MOTION_ACCEPTED_ROTATION_TO_POINT){
         MotionMode = MOVING;
+        //MotorStop();
+
+        //TODO: Uncomment top
+        MotorDriveAngle(0, FORWARD, 1.0);
+        delay(2000);
         MotorStop();
 
         //TODO: Remove
@@ -170,16 +178,16 @@ void MotionTask(void* pvParameters){
       }
       else {
         if (RotationAngle < 0){
-          ///MotorDriveAngle(-90, FORWARD, 1.0);
-          MotorRotate(LEFT, abs(RotationAngle) / 180.0 * MOTION_ROTATION_FACTOR);
+          MotorRotate(LEFT, 1.0);
         }
         else {
-          MotorRotate(RIGHT, abs(RotationAngle) / 180.0 * MOTION_ROTATION_FACTOR);
-          ///MotorDriveAngle(90, FORWARD, 1.0);
+          MotorRotate(RIGHT, 1.0);
         }
       }
+
+      if (abs(RotationAngle) < MotionPrevRotationAngle)
+        MotionPrevRotationAngle = abs(RotationAngle);
     }
-    /*
     else if (MotionMode == MOVING){
       float PrevTargetAngle = AngleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat);
       float MowerTargetAngle = AngleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat);
@@ -215,7 +223,6 @@ void MotionTask(void* pvParameters){
         }
       }
     }
-    */
 
     vTaskDelayUntil(&xLastWakeTime, xPeriod);
   }
