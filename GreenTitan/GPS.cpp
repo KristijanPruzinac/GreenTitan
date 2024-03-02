@@ -102,7 +102,7 @@ bool TimerGPSActive = false;
 
 void GPSCheck(){
   int gpsAccuracy = GpsGetAcc();
-    if (gpsAccuracy <= GPS_ACC_THRESHOLD && gpsAccuracy >= 0){ //Check to see if accuracy is within threshold, and if so try to check if it is stable
+    if (gpsAccuracy <= GPS_ACC_THRESHOLD && gpsAccuracy > 0){ //Check to see if accuracy is within threshold, and if so try to check if it is stable
       if (!GPS_ACCURACY_STABLE){
         if (TimerGPSActive){
           if ((millis() - TimerGPS) / MILLIS_PER_SECOND > (unsigned long) GPS_STABILITY_CHECK_DURATION){ //If accuracy is stable for long enough, set GPS_ACCURACY_STABLE to true
