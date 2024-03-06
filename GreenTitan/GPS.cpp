@@ -19,9 +19,9 @@ struct NAV_POSLLH {
 
 NAV_POSLLH posllh;
 
-int prevLon = 0;
-int prevLat = 0;
-int prevAcc = 0;
+int prevLon = 1;
+int prevLat = 1;
+int prevAcc = -2;
 
 void calcChecksum(unsigned char* CK) {
   memset(CK, 0, 2);
@@ -80,13 +80,17 @@ bool GPSRead() {
     GPS_Heading = AngleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
     GPS_Dist = Distance(prevLon, prevLat, posllh.lon, posllh.lat);
 
+/* TODO: UNcomment, used for testing*/
     //Correct azimuth
     if (!(isnan(GPS_Heading) || isnan(GPS_Dist))){
       xSemaphoreTake(AzimuthMutex, portMAX_DELAY);
+      /*
       IMUCurrentAzimuth -= ShortestRotation(GPS_Heading, IMUCurrentAzimuth) * GPS_AZIMUTH_CORRECTION_FACTOR * ( abs(GPS_Dist / 3) / (1 + abs(GPS_Dist / 3)) ); //Sensor fuse gps heading to correct IMU azimuth with sigmoid function
       IMUCurrentAzimuth = NormalizeAngle(IMUCurrentAzimuth);
+      */
       xSemaphoreGive(AzimuthMutex);
     }
+    
 
     prevLon = (int) posllh.lon;
     prevLat = (int) posllh.lat;
@@ -141,4 +145,5 @@ void InitGPS(){
   //Dont remove
   posllh.lon = 1;
   posllh.lat = 1;
+  prevAcc = -1;
 }

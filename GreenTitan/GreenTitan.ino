@@ -29,6 +29,12 @@ int BASE_EXIT_LAT = 3376391;
 int GPS_ACC_THRESHOLD = 18;
 int GPS_STABILITY_CHECK_DURATION = 300; //5 minutes
 
+//TODO: ADD TO CONFIGURATION
+float MagOffsetAngle = 213.15;
+float MagDeclinationAngle = 5;
+bool InvertCompassAzimuth = true;
+// ---
+
 float BATTERY_LEVEL_MIN = 16;
 float BATTERY_LEVEL_MAX = 18;
 
@@ -188,7 +194,7 @@ void loop(){
         AlgorithmCaptureStart();
         BluetoothWrite("Executed!");
     } else if (message == "GPS_POS"){
-        BluetoothWrite(String(GpsGetLon()) + " " + String(GpsGetLat()));
+        BluetoothWrite(String(GpsGetLon()) + " " + String(GpsGetLat()) + " " + String((int) IMUGetAzimuth()));
     } else if (message == "CAPTURE_BASE_POINT") {
         AlgorithmCaptureBasePoint();
         BluetoothWrite("Executed!");
@@ -215,6 +221,17 @@ void loop(){
     } else if (message == "SAVE_CONFIGURATION"){
         FileResult result = SaveConfiguration();
         BluetoothWrite(String(result));
+    } else if (message == "TEST"){
+      /*
+      MotorMainOn();
+      delay(10000);
+      MotorMainOff();
+      */
+      
+      
+      delay(1000);
+      MotionSetTarget(GpsGetLon(), GpsGetLat() + 200);
+      
     }
   }
   delay(10);

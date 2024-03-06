@@ -5,17 +5,22 @@
 #include "Defines.h"
 #include "Functions.h"
 
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
 #include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_HMC5883_U.h>
 
 extern SemaphoreHandle_t AzimuthMutex;
+
+extern float MagOffsetAngle;
+extern float MagDeclinationAngle;
+extern bool InvertCompassAzimuth;
 
 bool InitIMU();
 void IMURead();
 
 float IMUGetAzimuth();
 
+/*
 float IMUGetAccX();
 float IMUGetAccY();
 float IMUGetAccZ();
@@ -25,5 +30,6 @@ float IMUGetGyroY();
 float IMUGetGyroZ();
 
 float IMUGetTemp();
+*/
 
 #endif

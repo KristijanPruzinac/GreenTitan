@@ -27,7 +27,8 @@ void MotionSetTarget(int tLon, int tLat){
   MotionTargetLat = tLat;
 
   MotionPrevRotationAngle = 999;
-  MotionMode = ROTATING;
+  //MotionMode = ROTATING; TODO: Uncomment
+  MotionMode = MOVING;
 }
 
 /*
@@ -169,9 +170,11 @@ void MotionTask(void* pvParameters){
         //MotorStop();
 
         //TODO: Uncomment top
+        /*
         MotorDriveAngle(0, FORWARD, 1.0);
         delay(2000);
         MotorStop();
+        */
 
         //TODO: Remove
         BluetoothWrite("Switched to moving.");
@@ -195,13 +198,19 @@ void MotionTask(void* pvParameters){
       
       float MowerTargetDist = sqrt(pow(GpsGetLon() - MotionTargetLon, 2) + pow(GpsGetLat() - MotionTargetLat, 2));
       
-      float DistAint = MowerTargetDist * cos(radians(abs(AngleDiff)));
-      float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff)));
+      float DistAint = MowerTargetDist * cos(radians(abs(AngleDiff))); //Distance left to target
+      float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff))); //Distance from expected line to target
       
       //STRAYED FROM PATH
-      if (DistOffset > MAX_DEVIATION){MotorStop(); Error("Mower strayed from path!");}
+      if (DistOffset > MAX_DEVIATION){
+        MotorStop();
+        //Error("Mower strayed from path!");
+        
+        //TODO: Remove
+        BluetoothWrite("Mower strayed from path!");
+      }
       
-      float RotationAngle = ShortestRotation(MotionCurrentAzimuth, MowerTargetAngle);
+      float RotationAngle = ShortestRotation(MowerTargetAngle, MotionCurrentAzimuth);
       
       //float DistanceToTarget = sqrt(pow(MotionTargetLon - GpsGetLon(), 2) + pow(MotionTargetLat - GpsGetLat(), 2));
       
@@ -214,6 +223,7 @@ void MotionTask(void* pvParameters){
 
       }
       else {
+        /*
         float RotFactor = DistOffset / 5.0; if (RotFactor > 1){RotFactor = 1;}
         if (RotationAngle < 0){
           MotorDriveAngle((-90)*(1 - RotFactor * 0.7), true, 1.0);
@@ -221,6 +231,8 @@ void MotionTask(void* pvParameters){
         else {
           MotorDriveAngle((90)*(1 - RotFactor * 0.7), true, 1.0);
         }
+        */
+        MotorDriveAngle(RotationAngle, FORWARD, 1.0);
       }
     }
 
