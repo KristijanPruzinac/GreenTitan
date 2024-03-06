@@ -33,6 +33,9 @@ int GPS_STABILITY_CHECK_DURATION = 300; //5 minutes
 float MagOffsetAngle = 213.15;
 float MagDeclinationAngle = 5;
 bool InvertCompassAzimuth = true;
+
+float MagCalibrationX = -7.955;
+float MagCalibrationY = -12.64;
 // ---
 
 float BATTERY_LEVEL_MIN = 16;
@@ -222,16 +225,14 @@ void loop(){
         FileResult result = SaveConfiguration();
         BluetoothWrite(String(result));
     } else if (message == "TEST"){
-      /*
       MotorMainOn();
       delay(10000);
       MotorMainOff();
-      */
       
-      
+      /*
       delay(1000);
       MotionSetTarget(GpsGetLon(), GpsGetLat() + 200);
-      
+      */
     }
   }
   delay(10);

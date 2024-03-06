@@ -30,8 +30,6 @@ void SensorsTask(void* pvParameters){
     GPSRead();
     GPSCheck();
 
-    Serial.println(IMUGetAzimuth());
-
 /*
     if (counter % 2 == 0){
       toSend += String(GpsGetLon()) + " " + String(GpsGetLat()) + " " + String(IMUGetAzimuth()) + "\n";

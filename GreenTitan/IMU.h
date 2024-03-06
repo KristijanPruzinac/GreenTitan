@@ -15,6 +15,9 @@ extern float MagOffsetAngle;
 extern float MagDeclinationAngle;
 extern bool InvertCompassAzimuth;
 
+extern float MagCalibrationX;
+extern float MagCalibrationY;
+
 bool InitIMU();
 void IMURead();
 

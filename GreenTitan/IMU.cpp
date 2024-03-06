@@ -22,7 +22,10 @@ void IMURead(){
  
   // Hold the module so that Z is pointing 'up' and you can measure the heading with x&y
   // Calculate heading when the magnetometer is level, then correct for signs of axis.
-  float heading = atan2(event.magnetic.y, event.magnetic.x);
+  float heading = atan2(event.magnetic.y - MagCalibrationY, event.magnetic.x - MagCalibrationX);
+
+  //TODO: Remove
+  Serial.println(String(event.magnetic.x - MagCalibrationX) + " " + String(event.magnetic.y - MagCalibrationY));
   
   // Once you have your heading, you must then add your 'Declination Angle', which is the 'Error' of the magnetic field in your location.
   // Find yours here: http://www.magnetic-declination.com/
