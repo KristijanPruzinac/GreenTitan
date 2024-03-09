@@ -5,12 +5,18 @@
 #include "Defines.h"
 #include "Functions.h"
 
+#include <PID_v1.h>
 #include <vector>
 #include <math.h>
 
 extern int MAX_DEVIATION;
 
+extern double PID_Kp;
+extern double PID_Ki;
+extern double PID_Kd;
+
 extern SemaphoreHandle_t AzimuthMutex;
+extern SemaphoreHandle_t PID_Mutex;
 
 //Main
 extern void MainStop();
@@ -27,6 +33,9 @@ extern void MotorStop();
 //IMU
 extern float IMUCurrentAzimuth;
 
+void InitializeMotionPID();
+void MotionUpdatePIDParameters(double Kp, double Ki, double Kd);
+void MotionSetMode(int mode);
 void MotionUpdateAzimuth();
 void MotionSetTarget(int tLon, int tLat);
 void MotionMoveToTarget();
