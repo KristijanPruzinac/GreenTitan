@@ -14,7 +14,7 @@ float TurnAmountRight = 0;
 boolean MotorMowing = false;
 
 void setup(){
-  size(800, 800);
+  size(1440, 810);
   frameRate(60);
   
   translateYVal = height * 6 / 7;
@@ -190,4 +190,8 @@ void draw(){
   text(algorithmCurrentPoint, width - 100, height - 75);
   text(algorithmTarget, width - 100, height - 50);
   text(algorithmMode, width - 100, height - 25);
+  
+  if (frameCount == 0){
+    delay(5000);
+  }
 }

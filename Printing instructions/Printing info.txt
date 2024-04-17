@@ -1,3 +1,5 @@
+Used Ultimaker Cura 5.4.0 slicer
+
 -----------------------------------------------------
 REQUIRED
 
@@ -19,10 +21,16 @@ PART SETTINGS
 Double battery adapter (Einhell) - Weight 24g, Printing time 1:30 | Infill 30%
 C94 M8P Case - Weight 20g, Printing time 0:47 | Infill 20%
 
-GENERAL SETTINGS: Infill 10% | Enable supports, Support placement Everywhere, Support structure Normal, Support inteface full, Support Branch Distance 4mm, Support density 10%
+GENERAL SETTINGS: Infill 10% | Enable supports, Support placement Everywhere, Support structure Normal, Enable Support inteface False, Support density 10%, SUpport Z distance 0.3, Support XY distance 1.2
 
 FRAME Front bumper - Weight 135g, Printing time 6:53
-FRAME Side - Printing time 18:49
+Support placement: Touching buildplate
+Minimum support area: 500mm2
+
+FRAME Side - Weight 360g, Printing time 18:49
+Support placement: Everywhere
+Minimum support area: 100mm2
+
 FRAME Back - 353g, Printing time 20:28
 
 Adjust minimum support area so supports are generated properly, but small holes aren't filled with supports (It is a pain to remove)

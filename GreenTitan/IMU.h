@@ -5,16 +5,20 @@
 #include "Defines.h"
 #include "Functions.h"
 
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
 #include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_MPU6050.h>
 
-extern SemaphoreHandle_t AzimuthMutex;
+extern SemaphoreHandle_t IMUMutex;
+
+extern bool IMU_INVERT;
 
 bool InitIMU();
+void IMUCalibrate();
 void IMURead();
 
-float IMUGetAzimuth();
+//TODO: REMOVE
+extern void BluetoothWrite(String message);
 
 float IMUGetAccX();
 float IMUGetAccY();
