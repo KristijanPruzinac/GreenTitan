@@ -7,23 +7,19 @@
 
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
-#include <Adafruit_HMC5883_U.h>
+#include <Adafruit_MPU6050.h>
 
-extern SemaphoreHandle_t AzimuthMutex;
+extern SemaphoreHandle_t IMUMutex;
 
-extern float MagOffsetAngle;
-extern float MagDeclinationAngle;
-extern bool InvertCompassAzimuth;
-
-extern float MagCalibrationX;
-extern float MagCalibrationY;
+extern bool IMU_INVERT;
 
 bool InitIMU();
+void IMUCalibrate();
 void IMURead();
 
-float IMUGetAzimuth();
+//TODO: REMOVE
+extern void BluetoothWrite(String message);
 
-/*
 float IMUGetAccX();
 float IMUGetAccY();
 float IMUGetAccZ();
@@ -33,6 +29,5 @@ float IMUGetGyroY();
 float IMUGetGyroZ();
 
 float IMUGetTemp();
-*/
 
 #endif

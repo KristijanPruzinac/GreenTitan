@@ -1,65 +1,93 @@
 #include "IMU.h"
 
-float IMUCurrentAzimuth;
+float IMUCurrentAzimuth = 0;
+
+//Globals
+bool imuFirstMeasurement = true;
+
+float IMURotSpeed = 0;
+float IMURotAcc = 0;
+
+float IMURotPrevSpeed = 0;
+float IMURotPrevAcc = 0;
+
+//Calibration
+float IMUGyroXOffset = 0;
+float IMUGyroYOffset = 0;
+float IMUGyroZOffset = 0;
+
+//Data
+sensors_event_t IMU_acc, IMU_gyro, IMU_temp;
 
 /* Assign a unique ID to this sensor at the same time */
-Adafruit_HMC5883_Unified mag = Adafruit_HMC5883_Unified(12345);
+Adafruit_MPU6050 mpu;
 
 bool InitIMU(){
-  if (!mag.begin()) {
+  if (!mpu.begin()) {
     return false;
   }
 
-  IMUCurrentAzimuth = 0;
-
+  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
   return true;
 }
 
-void IMURead(){
-  /* Get a new sensor event */ 
-  sensors_event_t event; 
-  mag.getEvent(&event);
- 
-  // Hold the module so that Z is pointing 'up' and you can measure the heading with x&y
-  // Calculate heading when the magnetometer is level, then correct for signs of axis.
-  float heading = atan2(event.magnetic.y - MagCalibrationY, event.magnetic.x - MagCalibrationX);
+void IMUCalibrate(){
+  //Init temp values
+  float ogx = 0;
+  float ogy = 0;
+  float ogz = 0;
 
-  //TODO: Remove
-  //Serial.println(String(event.magnetic.x - MagCalibrationX) + " " + String(event.magnetic.y - MagCalibrationY));
-  
-  // Once you have your heading, you must then add your 'Declination Angle', which is the 'Error' of the magnetic field in your location.
-  // Find yours here: http://www.magnetic-declination.com/
-  // Mine is: -13* 2' W, which is ~13 Degrees, or (which we need) 0.22 radians
-  // If you cannot find your Declination, comment out these two lines, your compass will be slightly off.
-  heading += DegRad(MagDeclinationAngle);
-  
-  // Correct for when signs are reversed.
-  if(heading < 0)
-    heading += 2*PI;
-    
-  // Check for wrap due to addition of declination.
-  if(heading > 2*PI)
-    heading -= 2*PI;
-   
-  // Convert radians to degrees for readability.
-  float headingDegrees = NormalizeAngle(RadDeg(heading)); 
+  //Read calibration data for 2s
+  int sample_size = 40;
+  int sample_delay = 50;
+  for (int i = 0; i < sample_size; i++){
+    mpu.getEvent(&IMU_acc, &IMU_gyro, &IMU_temp);
 
-  //Invert if compass is upside down
-  if (InvertCompassAzimuth){
-    headingDegrees = 360.0 - headingDegrees;
+    ogx += IMU_gyro.gyro.x;
+    ogy += IMU_gyro.gyro.y;
+    ogz += IMU_gyro.gyro.z;
+
+    delay(sample_delay);
   }
 
-  //Update azimuth
-  xSemaphoreTake(AzimuthMutex, portMAX_DELAY);
-  IMUCurrentAzimuth = NormalizeAngle(headingDegrees - MagOffsetAngle);
-  xSemaphoreGive(AzimuthMutex);
+  //Divide to get average value
+  IMUGyroXOffset = ogx / sample_size;
+  IMUGyroYOffset = ogy / sample_size;
+  IMUGyroZOffset = ogz / sample_size;
+}
+
+void IMURead(){
+  mpu.getEvent(&IMU_acc, &IMU_gyro, &IMU_temp);
+
+  xSemaphoreTake(IMUMutex, portMAX_DELAY);
+  //Calculate angular speed and acceleration
+  float newRotSpeed = IMUGetGyroZ();
+  if (imuFirstMeasurement){
+    imuFirstMeasurement = false;
+  }
+  else {
+    IMURotPrevAcc = IMURotAcc;
+    IMURotAcc = (newRotSpeed - IMURotSpeed) / (1.0 / SENSORS_SAMPLING_RATE); //Acceleration is derivation of speed with respect to time
+  }
+  IMURotPrevSpeed = IMURotSpeed;
+  IMURotSpeed = newRotSpeed;
+  xSemaphoreGive(IMUMutex);
+
+  //Printout TODO: REMOVE
+  /*
+  Serial.print("IMURotSpeed: ");
+  Serial.print(IMURotSpeed);
+  Serial.print(", IMURotAcc: ");
+  */
+  //Serial.println(IMURotAcc);
 }
 
 float IMUGetAzimuth(){
   return IMUCurrentAzimuth;
 }
 
-/*
 //Accelerometer
 float IMUGetAccX(){
   return IMU_acc.acceleration.x;
@@ -75,19 +103,23 @@ float IMUGetAccZ(){
 
 //Gyro
 float IMUGetGyroX(){
-  return RadDeg(IMU_gyro.gyro.x);
+  return RadDeg(IMU_gyro.gyro.x - IMUGyroXOffset);
 }
 
 float IMUGetGyroY(){
-  return RadDeg(IMU_gyro.gyro.y);
+  return RadDeg(IMU_gyro.gyro.y - IMUGyroYOffset);
 }
 
 float IMUGetGyroZ(){
-  return RadDeg(IMU_gyro.gyro.z);
+  if (IMU_INVERT){
+    return -RadDeg(IMU_gyro.gyro.z - IMUGyroZOffset);
+  }
+  else {
+    return RadDeg(IMU_gyro.gyro.z - IMUGyroZOffset);
+  }
 }
 
 //Temp
 float IMUGetTemp(){
   return IMU_temp.temperature;
 }
-*/

@@ -1,7 +1,10 @@
 #include "MotionTask.h"
 
-float MotionCurrentAzimuth = 0;
-float MotionTargetAzimuth;
+float MowerRotAngle = 0;
+float MowerRotSpeed = 0;
+float MowerRotAcc = 0;
+
+float MowerHeading = 0;
 
 int MotionPrevLon;
 int MotionPrevLat;
@@ -9,43 +12,28 @@ int MotionPrevLat;
 int MotionTargetLon;
 int MotionTargetLat;
 
-//PID variables
-double PID_Setpoint = 0, PID_Input = 0, PID_Output = 0;
-PID MotionPID(&PID_Input, &PID_Output, &PID_Setpoint, PID_Kp, PID_Ki, PID_Kd, DIRECT, REVERSE);
-
-float MotionPrevRotationAngle = 999;
-
 int MotionMode = WAITING;
 
-void InitializeMotionPID() {
-  MotionPID.SetTunings(PID_Kp, PID_Ki, PID_Kd);
-  MotionPID.SetSampleTime(MILLIS_PER_SECOND / GPS_SAMPLING_RATE); //TODO: Change if using compass for PID
-  MotionPID.SetOutputLimits(-90, 90);
-}
-
-void MotionUpdatePIDParameters(double Kp, double Ki, double Kd){
-  xSemaphoreTake(PID_Mutex, portMAX_DELAY);
-  PID_Kp = Kp;
-  PID_Ki = Ki;
-  PID_Kd = Kd;
-  MotionPID.SetTunings(PID_Kp, PID_Ki, PID_Kd);
-  xSemaphoreGive(PID_Mutex);
-}
-
 void MotionSetMode(int mode){
-  //TODO: Maybe add for rotating as well
-  if (mode == MOVING)
-    MotionPID.SetMode(AUTOMATIC);
-  if (mode == WAITING)
-    MotionPID.SetMode(MANUAL);
-
+  if (mode == WAITING){
+    MotorStop();
+  }
   MotionMode = mode;
 }
 
 void MotionUpdateAzimuth(){
-  xSemaphoreTake(AzimuthMutex, portMAX_DELAY);
-  MotionCurrentAzimuth = IMUCurrentAzimuth;
-  xSemaphoreGive(AzimuthMutex);
+  //Grab IMU data and average over 2 samples
+  xSemaphoreTake(IMUMutex, portMAX_DELAY);
+  MowerRotSpeed = (IMURotPrevSpeed + IMURotSpeed) / 2;
+  MowerRotAcc =(IMURotPrevAcc +  IMURotAcc) / 2;
+  xSemaphoreGive(IMUMutex);
+
+  //Grab GPS data
+  xSemaphoreTake(GPSMutex, portMAX_DELAY);
+  MowerHeading = GPS_Heading;
+  xSemaphoreGive(GPSMutex);
+
+  //Serial.println(MowerRotSpeed);
 }
 
 void MotionSetTarget(int tLon, int tLat){
@@ -55,12 +43,9 @@ void MotionSetTarget(int tLon, int tLat){
   MotionTargetLon = tLon;
   MotionTargetLat = tLat;
 
-  //TODO: REMOVE
-  delay(5000);
-
-  MotionPrevRotationAngle = 999;
   //MotionMode = ROTATING; TODO: Uncomment
   MotionSetMode(MOVING);
+  //MotionSetMode(TEST);
 }
 
 /*
@@ -169,46 +154,35 @@ void MainParseBluetooth(){
   return;
 }
 */
-void MotionTask(void* pvParameters){
-  InitializeMotionPID();
 
+int angleTesting = 0;
+float currentMotVal = 0;
+
+void MotionTask(void* pvParameters){
   String toSend = "";
   int counter = 0;
   while (1){
     TickType_t xLastWakeTime;
-    const TickType_t xPeriod = pdMS_TO_TICKS(MILLIS_PER_SECOND / SENSORS_SAMPLING_RATE);
+    const TickType_t xPeriod = pdMS_TO_TICKS(MILLIS_PER_SECOND / GPS_SAMPLING_RATE);
 
     xLastWakeTime = xTaskGetTickCount();
 
     MotionUpdateAzimuth();
-
+/*
     if (MotionMode == ROTATING){
 
       float RotationAngle = ShortestRotation(MotionCurrentAzimuth, AngleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat));
-
-      if (counter % 2 == 0){//TODO: Remove
-        toSend += String(RotationAngle) + " " + String(abs(RotationAngle) / 180.0) + "\n";
-      }
-      counter++;
-
-      if (counter >= 10){
-        counter = 0;
-
-        BluetoothWrite(toSend);
-
-        toSend = "";
-      }//
       
       if (abs(RotationAngle) <= MOTION_ACCEPTED_ROTATION_TO_POINT){ //|| abs(RotationAngle) > MotionPrevRotationAngle + MOTION_ACCEPTED_ROTATION_TO_POINT){
         MotionSetMode(MOVING);
         //MotorStop();
 
         //TODO: Uncomment top
-        /*
-        MotorDriveAngle(0, FORWARD, 1.0);
-        delay(2000);
-        MotorStop();
-        */
+        
+        //MotorDriveAngle(0, FORWARD, 1.0);
+        //delay(2000);
+        //MotorStop();
+        
 
         //TODO: Remove
         BluetoothWrite("Switched to moving.");
@@ -225,7 +199,7 @@ void MotionTask(void* pvParameters){
       if (abs(RotationAngle) < MotionPrevRotationAngle)
         MotionPrevRotationAngle = abs(RotationAngle);
     }
-    else if (MotionMode == MOVING){
+    else */if (MotionMode == MOVING){
       float PrevTargetAngle = AngleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat);
       float MowerTargetAngle = AngleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat);
       float AngleDiff = ShortestRotation(PrevTargetAngle, MowerTargetAngle);
@@ -233,33 +207,97 @@ void MotionTask(void* pvParameters){
       float MowerTargetDist = sqrt(pow(GpsGetLon() - MotionTargetLon, 2) + pow(GpsGetLat() - MotionTargetLat, 2));
       
       float DistAint = MowerTargetDist * cos(radians(abs(AngleDiff))); //Distance left to target
-      float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff))); //Distance from expected line to target
+      float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff))); //Distance from expected line to 
+
+
+/*
+      float SlopeFactor = 0.15;
+      float MaxSlopeAngle = 20.0;
+      */
+      
+      /*
+      float CorrectionAngle = NormalizeAngle(PrevTargetAngle + (AngleDiff / fabs(AngleDiff)) * ( (DistOffset * SlopeFactor) / (1 + fabs(DistOffset * SlopeFactor)) ) * MaxSlopeAngle);
+      if (DistOffset <= 4){
+        CorrectionAngle = PrevTargetAngle;
+      }
+      */
+      /*
+      float CorrectionAngleSlope = pow(1.2, DistOffset) + 0.5 * DistOffset - 1.0;
+      */
+      
+      /*
+      float CorrectionAngleSlope = DistOffset * 1.4;
+      if (isnan(CorrectionAngleSlope) || isnan(AngleDiff) || isnan(DistOffset)){
+        CorrectionAngleSlope = 0;
+      }
+      */
+      
+      
+      /*
+      float CorrectionAngleSlope;
+      if (DistOffset <= 2.5){
+        CorrectionAngleSlope = 0;
+      }
+      else {
+        CorrectionAngleSlope = 15;
+      }
+      */
+
+/*
+      if (CorrectionAngleSlope > MaxSlopeAngle){
+        CorrectionAngleSlope = MaxSlopeAngle;
+      }
+      else if (CorrectionAngleSlope < 0){
+        CorrectionAngleSlope = 0;
+      }
+      */
+      /*
+      float CorrectionAngle = NormalizeAngle(PrevTargetAngle + (AngleDiff / fabs(AngleDiff)) * CorrectionAngleSlope);
+
+      float CurrentGpsCorrectionAngle = ShortestRotation(MowerHeading, CorrectionAngle);
+      */
+
+      //Update GPS azimuth
+      //IMUCurrentAzimuth = NormalizeAngle(IMUCurrentAzimuth + ShortestRotation(IMUCurrentAzimuth, MowerHeading) * );
       
       //STRAYED FROM PATH
       if (DistOffset > MAX_DEVIATION){
-        MotorStop();
+        //MotorStop();
         //Error("Mower strayed from path!");
         
         //TODO: Remove
-        BluetoothWrite("Mower strayed from path!");
+        //BluetoothWrite("Mower strayed from path!");
       }
       
-      float RotationAngle = ShortestRotation(MowerTargetAngle, MotionCurrentAzimuth);
+      //float RotationAngle = ShortestRotation(MowerTargetAngle, MotionCurrentAzimuth);
+      //PID 0.8 0 1 Overall ok, need stability or eliminate sse
 
       //Update PID with DIST FROM LINE
       
+      /*
       if (AngleDiff < 0)
         PID_Input = -DistOffset;
       else
          PID_Input = DistOffset;
-      
-
-      //Update PID with ANGLE TO TARGET
-      /*
-      PID_Input = RotationAngle;
       */
 
-      MotionPID.Compute();
+      if (counter % 2 == 0){//TODO: Remove
+        toSend += String(DistOffset * (AngleDiff / fabs(AngleDiff))) + "\n";
+      }
+      counter++;
+
+      if (counter >= 5){
+        counter = 0;
+
+        BluetoothWrite(toSend);
+
+        toSend = "";
+      }//
+
+      //Update PID with ANGLE TO TARGET from GPS
+      //PID_Input = CurrentGpsCorrectionAngle;
+
+      //MotionPID.Compute();
       
       //float DistanceToTarget = sqrt(pow(MotionTargetLon - GpsGetLon(), 2) + pow(MotionTargetLat - GpsGetLat(), 2));
       
@@ -281,8 +319,25 @@ void MotionTask(void* pvParameters){
           MotorDriveAngle((90)*(1 - RotFactor * 0.7), true, 1.0);
         }
         */
-        MotorDriveAngle(-1 * PID_Output, FORWARD, 1.0); //Inverted direction
+        //MotorDriveAngle(-CurrentGpsCorrectionAngle * 0.7, FORWARD, 1.0); //Inverted direction
+
+        //MotorDriveAngle(0 - (MowerRotAcc / MOTION_ACC_FACTOR) * 90.0, FORWARD, 1.0);
+        
+        /*
+        float TargetRotSpeed = -AngleDiff;
+        currentMotVal += (TargetRotSpeed - MowerRotSpeed) * MOTION_ACC_FACTOR;
+        currentMotVal = constrain(currentMotVal, -90, 90);
+        MotorDriveAngle(currentMotVal, FORWARD, 1.0);
+        */
       }
+    }
+    else if (MotionMode == TEST){
+      MotorDriveAngle(0, FORWARD, 1.0);
+      delay(5000);
+      MotorRotate(LEFT, 1.0);
+      delay(800);
+      MotorDriveAngle(0, FORWARD, 1.0);
+      delay(5000);
     }
 
     vTaskDelayUntil(&xLastWakeTime, xPeriod);

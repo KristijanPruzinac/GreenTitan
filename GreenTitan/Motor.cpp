@@ -17,8 +17,11 @@ void MotorDriveAngle(float angle, bool forward, float speedFactor = 1){
   motorPercentRight = constrain(motorPercentRight, 0, 1);
 
   //Calculate optimal voltage based on battery
+  /*
   float fullSpeedVal = (MOTOR_OPTIMAL_VOLTAGE / BatteryCurrentVoltage());
   fullSpeedVal = constrain(fullSpeedVal, 0, 1);
+  */
+  float fullSpeedVal = 1;
 
   //Adjust desired speed
   fullSpeedVal *= speedFactor;

@@ -1,6 +1,8 @@
 String[] lines; // Array to store lines from the file
 float minX, maxX, minY, maxY;
 
+float[] angles = new float[72];
+
 void setup() {
   size(800, 600);  // Set the size of the canvas
   background(255); // Set the background color to white
@@ -30,10 +32,14 @@ void findMinMax() {
   
   println((maxX + minX) / 2);
   println((maxY + minY) / 2);
+  
+  println(maxX-minX);
+  println(maxY-minY);
 }
 
 void drawXYPlot() {
   // Draw X and Y axes at the center of the canvas
+  pushMatrix();
   translate(width / 2, height / 2);
   scale(3);
   stroke(0);  // Set stroke color to black
@@ -45,6 +51,7 @@ void drawXYPlot() {
     String[] values = split(lines[i], ' ');
     float x = float(values[0]);
     float y = float(values[1]);
-    ellipse(x, -y, 2, 2);  // Invert y-coordinate to match the screen coordinate system
+    ellipse(x, -(y), 2, 2);  // Invert y-coordinate to match the screen coordinate system
   }
+  popMatrix();
 }

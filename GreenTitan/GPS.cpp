@@ -22,6 +22,8 @@ NAV_POSLLH posllh;
 int prevLon = 1;
 int prevLat = 1;
 int prevAcc = -2;
+float GPS_Heading = 0;
+float GPS_Dist = 0;
 
 void calcChecksum(unsigned char* CK) {
   memset(CK, 0, 2);
@@ -74,21 +76,19 @@ bool GPSRead() {
 
   //Calculate heading if changed
   if (prevLon != posllh.lon || prevLat != posllh.lat){
-    float GPS_Heading = 0;
-    float GPS_Dist = 0;
+    float heading = 0;
+    float dist = 0;
 
-    GPS_Heading = AngleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
-    GPS_Dist = Distance(prevLon, prevLat, posllh.lon, posllh.lat);
+    heading = AngleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
+    dist = Distance(prevLon, prevLat, posllh.lon, posllh.lat);
 
-/* TODO: UNcomment, used for testing*/
     //Correct azimuth
-    if (!(isnan(GPS_Heading) || isnan(GPS_Dist))){
-      xSemaphoreTake(AzimuthMutex, portMAX_DELAY);
-      /*
-      IMUCurrentAzimuth -= ShortestRotation(GPS_Heading, IMUCurrentAzimuth) * GPS_AZIMUTH_CORRECTION_FACTOR * ( abs(GPS_Dist / 3) / (1 + abs(GPS_Dist / 3)) ); //Sensor fuse gps heading to correct IMU azimuth with sigmoid function
-      IMUCurrentAzimuth = NormalizeAngle(IMUCurrentAzimuth);
-      */
-      xSemaphoreGive(AzimuthMutex);
+    if (!(isnan(heading) || isnan(dist))){
+      xSemaphoreTake(GPSMutex, portMAX_DELAY);
+      GPS_Heading = heading;
+      xSemaphoreGive(GPSMutex);
+
+      GPS_Dist = dist;
     }
     
 

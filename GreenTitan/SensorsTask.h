@@ -12,6 +12,9 @@ extern void GPSCheck();
 
 extern float BatteryCurrentVoltage();
 
+extern bool IMUMagCalibrationActive();
+extern void IMUMagCalibrationRead();
+
 void SensorsRainSensor();
 void SensorsLowPower();
 void SensorsMowingTimeFrame();

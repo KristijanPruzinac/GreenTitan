@@ -29,19 +29,6 @@ int BASE_EXIT_LAT = 3376391;
 int GPS_ACC_THRESHOLD = 18;
 int GPS_STABILITY_CHECK_DURATION = 300; //5 minutes
 
-//TODO: ADD TO CONFIGURATION
-float MagOffsetAngle = 213.15;
-float MagDeclinationAngle = 5;
-bool InvertCompassAzimuth = true;
-
-float MagCalibrationX = 0; //-7.955;
-float MagCalibrationY = 0; //-12.64;
-
-double PID_Kp=2;
-double PID_Ki=0;
-double PID_Kd=0;
-// ---
-
 float BATTERY_LEVEL_MIN = 16;
 float BATTERY_LEVEL_MAX = 18;
 
@@ -50,8 +37,12 @@ bool MOTOR_LEFT_INVERT = false;
 bool MOTOR_RIGHT_INVERT = true;
 float MOTOR_OPTIMAL_VOLTAGE = 12;
 
-SemaphoreHandle_t AzimuthMutex;
-SemaphoreHandle_t PID_Mutex;
+//TODO: ADD TO CONFIG
+bool IMU_INVERT = false;
+float MOTION_ACC_FACTOR = 1.0;
+
+SemaphoreHandle_t IMUMutex;
+SemaphoreHandle_t GPSMutex;
 
 // -------------------------------------------------------- DEPENDENCIES ---------------------------------------------------------------
 
@@ -75,8 +66,8 @@ SemaphoreHandle_t PID_Mutex;
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
 
 void InitFreeRtos(){
-  AzimuthMutex = xSemaphoreCreateMutex();
-  PID_Mutex = xSemaphoreCreateMutex();
+  IMUMutex = xSemaphoreCreateMutex();
+  GPSMutex = xSemaphoreCreateMutex();
 
   //Motion task
   xTaskCreatePinnedToCore (
@@ -230,7 +221,18 @@ void loop(){
     } else if (message == "SAVE_CONFIGURATION"){
         FileResult result = SaveConfiguration();
         BluetoothWrite(String(result));
-    } else if (message.startsWith("PID_SET")) {
+    } /*else if (message == "MAG_CALIBRATE"){
+      //Calibrate magnetometer
+      if (!CONFIG_MAG){
+        MotorDriveAngle(MOTOR_ANGLE_MIN, FORWARD, 1.0);
+        delay(3000);
+        IMUMagCalibrationStart();
+        IMUMagCalibrationRead();
+        MotorStop();
+        delay(3000);
+        CONFIG_MAG = true;
+      }
+    } */else if (message.startsWith("PID_SET")) {
     // Remove "PID_SET" from the message
     message.remove(0, 8); // Assuming "PID_SET" is 8 characters long
 
@@ -245,12 +247,13 @@ void loop(){
       String strKd = message.substring(separator2 + 1);
 
       // Convert the string values to doubles
-      double newKp = strKp.toFloat();
-      double newKi = strKi.toFloat();
-      double newKd = strKd.toFloat();
+      float newKp = strKp.toFloat();
+      float newKi = strKi.toFloat();
+      float newKd = strKd.toFloat();
 
       // Update PID parameters
-      MotionUpdatePIDParameters(newKp, newKi, newKd);
+      //MotionUpdatePIDParameters(newKp, newKi, newKd);
+      MOTION_ACC_FACTOR = newKp;
 
       // Send a response if needed
       BluetoothWrite("PID parameters updated");
@@ -258,24 +261,35 @@ void loop(){
       // Invalid message format
       BluetoothWrite("Invalid message format for PID_SET");
     }
-  } else if (message == "TEST"){
-    /*
+  } else if (message == "TEST" || message == "GPS/GET/ACCURACY"){
+    IMUCalibrate();
+    BluetoothWrite(String(IMUGetGyroX()) + " " + String(IMUGetGyroY()) + " " + String(IMUGetGyroZ()) + "\n");
+      
+      delay(15000);
       MotorMainOn();
-      delay(10000);
+      MotorDriveAngle(0, FORWARD, 1.0);
+      delay(15000);
       MotorMainOff();
-      */
-      
-      
+      /*
+      MotorStop();
+      delay(1500);
+      MotorRotate(RIGHT, 1.0);
+      delay(800);
+      MotorStop();
       delay(1000);
-      MotionSetTarget(GpsGetLon(), GpsGetLat() + 800);
+      MotorDriveAngle(4, FORWARD, 1.0);
+      delay(4000);*/
+      MotorStop();
       
     }
   }
   delay(10);
 }
+// When input variable is only distance from line
 // PID 1 0 5 GOOD
 // PID 0.6 0 5 SMOOTH BUT LESS RESPONSIVE
 // PID 0.4 0 1.6 WORKS BEST SO FAR
+// PID 1.6 0 6.4 IS BEST
 
 //PID
 
