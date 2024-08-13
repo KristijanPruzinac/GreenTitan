@@ -18,7 +18,7 @@ extern int GPS_ACCURACY_STABLE;
 extern SemaphoreHandle_t GPSMutex;
 
 void calcChecksum(unsigned char* CK);
-bool GPSRead();
+void GPSRead();
 void GPSCheck();
 void InitGPS();
 int GpsGetLon();

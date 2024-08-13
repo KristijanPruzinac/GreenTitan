@@ -8,6 +8,8 @@
 
 #include "Battery.h"
 
+#include <ESP_FlexyStepper.h>
+
 extern bool MOTOR_SIDE_INVERT;
 extern bool MOTOR_LEFT_INVERT;
 extern bool MOTOR_RIGHT_INVERT;

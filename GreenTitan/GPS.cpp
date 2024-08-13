@@ -22,6 +22,9 @@ NAV_POSLLH posllh;
 int prevLon = 1;
 int prevLat = 1;
 int prevAcc = -2;
+bool gpsFirstMeasurement = true;
+float GPS_PrevHeading = 0;
+float GPS_CurrentHeading = 0;
 float GPS_Heading = 0;
 float GPS_Dist = 0;
 
@@ -33,9 +36,7 @@ void calcChecksum(unsigned char* CK) {
   }
 }
 
-bool GPSRead() {
-  bool returnVal = false;
-
+void GPSRead() {
   static int fpos = 0;
   static unsigned char checksum[2];
   const int payloadSize = sizeof(NAV_POSLLH);
@@ -64,7 +65,7 @@ bool GPSRead() {
       else if ( fpos == (payloadSize+4) ) {
         fpos = 0;
         if ( c == checksum[1] ) {
-          returnVal = true;
+          //returnVal = true;
           break;
         }
       }
@@ -73,6 +74,8 @@ bool GPSRead() {
       }
     }
   }
+
+  //Serial.print(posllh.lon); Serial.print(" "); Serial.print(posllh.lat); Serial.print(" ");  Serial.println(posllh.hAcc); 
 
   //Calculate heading if changed
   if (prevLon != posllh.lon || prevLat != posllh.lat){
@@ -85,7 +88,17 @@ bool GPSRead() {
     //Correct azimuth
     if (!(isnan(heading) || isnan(dist))){
       xSemaphoreTake(GPSMutex, portMAX_DELAY);
-      GPS_Heading = heading;
+      if (gpsFirstMeasurement){
+        GPS_PrevHeading = heading;
+        GPS_CurrentHeading = heading;
+        gpsFirstMeasurement = false;
+      }
+      else {
+        GPS_PrevHeading = GPS_CurrentHeading;
+        GPS_CurrentHeading = heading;
+
+        GPS_Heading = NormalizeAngle(GPS_PrevHeading + ShortestRotation(GPS_CurrentHeading, GPS_PrevHeading) / 2);
+      }
       xSemaphoreGive(GPSMutex);
 
       GPS_Dist = dist;
@@ -98,7 +111,9 @@ bool GPSRead() {
 
   prevAcc = (int) posllh.hAcc;
 
-  return returnVal;
+  GPSCheck();
+
+  //return returnVal;
 }
 
 unsigned long TimerGPS = -1;
@@ -139,7 +154,7 @@ int GpsGetAcc(){
 }
 
 void InitGPS(){
-  SerialGPS.begin(GPS_BAUDRATE);
+  SerialGPS.begin(GPS_BAUDRATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
   SerialGPS.setTimeout(COMMUNICATION_TIMEOUT);
 
   //Dont remove

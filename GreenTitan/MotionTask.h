@@ -20,10 +20,11 @@ extern void MainStop();
 extern int GpsGetLon();
 extern int GpsGetLat();
 extern float GPS_Heading;
+extern float GPS_PrevHeading;
 
 //Motor
 extern void MotorDriveAngle(float angle, bool forward, float speedFactor);
-extern void MotorRotate(bool direction, float speedFactor);
+extern void MotorRotate(bool direction, float speedFactor, float degrees);
 extern void MotorStop();
 
 //IMU
@@ -35,8 +36,6 @@ void MotionTask(void* pvParameters);
 
 extern float IMURotSpeed;
 extern float IMURotAcc;
-extern float IMURotPrevSpeed;
-extern float IMURotPrevAcc;
 extern float MOTION_ACC_FACTOR;
 
 //TODO: Remove

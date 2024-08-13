@@ -7,7 +7,7 @@
 extern void BatteryUpdate();
 extern void BatteryCheck();
 extern void IMURead();
-extern bool GPSRead();
+extern void GPSRead();
 extern void GPSCheck();
 
 extern float BatteryCurrentVoltage();

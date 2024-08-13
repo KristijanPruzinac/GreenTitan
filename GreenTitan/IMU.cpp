@@ -3,13 +3,13 @@
 float IMUCurrentAzimuth = 0;
 
 //Globals
-bool imuFirstMeasurement = true;
+const int IMUDataMaxSampleSize = 9;
+float IMURotSpeedData[IMUDataMaxSampleSize];
+float IMURotAccData[IMUDataMaxSampleSize];
+int IMUDataSampleSize = 9;
 
 float IMURotSpeed = 0;
 float IMURotAcc = 0;
-
-float IMURotPrevSpeed = 0;
-float IMURotPrevAcc = 0;
 
 //Calibration
 float IMUGyroXOffset = 0;
@@ -29,7 +29,7 @@ bool InitIMU(){
 
   mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
   mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+  mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);
   return true;
 }
 
@@ -64,15 +64,32 @@ void IMURead(){
   xSemaphoreTake(IMUMutex, portMAX_DELAY);
   //Calculate angular speed and acceleration
   float newRotSpeed = IMUGetGyroZ();
-  if (imuFirstMeasurement){
-    imuFirstMeasurement = false;
+
+  //Shift data for averaging
+  for (int i = 0; i < IMUDataMaxSampleSize - 1; i++){
+    IMURotSpeedData[i] = IMURotSpeedData[i + 1];
   }
-  else {
-    IMURotPrevAcc = IMURotAcc;
-    IMURotAcc = (newRotSpeed - IMURotSpeed) / (1.0 / SENSORS_SAMPLING_RATE); //Acceleration is derivation of speed with respect to time
+  for (int i = 0; i < IMUDataMaxSampleSize - 1; i++){
+    IMURotAccData[i] = IMURotAccData[i + 1];
   }
-  IMURotPrevSpeed = IMURotSpeed;
-  IMURotSpeed = newRotSpeed;
+
+  //Add speed reading
+  IMURotSpeedData[IMUDataMaxSampleSize - 1] = newRotSpeed;
+
+  //Average speed readings
+  IMURotSpeed = 0;
+  for (int i = IMUDataMaxSampleSize - 1; i > IMUDataMaxSampleSize - 1 - IMUDataSampleSize; i--){
+    IMURotSpeed += IMURotSpeedData[i];
+  }
+  IMURotSpeed /= (float) IMUDataSampleSize;
+
+  //Average acceleration readings
+  IMURotAcc = 0;
+  for (int i = IMUDataMaxSampleSize - 1; i > IMUDataMaxSampleSize - 1 - IMUDataSampleSize; i--){
+    IMURotAcc += (IMURotSpeedData[i] - IMURotSpeedData[i - 1]) / (1.0 / SENSORS_UPDATE_FREQUENCY);
+  }
+  IMURotAcc /= (float) IMUDataSampleSize;
+
   xSemaphoreGive(IMUMutex);
 
   //Printout TODO: REMOVE

@@ -17,7 +17,7 @@ void SensorsTask(void* pvParameters){
   int counter = 0;
   while (1){
     TickType_t xLastWakeTime;
-    const TickType_t xPeriod = pdMS_TO_TICKS(MILLIS_PER_SECOND / SENSORS_SAMPLING_RATE);
+    const TickType_t xPeriod = pdMS_TO_TICKS(MILLIS_PER_SECOND / SENSORS_UPDATE_FREQUENCY);
 
     xLastWakeTime = xTaskGetTickCount();
 
@@ -27,7 +27,6 @@ void SensorsTask(void* pvParameters){
 
     IMURead();
     GPSRead();
-    GPSCheck();
 
 
     if (counter % 2 == 0){

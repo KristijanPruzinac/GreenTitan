@@ -32,7 +32,7 @@ int GPS_STABILITY_CHECK_DURATION = 300; //5 minutes
 float BATTERY_LEVEL_MIN = 16;
 float BATTERY_LEVEL_MAX = 18;
 
-bool MOTOR_SIDE_INVERT = true;
+bool MOTOR_SIDE_INVERT = false;
 bool MOTOR_LEFT_INVERT = false;
 bool MOTOR_RIGHT_INVERT = true;
 float MOTOR_OPTIMAL_VOLTAGE = 12;
@@ -50,7 +50,6 @@ SemaphoreHandle_t GPSMutex;
 #include "IMU.h"
 #include "GPS.h"
 #include "Battery.h"
-#include "Motor.h"
 #include "RainSensor.h"
 
 //Program dependencies
@@ -62,6 +61,7 @@ SemaphoreHandle_t GPSMutex;
 #include "MotionTask.h"
 #include "BluetoothTask.h"
 #include "SensorsTask.h"
+#include "Motor.h"
 
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
 
@@ -69,10 +69,10 @@ void InitFreeRtos(){
   IMUMutex = xSemaphoreCreateMutex();
   GPSMutex = xSemaphoreCreateMutex();
 
-  //Motion task
+  //Sensors task
   xTaskCreatePinnedToCore (
-    MotionTask,     // Function to implement the task
-    "MotionTask",   // Name of the task
+    SensorsTask,     // Function to implement the task
+    "SensorsTask",   // Name of the task
     8192,      // Stack size in bytes
     NULL,      // Task input parameter
     2,         // Priority of the task
@@ -80,10 +80,10 @@ void InitFreeRtos(){
     0          // Core where the task should run
   );
 
-  //Sensors task
+  //Motion task
   xTaskCreatePinnedToCore (
-    SensorsTask,     // Function to implement the task
-    "SensorsTask",   // Name of the task
+    MotionTask,     // Function to implement the task
+    "MotionTask",   // Name of the task
     8192,      // Stack size in bytes
     NULL,      // Task input parameter
     1,         // Priority of the task
@@ -172,6 +172,9 @@ void loop(){
 
     Serial.println("FreeRtos initialized!");
 
+    //TODO: Move to setup
+    IMUCalibrate();
+
     delay(2500);
     if (SETUP_COMPLETED){
       Mode = "START";
@@ -179,7 +182,6 @@ void loop(){
     else {
       Mode = "SETUP";
     }
-
   }
   else if (Mode == "SETUP"){
 
@@ -221,82 +223,9 @@ void loop(){
     } else if (message == "SAVE_CONFIGURATION"){
         FileResult result = SaveConfiguration();
         BluetoothWrite(String(result));
-    } /*else if (message == "MAG_CALIBRATE"){
-      //Calibrate magnetometer
-      if (!CONFIG_MAG){
-        MotorDriveAngle(MOTOR_ANGLE_MIN, FORWARD, 1.0);
-        delay(3000);
-        IMUMagCalibrationStart();
-        IMUMagCalibrationRead();
-        MotorStop();
-        delay(3000);
-        CONFIG_MAG = true;
-      }
-    } */else if (message.startsWith("PID_SET")) {
-    // Remove "PID_SET" from the message
-    message.remove(0, 8); // Assuming "PID_SET" is 8 characters long
-
-    // Split the remaining message into three parts
-    int separator1 = message.indexOf(' ');
-    int separator2 = message.indexOf(' ', separator1 + 1);
-
-    if (separator1 != -1 && separator2 != -1) {
-      // Extract the three values as strings
-      String strKp = message.substring(0, separator1);
-      String strKi = message.substring(separator1 + 1, separator2);
-      String strKd = message.substring(separator2 + 1);
-
-      // Convert the string values to doubles
-      float newKp = strKp.toFloat();
-      float newKi = strKi.toFloat();
-      float newKd = strKd.toFloat();
-
-      // Update PID parameters
-      //MotionUpdatePIDParameters(newKp, newKi, newKd);
-      MOTION_ACC_FACTOR = newKp;
-
-      // Send a response if needed
-      BluetoothWrite("PID parameters updated");
-    } else {
-      // Invalid message format
-      BluetoothWrite("Invalid message format for PID_SET");
-    }
-  } else if (message == "TEST" || message == "GPS/GET/ACCURACY"){
-    IMUCalibrate();
-    BluetoothWrite(String(IMUGetGyroX()) + " " + String(IMUGetGyroY()) + " " + String(IMUGetGyroZ()) + "\n");
-      
-      delay(15000);
-      MotorMainOn();
-      MotorDriveAngle(0, FORWARD, 1.0);
-      delay(15000);
-      MotorMainOff();
-      /*
-      MotorStop();
-      delay(1500);
-      MotorRotate(RIGHT, 1.0);
-      delay(800);
-      MotorStop();
-      delay(1000);
-      MotorDriveAngle(4, FORWARD, 1.0);
-      delay(4000);*/
-      MotorStop();
+    } else if (message == "TEST" || message == "GPS/GET/ACCURACY"){
       
     }
   }
   delay(10);
 }
-// When input variable is only distance from line
-// PID 1 0 5 GOOD
-// PID 0.6 0 5 SMOOTH BUT LESS RESPONSIVE
-// PID 0.4 0 1.6 WORKS BEST SO FAR
-// PID 1.6 0 6.4 IS BEST
-
-//PID
-
-//Kp 0.2
-// 0.4 0 0 Kp starts to oscillate, but is unstable
-
-//Ki 0
-//Skipped because it is unstable unless 0
-
-//MAYBE NEED MORE INTEGRAL

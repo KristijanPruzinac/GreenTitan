@@ -1,206 +1,115 @@
 #include "Motor.h"
 
-void MotorDriveAngle(float angle, bool forward, float speedFactor = 1){
+// create the stepper motor objects
+ESP_FlexyStepper motorA;
+ESP_FlexyStepper motorB;
+
+void MotorDriveAngle(float angle, bool forward, float speedFactor = 1) {
   // SpeedFactor
-  speedFactor = constrain(speedFactor, 0, 1);
-  if (speedFactor < MOTOR_MIN_SPEED)
-    speedFactor = MOTOR_MIN_SPEED;
+  speedFactor = constrain(speedFactor, 0.0, 1.0);
 
   // Angle measured from North clockwise
   angle = constrain(angle, MOTOR_ANGLE_MIN, MOTOR_ANGLE_MAX);
 
-  //Motor activation percentages
-  float motorPercentLeft = ((angle - (-90.0)) / 180.0) * 2.0;
-  motorPercentLeft = constrain(motorPercentLeft, 0, 1);
+  // Motor activation percentages
+  float motorPercentLeft = (angle + 90.0) / 180.0 * 2; motorPercentLeft = constrain(motorPercentLeft, 0, 1);
+  float motorPercentRight = (1 - (angle + 90.0) / 180.0) * 2; motorPercentRight = constrain(motorPercentRight, 0, 1);
 
-  float motorPercentRight = (1.0 - (angle - (-90.0)) / 180.0) * 2.0;
-  motorPercentRight = constrain(motorPercentRight, 0, 1);
-
-  //Calculate optimal voltage based on battery
-  /*
-  float fullSpeedVal = (MOTOR_OPTIMAL_VOLTAGE / BatteryCurrentVoltage());
-  fullSpeedVal = constrain(fullSpeedVal, 0, 1);
-  */
-  float fullSpeedVal = 1;
-
-  //Adjust desired speed
-  fullSpeedVal *= speedFactor;
-
-  //Scale to DAC
-  fullSpeedVal *= DAC_MAX_VALUE; fullSpeedVal = constrain(fullSpeedVal, 200, DAC_MAX_VALUE);
-
-  int leftVal = motorPercentLeft * fullSpeedVal;
-  int rightVal = motorPercentRight * fullSpeedVal;
-
-  bool leftInvert = MOTOR_LEFT_INVERT;
-  bool rightInvert = MOTOR_RIGHT_INVERT;
-
-  //Switch sides
-  if (MOTOR_SIDE_INVERT){
-    std::swap(leftVal, rightVal);
+  // Switch sides
+  if (MOTOR_SIDE_INVERT) {
+    std::swap(motorPercentLeft, motorPercentRight);
   }
 
-  //Switch direction
-  if (!forward){
-    leftInvert = !leftInvert;
-    rightInvert = !rightInvert;
+  // Calculate speeds for motors
+  float speedA = MOTOR_MAX_SPEED * speedFactor * motorPercentLeft;
+  float speedB = MOTOR_MAX_SPEED * speedFactor * motorPercentRight;
+
+  motorA.setSpeedInStepsPerSecond(speedA);
+  motorB.setSpeedInStepsPerSecond(speedB);
+
+  if (!MOTOR_LEFT_INVERT) {
+    motorA.setTargetPositionInSteps(forward ? 1e9 : -1e9);
+  } else {
+    motorA.setTargetPositionInSteps(forward ? -1e9 : 1e9);
   }
 
-  // Left motor
-  analogWrite((!leftInvert) ? MOTOR_LEFT_A : MOTOR_LEFT_B, leftVal);
-  analogWrite((!leftInvert) ? MOTOR_LEFT_B : MOTOR_LEFT_A, 0);
-
-  // Right motor
-  analogWrite((!rightInvert) ? MOTOR_RIGHT_A : MOTOR_RIGHT_B, rightVal);
-  analogWrite((!rightInvert) ? MOTOR_RIGHT_B : MOTOR_RIGHT_A, 0);
+  if (!MOTOR_RIGHT_INVERT) {
+    motorB.setTargetPositionInSteps(forward ? 1e9 : -1e9);
+  } else {
+    motorB.setTargetPositionInSteps(forward ? -1e9 : 1e9);
+  }
 }
 
-void MotorRotate(bool direction, float speedFactor = 1){
-  //SpeedFactor
-  speedFactor = constrain(speedFactor, 0, 1);
-  if (speedFactor < MOTOR_MIN_SPEED)
-    speedFactor = MOTOR_MIN_SPEED;
+void MotorRotate(bool direction, float speedFactor = 1) {
+  // SpeedFactor
+  speedFactor = constrain(speedFactor, 0.0, 1.0);
 
-  //Calculate optimal voltage based on battery
-  float fullSpeedVal = (MOTOR_OPTIMAL_VOLTAGE / BatteryCurrentVoltage());
-  fullSpeedVal = constrain(fullSpeedVal, 0, 1);
+  int invertA = 1;
+  int invertB = 1;
 
-  //Adjust desired speed
-  fullSpeedVal *= speedFactor;
-
-  //Scale to DAC
-  fullSpeedVal *= DAC_MAX_VALUE; fullSpeedVal = constrain(fullSpeedVal, 200, DAC_MAX_VALUE);
-
-  bool leftInvert = MOTOR_LEFT_INVERT;
-  bool rightInvert = MOTOR_RIGHT_INVERT;
-
-  //Set motors to drive in opposite directions to spin on spot
-  if (direction == RIGHT){
-    leftInvert = !leftInvert;
-    rightInvert = !rightInvert;
-  }
-
-  //Switch sides
-  if (MOTOR_SIDE_INVERT){
+  // Rotate
+  if (MOTOR_SIDE_INVERT) {
     direction = !direction;
   }
 
-  //TODO: FIX SWITCHING WIRING / PRETTY SURE IT DOESNT WORK FOR GENERAL CASES
-
-  //TODO: Remove
-  //Serial.print(leftInvert); Serial.print(" "); Serial.print(rightInvert); Serial.print(" "); Serial.print(fullSpeedVal);
-  //Serial.println();
-
-
-  if (direction == LEFT){
-    if (!MOTOR_SIDE_INVERT){
-      if (!MOTOR_LEFT_INVERT){
-        analogWrite(MOTOR_LEFT_B, fullSpeedVal);
-        digitalWrite(MOTOR_LEFT_A, 0);
-      }
-      else {
-        digitalWrite(MOTOR_LEFT_B, 0);
-        analogWrite(MOTOR_LEFT_A, fullSpeedVal);
-      }
-
-      if (!MOTOR_RIGHT_INVERT){
-        analogWrite(MOTOR_RIGHT_A, fullSpeedVal);
-        digitalWrite(MOTOR_RIGHT_B, 0);
-      }
-      else {
-        digitalWrite(MOTOR_RIGHT_A, 0);
-        analogWrite(MOTOR_RIGHT_B, fullSpeedVal);
-      }
-    }
-    else {
-      if (!MOTOR_LEFT_INVERT){
-        analogWrite(MOTOR_LEFT_A, fullSpeedVal);
-        digitalWrite(MOTOR_LEFT_B, 0);
-      }
-      else {
-        digitalWrite(MOTOR_LEFT_A, 0);
-        analogWrite(MOTOR_LEFT_B, fullSpeedVal);
-      }
-
-      if (!MOTOR_RIGHT_INVERT){
-        analogWrite(MOTOR_RIGHT_B, fullSpeedVal);
-        digitalWrite(MOTOR_RIGHT_A, 0);
-      }
-      else {
-        digitalWrite(MOTOR_RIGHT_B, 0);
-        analogWrite(MOTOR_RIGHT_A, fullSpeedVal);
-      }
-    }
+  if (MOTOR_LEFT_INVERT) {
+    invertA = -invertA;
   }
-  else {
-    if (!MOTOR_SIDE_INVERT){
-      if (!MOTOR_LEFT_INVERT){
-        analogWrite(MOTOR_LEFT_A, fullSpeedVal);
-        digitalWrite(MOTOR_LEFT_B, 0);
-      }
-      else {
-        digitalWrite(MOTOR_LEFT_A, 0);
-        analogWrite(MOTOR_LEFT_B, fullSpeedVal);
-      }
+  if (MOTOR_RIGHT_INVERT) {
+    invertB = -invertB;
+  }
 
-      if (!MOTOR_RIGHT_INVERT){
-        analogWrite(MOTOR_RIGHT_B, fullSpeedVal);
-        digitalWrite(MOTOR_RIGHT_A, 0);
-      }
-      else {
-        digitalWrite(MOTOR_RIGHT_B, 0);
-        analogWrite(MOTOR_RIGHT_A, fullSpeedVal);
-      }
-    }
-    else {
-      if (!MOTOR_LEFT_INVERT){
-        analogWrite(MOTOR_LEFT_B, fullSpeedVal);
-        digitalWrite(MOTOR_LEFT_A, 0);
-      }
-      else {
-        digitalWrite(MOTOR_LEFT_B, 0);
-        analogWrite(MOTOR_LEFT_A, fullSpeedVal);
-      }
+  float speed = MOTOR_MAX_SPEED * 0.5 * speedFactor;
 
-      if (!MOTOR_RIGHT_INVERT){
-        analogWrite(MOTOR_RIGHT_A, fullSpeedVal);
-        digitalWrite(MOTOR_RIGHT_B, 0);
-      }
-      else {
-        digitalWrite(MOTOR_RIGHT_A, 0);
-        analogWrite(MOTOR_RIGHT_B, fullSpeedVal);
-      }
-    }
+  motorA.setSpeedInStepsPerSecond(speed);
+  motorB.setSpeedInStepsPerSecond(speed);
+
+  if (direction == LEFT) {
+    motorA.setTargetPositionInSteps(-invertA * 1e9);
+    motorB.setTargetPositionInSteps(invertB * 1e9);
+  } else {
+    motorA.setTargetPositionInSteps(invertA * 1e9);
+    motorB.setTargetPositionInSteps(-invertB * 1e9);
   }
 }
 
-void InitMotors(){
-  pinMode(MOTOR_LEFT_A, OUTPUT);
-  pinMode(MOTOR_LEFT_B, OUTPUT);
-  pinMode(MOTOR_RIGHT_A, OUTPUT);
-  pinMode(MOTOR_RIGHT_B, OUTPUT);
+void InitMotors() {
   pinMode(MOTOR_MAIN, OUTPUT);
 
-  digitalWrite(MOTOR_LEFT_A, LOW);
-  digitalWrite(MOTOR_LEFT_B, LOW);
-  digitalWrite(MOTOR_RIGHT_A, LOW);
-  digitalWrite(MOTOR_RIGHT_B, LOW);
-  digitalWrite(MOTOR_MAIN, LOW);
+  // Initialize motors
+  motorA.connectToPins(MOTOR_A_STEP_PIN, MOTOR_A_DIR_PIN);
+  motorB.connectToPins(MOTOR_B_STEP_PIN, MOTOR_B_DIR_PIN);
 
-  analogWriteResolution(DAC_MAX_BITS);
+  // Set acceleration
+  motorA.setAccelerationInStepsPerSecondPerSecond(MOTOR_ACCELERATION);
+  motorB.setAccelerationInStepsPerSecondPerSecond(MOTOR_ACCELERATION);
+
+  motorA.setDecelerationInStepsPerSecondPerSecond(MOTOR_ACCELERATION);
+  motorB.setDecelerationInStepsPerSecondPerSecond(MOTOR_ACCELERATION);
+
+  // Initial speed
+  motorA.setTargetPositionToStop();
+  motorB.setTargetPositionToStop();
+
+  motorA.startAsService(1);
+  motorB.startAsService(1);
 }
 
-void MotorStop(){
-  analogWrite(MOTOR_LEFT_A, LOW);
-  analogWrite(MOTOR_LEFT_B, LOW);
+void MotorStop() {
+  motorA.setCurrentPositionInSteps(0);
+  motorB.setCurrentPositionInSteps(0);
 
-  analogWrite(MOTOR_RIGHT_A, LOW);
-  analogWrite(MOTOR_RIGHT_B, LOW);
+  motorA.setTargetPositionInSteps(0);
+  motorB.setTargetPositionInSteps(0);
+
+  motorA.setTargetPositionToStop();
+  motorB.setTargetPositionToStop();
 }
 
-void MotorMainOn(){
+void MotorMainOn() {
   digitalWrite(MOTOR_MAIN, HIGH);
 }
-void MotorMainOff(){
+
+void MotorMainOff() {
   digitalWrite(MOTOR_MAIN, LOW);
 }
