@@ -196,7 +196,7 @@ void loop(){
         AlgorithmCaptureStart();
         BluetoothWrite("Executed!");
     } else if (message == "GPS_POS"){
-        BluetoothWrite(String(GpsGetLon()) + " " + String(GpsGetLat()) + " " + String((int) IMUGetAzimuth()));
+        //BluetoothWrite(String(GpsGetLon()) + " " + String(GpsGetLat()) + " " + String((int) IMUGetHeading()));
     } else if (message == "CAPTURE_BASE_POINT") {
         AlgorithmCaptureBasePoint();
         BluetoothWrite("Executed!");
@@ -224,7 +224,7 @@ void loop(){
         FileResult result = SaveConfiguration();
         BluetoothWrite(String(result));
     } else if (message == "TEST" || message == "GPS/GET/ACCURACY"){
-      
+      MotionSetTarget(GpsGetLon(), GpsGetLat() + 800);
     }
   }
   delay(10);

@@ -4,6 +4,11 @@
 ESP_FlexyStepper motorA;
 ESP_FlexyStepper motorB;
 
+float MowerAngularDegreesToMotorSteps(float unit){
+  //     PATH AROUND CIRCUMFERENCE TRAVELLED (CM)                     STEPS PER CM                2 MOTORS
+  return ((unit / (360.0)) * (MOTOR_DIAMETER * PI)) * (MOTOR_STEPS_PER_REV / (WHEEL_DIAMETER * PI)) / 2;
+}
+
 void MotorDriveAngle(float angle, bool forward, float speedFactor = 1) {
   // SpeedFactor
   speedFactor = constrain(speedFactor, 0.0, 1.0);
@@ -12,8 +17,8 @@ void MotorDriveAngle(float angle, bool forward, float speedFactor = 1) {
   angle = constrain(angle, MOTOR_ANGLE_MIN, MOTOR_ANGLE_MAX);
 
   // Motor activation percentages
-  float motorPercentLeft = (angle + 90.0) / 180.0 * 2; motorPercentLeft = constrain(motorPercentLeft, 0, 1);
-  float motorPercentRight = (1 - (angle + 90.0) / 180.0) * 2; motorPercentRight = constrain(motorPercentRight, 0, 1);
+  float motorPercentLeft = (angle + 90.0) / 180.0; motorPercentLeft = constrain(motorPercentLeft, 0, 1);
+  float motorPercentRight = 1 - (motorPercentLeft); motorPercentRight = constrain(motorPercentRight, 0, 1);
 
   // Switch sides
   if (MOTOR_SIDE_INVERT) {
@@ -73,6 +78,51 @@ void MotorRotate(bool direction, float speedFactor = 1) {
   }
 }
 
+float motorASpeed = 0;
+void MotorRotateAcceleration(float acceleration){
+  int invertA = 1;
+  int invertB = 1;
+
+  // Rotate
+  /*
+  if (MOTOR_SIDE_INVERT) {
+    direction = !direction;
+  }
+  */
+
+  if (MOTOR_LEFT_INVERT) {
+    invertA = -invertA;
+  }
+  if (MOTOR_RIGHT_INVERT) {
+    invertB = -invertB;
+  }
+
+  float oldMotorASpeed = motorASpeed;
+
+  motorASpeed += MowerAngularDegreesToMotorSteps(acceleration);
+  if (motorASpeed > MOTOR_MAX_SPEED / 2) motorASpeed = MOTOR_MAX_SPEED / 2;
+  if (motorASpeed < -MOTOR_MAX_SPEED / 2) motorASpeed = -MOTOR_MAX_SPEED / 2;
+
+  if (fabs(motorASpeed - oldMotorASpeed) > 0.1){
+    motorA.setSpeedInStepsPerSecond(motorASpeed);
+    motorB.setSpeedInStepsPerSecond(motorASpeed);
+
+    if (motorASpeed > 0){
+      motorA.startJogging(invertA);
+      motorB.startJogging(-invertB);
+    }
+    else if (motorASpeed < 0) {
+      motorA.startJogging(-invertA);
+      motorB.startJogging(invertB);
+    }
+  }
+
+  Serial.println(motorA.getCurrentVelocityInStepsPerSecond());
+
+  //Serial.println(motorASpeed);
+  //Serial.println(motorA.getCurrentVelocityInStepsPerSecond());
+}
+
 void InitMotors() {
   pinMode(MOTOR_MAIN, OUTPUT);
 
@@ -86,6 +136,9 @@ void InitMotors() {
 
   motorA.setDecelerationInStepsPerSecondPerSecond(MOTOR_ACCELERATION);
   motorB.setDecelerationInStepsPerSecondPerSecond(MOTOR_ACCELERATION);
+
+  motorA.setStepsPerMillimeter(10);
+  motorB.setStepsPerMillimeter(10);
 
   // Initial speed
   motorA.setTargetPositionToStop();

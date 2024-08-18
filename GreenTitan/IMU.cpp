@@ -1,15 +1,14 @@
 #include "IMU.h"
 
-float IMUCurrentAzimuth = 0;
-
 //Globals
 const int IMUDataMaxSampleSize = 9;
 float IMURotSpeedData[IMUDataMaxSampleSize];
 float IMURotAccData[IMUDataMaxSampleSize];
-int IMUDataSampleSize = 9;
+int IMUDataSampleSize = 3;
 
 float IMURotSpeed = 0;
 float IMURotAcc = 0;
+float IMUHeading = 0;
 
 //Calibration
 float IMUGyroXOffset = 0;
@@ -29,7 +28,7 @@ bool InitIMU(){
 
   mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
   mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_5_HZ);
+  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
   return true;
 }
 
@@ -90,6 +89,9 @@ void IMURead(){
   }
   IMURotAcc /= (float) IMUDataSampleSize;
 
+  //Add current heading
+  IMUHeading = NormalizeAngle(IMUHeading + newRotSpeed / SENSORS_UPDATE_FREQUENCY);
+
   xSemaphoreGive(IMUMutex);
 
   //Printout TODO: REMOVE
@@ -99,10 +101,6 @@ void IMURead(){
   Serial.print(", IMURotAcc: ");
   */
   //Serial.println(IMURotAcc);
-}
-
-float IMUGetAzimuth(){
-  return IMUCurrentAzimuth;
 }
 
 //Accelerometer

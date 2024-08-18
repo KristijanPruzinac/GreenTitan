@@ -3,6 +3,9 @@
 float MowerRotAngle = 0;
 float MowerRotSpeed = 0;
 float MowerRotAcc = 0;
+float MowerIMUHeading = 0;
+
+float MowerGPSHeading = 0;
 
 float MowerHeading = 0;
 
@@ -18,6 +21,7 @@ void MotionSetMode(int mode){
   if (mode == WAITING){
     MotorStop();
   }
+
   MotionMode = mode;
 }
 
@@ -26,12 +30,24 @@ void MotionUpdateSensorData(){
   xSemaphoreTake(IMUMutex, portMAX_DELAY);
   MowerRotSpeed = IMURotSpeed;
   MowerRotAcc = IMURotAcc;
-  xSemaphoreGive(IMUMutex);
 
   //Grab GPS data
   xSemaphoreTake(GPSMutex, portMAX_DELAY);
-  MowerHeading = GPS_Heading;
+
+  //If GPS heading changed adjust IMU heading
+  if (fabs(MowerGPSHeading - GPS_Heading) > 0.1){
+    //IMUHeading = NormalizeAngle(IMUHeading + ShortestRotation(GPS_Heading, IMUHeading) * GPS_HEADING_CORRECTION_FACTOR);
+  }
+
+  MowerGPSHeading = GPS_Heading;
+  //MowerHeading = 360.0 - GPS_Heading;
+  MowerHeading = IMUHeading;
+
   xSemaphoreGive(GPSMutex);
+  xSemaphoreGive(IMUMutex);
+
+  //Serial.print("0 360 ");
+  //Serial.print(MowerHeading); Serial.print(" "); Serial.println(MowerGPSHeading);
 }
 
 void MotionSetTarget(int tLon, int tLat){
@@ -41,12 +57,12 @@ void MotionSetTarget(int tLon, int tLat){
   MotionTargetLon = tLon;
   MotionTargetLat = tLat;
 
-  //MotionMode = ROTATING; TODO: Uncomment
+  MotionMode = ROTATING;// TODO: Uncomment
   //MotionSetMode(MOVING);
-  MotionSetMode(TEST);
+  //MotionSetMode(TEST);
 }
 
-/*
+
 class SV_A_Controller {
 private:
   float Position;
@@ -113,6 +129,7 @@ public:
 
 SV_A_Controller* MotionController;
 
+/*
 class S_x_Controller {
 private:
   float Variable;
@@ -149,15 +166,9 @@ public:
 S_x_Controller* AccelerationController;
 */
 
-int angleTesting = 0;
-float currentMotVal = 0;
-
-//TODO: Remove
-int startMillis = 0;
-
 void MotionTask(void* pvParameters){
 
-  //MotionController = new SV_A_Controller(0, 0, MOTION_CORRECTION_SPEED, MOTION_CORRECTION_ACCELERATION, MOTION_CORRECTION_ACCELERATION_FACTOR, MOTION_CORRECTION_REACTION);
+  MotionController = new SV_A_Controller(0, 0, MOTION_CORRECTION_SPEED, MOTION_CORRECTION_ACCELERATION, MOTION_CORRECTION_ACCELERATION_FACTOR, MOTION_CORRECTION_REACTION);
   //AccelerationController = new S_x_Controller(0, 0, MOTION_CORRECTION_ACCELERATION, ACCELERATION_CORRECTION_REACTION);
 
   String toSend = "";
@@ -171,9 +182,17 @@ void MotionTask(void* pvParameters){
     //Sensor data
     MotionUpdateSensorData();
 
-    /*
     if (MotionMode == ROTATING){
+      //Target IMU angle is 0
+      MotionController->Update(ShortestRotation(MowerHeading, 0), MowerRotSpeed, 1.0 / MOTION_UPDATE_FREQUENCY);
 
+      float DriveAcc = MotionController->GetAcceleration();
+
+      //Serial.print("-100 100 "); Serial.println(DriveAcc);
+
+      MotorRotateAcceleration(DriveAcc);
+
+/*
       float RotationAngle = ShortestRotation(MotionCurrentAzimuth, AngleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat));
       
       if (abs(RotationAngle) <= MOTION_ACCEPTED_ROTATION_TO_POINT){ //|| abs(RotationAngle) > MotionPrevRotationAngle + MOTION_ACCEPTED_ROTATION_TO_POINT){
@@ -181,11 +200,6 @@ void MotionTask(void* pvParameters){
         //MotorStop();
 
         //TODO: Uncomment top
-        
-        //MotorDriveAngle(0, FORWARD, 1.0);
-        //delay(2000);
-        //MotorStop();
-        
 
         //TODO: Remove
         BluetoothWrite("Switched to moving.");
@@ -201,8 +215,9 @@ void MotionTask(void* pvParameters){
 
       if (abs(RotationAngle) < MotionPrevRotationAngle)
         MotionPrevRotationAngle = abs(RotationAngle);
+        */
     }
-    else */if (MotionMode == MOVING){
+    else if (MotionMode == MOVING){
       float PrevTargetAngle = AngleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat);
       float MowerTargetAngle = AngleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat);
       float AngleDiff = ShortestRotation(PrevTargetAngle, MowerTargetAngle);
@@ -211,7 +226,7 @@ void MotionTask(void* pvParameters){
       
       float DistAint = MowerTargetDist * cos(radians(abs(AngleDiff))); //Distance left to target
       float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff))); //Distance from expected line to 
-      
+      /*
       //STRAYED FROM PATH
       if (DistOffset > MAX_DEVIATION){
         //MotorStop();
@@ -234,6 +249,7 @@ void MotionTask(void* pvParameters){
 
         toSend = "";
       }
+      */
       
       if (DistAint < MOTION_ACCEPTED_DIST_TO_POINT || abs(AngleDiff) > 90.0){
         MotorStop();
@@ -244,12 +260,11 @@ void MotionTask(void* pvParameters){
 
       }
       else {
-        /*
-        MotionController->Update(ShortestRotation(MowerHeading, MowerTargetAngle), MowerRotSpeed, 1.0 / MOTION_UPDATE_FREQUENCY);
+        //MotorDriveAngle(ShortestRotation(MowerTargetAngle, MowerHeading), FORWARD, 1.0);
+        //MotorDriveAngle((ShortestRotation(MowerTargetAngle, MowerHeading) / fabs(ShortestRotation(MowerTargetAngle, MowerHeading))) * DistOffset*DistOffset*DistOffset/38.0, FORWARD, 1.0);
+        float angle = NormalizeAngle(PrevTargetAngle + (ShortestRotation(MowerTargetAngle, MowerHeading) / fabs(ShortestRotation(MowerTargetAngle, MowerHeading))) * DistOffset*DistOffset*DistOffset/80.0);
 
-        float DriveAcc = MotionController->GetAcceleration();
-        MotorDriveAngle(DriveAcc, FORWARD, 1.0);
-        */
+        MotorDriveAngle(ShortestRotation(angle, MowerHeading) / 2, FORWARD, 1.0);
       }
     }
     /*

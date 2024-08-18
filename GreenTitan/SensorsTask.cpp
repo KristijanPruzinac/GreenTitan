@@ -30,7 +30,7 @@ void SensorsTask(void* pvParameters){
 
 
     if (counter % 2 == 0){
-      toSend += String(String(IMUGetAzimuth()) + " " + String(millis()) + "\n");
+      //toSend += String(String(IMUGetHeading()) + " " + String(millis()) + "\n");
     }
     counter++;
 

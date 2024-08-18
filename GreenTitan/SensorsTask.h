@@ -12,9 +12,6 @@ extern void GPSCheck();
 
 extern float BatteryCurrentVoltage();
 
-extern bool IMUMagCalibrationActive();
-extern void IMUMagCalibrationRead();
-
 void SensorsRainSensor();
 void SensorsLowPower();
 void SensorsMowingTimeFrame();
@@ -24,7 +21,6 @@ void SensorsMowerLifted();
 void QueueSensorsMain();
 void SensorsTask(void* pvParameters);
 
-extern float IMUGetAzimuth();
 extern int GpsGetLon();
 extern int GpsGetLat();
 extern int GpsGetAcc();

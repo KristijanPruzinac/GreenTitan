@@ -82,31 +82,32 @@ void GPSRead() {
     float heading = 0;
     float dist = 0;
 
-    heading = AngleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
+    heading = 360.0 - AngleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
     dist = Distance(prevLon, prevLat, posllh.lon, posllh.lat);
 
-    //Correct azimuth
-    if (!(isnan(heading) || isnan(dist))){
-      xSemaphoreTake(GPSMutex, portMAX_DELAY);
-      if (gpsFirstMeasurement){
-        GPS_PrevHeading = heading;
-        GPS_CurrentHeading = heading;
-        gpsFirstMeasurement = false;
-      }
-      else {
-        GPS_PrevHeading = GPS_CurrentHeading;
-        GPS_CurrentHeading = heading;
+    if (dist > 5){
+      //Correct azimuth
+      if (!(isnan(heading) || isnan(dist))){
+        xSemaphoreTake(GPSMutex, portMAX_DELAY);
+        if (gpsFirstMeasurement){
+          GPS_PrevHeading = heading;
+          GPS_CurrentHeading = heading;
+          gpsFirstMeasurement = false;
+        }
+        else {
+          GPS_PrevHeading = GPS_CurrentHeading;
+          GPS_CurrentHeading = heading;
 
-        GPS_Heading = NormalizeAngle(GPS_PrevHeading + ShortestRotation(GPS_CurrentHeading, GPS_PrevHeading) / 2);
-      }
-      xSemaphoreGive(GPSMutex);
+          GPS_Heading = GPS_CurrentHeading;//NormalizeAngle(GPS_PrevHeading + ShortestRotation(GPS_CurrentHeading, GPS_PrevHeading) / 2);
+        }
+        xSemaphoreGive(GPSMutex);
 
-      GPS_Dist = dist;
+        GPS_Dist = dist;
+      }
+
+      prevLon = (int) posllh.lon;
+      prevLat = (int) posllh.lat;
     }
-    
-
-    prevLon = (int) posllh.lon;
-    prevLat = (int) posllh.lat;
   }
 
   prevAcc = (int) posllh.hAcc;
