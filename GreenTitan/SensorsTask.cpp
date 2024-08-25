@@ -25,7 +25,7 @@ void SensorsTask(void* pvParameters){
     BatteryUpdate();
     BatteryCheck();
 
-    IMURead();
+    //IMURead();
     GPSRead();
 
 

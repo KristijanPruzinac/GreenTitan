@@ -27,7 +27,7 @@ extern float MowerAngularDegreesToMotorSteps(float unit);
 extern void MotorSetAcceleration(float acceleration);
 extern void MotorResetAcceleration();
 extern void MotorDriveAngle(float angle, bool forward, float speedFactor);
-extern void MotorRotate(bool direction, float speedFactor, float degrees);
+extern void MotorRotate(float speedFactor);
 extern void MotorStop();
 
 extern void MotorRotateAcceleration(float acceleration);

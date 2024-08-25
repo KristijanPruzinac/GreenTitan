@@ -16,6 +16,7 @@ extern bool IMU_INVERT;
 bool InitIMU();
 void IMUCalibrate();
 void IMURead();
+void IMUTask(void* pvParameters);
 
 //TODO: REMOVE
 extern void BluetoothWrite(String message);

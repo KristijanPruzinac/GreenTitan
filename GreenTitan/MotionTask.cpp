@@ -46,6 +46,8 @@ void MotionUpdateSensorData(){
   xSemaphoreGive(GPSMutex);
   xSemaphoreGive(IMUMutex);
 
+  Serial.println(MowerHeading);
+
   //Serial.print("0 360 ");
   //Serial.print(MowerHeading); Serial.print(" "); Serial.println(MowerGPSHeading);
 }
@@ -57,8 +59,8 @@ void MotionSetTarget(int tLon, int tLat){
   MotionTargetLon = tLon;
   MotionTargetLat = tLat;
 
-  MotionMode = ROTATING;// TODO: Uncomment
-  //MotionSetMode(MOVING);
+  //MotionMode = ROTATING;// TODO: Uncomment
+  MotionSetMode(MOVING);
   //MotionSetMode(TEST);
 }
 
@@ -168,7 +170,7 @@ S_x_Controller* AccelerationController;
 
 void MotionTask(void* pvParameters){
 
-  MotionController = new SV_A_Controller(0, 0, MOTION_CORRECTION_SPEED, MOTION_CORRECTION_ACCELERATION, MOTION_CORRECTION_ACCELERATION_FACTOR, MOTION_CORRECTION_REACTION);
+  //MotionController = new SV_A_Controller(0, 0, MOTION_CORRECTION_SPEED, MOTION_CORRECTION_ACCELERATION, MOTION_CORRECTION_ACCELERATION_FACTOR, MOTION_CORRECTION_REACTION);
   //AccelerationController = new S_x_Controller(0, 0, MOTION_CORRECTION_ACCELERATION, ACCELERATION_CORRECTION_REACTION);
 
   String toSend = "";
@@ -183,39 +185,7 @@ void MotionTask(void* pvParameters){
     MotionUpdateSensorData();
 
     if (MotionMode == ROTATING){
-      //Target IMU angle is 0
-      MotionController->Update(ShortestRotation(MowerHeading, 0), MowerRotSpeed, 1.0 / MOTION_UPDATE_FREQUENCY);
-
-      float DriveAcc = MotionController->GetAcceleration();
-
-      //Serial.print("-100 100 "); Serial.println(DriveAcc);
-
-      MotorRotateAcceleration(DriveAcc);
-
-/*
-      float RotationAngle = ShortestRotation(MotionCurrentAzimuth, AngleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat));
-      
-      if (abs(RotationAngle) <= MOTION_ACCEPTED_ROTATION_TO_POINT){ //|| abs(RotationAngle) > MotionPrevRotationAngle + MOTION_ACCEPTED_ROTATION_TO_POINT){
-        MotionSetMode(MOVING);
-        //MotorStop();
-
-        //TODO: Uncomment top
-
-        //TODO: Remove
-        BluetoothWrite("Switched to moving.");
-      }
-      else {
-        if (RotationAngle < 0){
-          MotorRotate(LEFT, 1.0);
-        }
-        else {
-          MotorRotate(RIGHT, 1.0);
-        }
-      }
-
-      if (abs(RotationAngle) < MotionPrevRotationAngle)
-        MotionPrevRotationAngle = abs(RotationAngle);
-        */
+      MotorRotate(ShortestRotation(0, MowerHeading) / 180);
     }
     else if (MotionMode == MOVING){
       float PrevTargetAngle = AngleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat);
@@ -262,9 +232,9 @@ void MotionTask(void* pvParameters){
       else {
         //MotorDriveAngle(ShortestRotation(MowerTargetAngle, MowerHeading), FORWARD, 1.0);
         //MotorDriveAngle((ShortestRotation(MowerTargetAngle, MowerHeading) / fabs(ShortestRotation(MowerTargetAngle, MowerHeading))) * DistOffset*DistOffset*DistOffset/38.0, FORWARD, 1.0);
-        float angle = NormalizeAngle(PrevTargetAngle + (ShortestRotation(MowerTargetAngle, MowerHeading) / fabs(ShortestRotation(MowerTargetAngle, MowerHeading))) * DistOffset*DistOffset*DistOffset/80.0);
+        //float angle = NormalizeAngle(PrevTargetAngle + (ShortestRotation(MowerTargetAngle, MowerHeading) / fabs(ShortestRotation(MowerTargetAngle, MowerHeading))) * DistOffset*DistOffset*DistOffset/80.0);
 
-        MotorDriveAngle(ShortestRotation(angle, MowerHeading) / 2, FORWARD, 1.0);
+        MotorDriveAngle(ShortestRotation(0, MowerHeading) * 3, FORWARD, 1.0);
       }
     }
     /*

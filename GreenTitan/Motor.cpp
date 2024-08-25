@@ -1,8 +1,8 @@
 #include "Motor.h"
 
 // create the stepper motor objects
-ESP_FlexyStepper motorA;
-ESP_FlexyStepper motorB;
+ContinuousStepper<StepperDriver> motorA;
+ContinuousStepper<StepperDriver> motorB;
 
 float MowerAngularDegreesToMotorSteps(float unit){
   //     PATH AROUND CIRCUMFERENCE TRAVELLED (CM)                     STEPS PER CM                2 MOTORS
@@ -29,32 +29,29 @@ void MotorDriveAngle(float angle, bool forward, float speedFactor = 1) {
   float speedA = MOTOR_MAX_SPEED * speedFactor * motorPercentLeft;
   float speedB = MOTOR_MAX_SPEED * speedFactor * motorPercentRight;
 
-  motorA.setSpeedInStepsPerSecond(speedA);
-  motorB.setSpeedInStepsPerSecond(speedB);
-
   if (!MOTOR_LEFT_INVERT) {
-    motorA.setTargetPositionInSteps(forward ? 1e9 : -1e9);
+    motorA.spin(forward ? speedA : -speedA);
   } else {
-    motorA.setTargetPositionInSteps(forward ? -1e9 : 1e9);
+    motorA.spin(forward ? -speedA : speedA);
   }
 
   if (!MOTOR_RIGHT_INVERT) {
-    motorB.setTargetPositionInSteps(forward ? 1e9 : -1e9);
+    motorB.spin(forward ? speedB : -speedB);
   } else {
-    motorB.setTargetPositionInSteps(forward ? -1e9 : 1e9);
+    motorB.spin(forward ? -speedB : speedB);
   }
 }
 
-void MotorRotate(bool direction, float speedFactor = 1) {
+void MotorRotate(float speedFactor) {
   // SpeedFactor
-  speedFactor = constrain(speedFactor, 0.0, 1.0);
+  speedFactor = constrain(speedFactor, -1.0, 1.0);
 
   int invertA = 1;
   int invertB = 1;
 
   // Rotate
   if (MOTOR_SIDE_INVERT) {
-    direction = !direction;
+    speedFactor = -speedFactor;
   }
 
   if (MOTOR_LEFT_INVERT) {
@@ -63,19 +60,9 @@ void MotorRotate(bool direction, float speedFactor = 1) {
   if (MOTOR_RIGHT_INVERT) {
     invertB = -invertB;
   }
-
-  float speed = MOTOR_MAX_SPEED * 0.5 * speedFactor;
-
-  motorA.setSpeedInStepsPerSecond(speed);
-  motorB.setSpeedInStepsPerSecond(speed);
-
-  if (direction == LEFT) {
-    motorA.setTargetPositionInSteps(-invertA * 1e9);
-    motorB.setTargetPositionInSteps(invertB * 1e9);
-  } else {
-    motorA.setTargetPositionInSteps(invertA * 1e9);
-    motorB.setTargetPositionInSteps(-invertB * 1e9);
-  }
+  
+  motorA.spin(invertA * MOTOR_MAX_SPEED * speedFactor);
+  motorB.spin(-invertB * MOTOR_MAX_SPEED * speedFactor);
 }
 
 float motorASpeed = 0;
@@ -97,27 +84,24 @@ void MotorRotateAcceleration(float acceleration){
     invertB = -invertB;
   }
 
-  float oldMotorASpeed = motorASpeed;
-
   motorASpeed += MowerAngularDegreesToMotorSteps(acceleration);
   if (motorASpeed > MOTOR_MAX_SPEED / 2) motorASpeed = MOTOR_MAX_SPEED / 2;
   if (motorASpeed < -MOTOR_MAX_SPEED / 2) motorASpeed = -MOTOR_MAX_SPEED / 2;
 
-  if (fabs(motorASpeed - oldMotorASpeed) > 0.1){
-    motorA.setSpeedInStepsPerSecond(motorASpeed);
-    motorB.setSpeedInStepsPerSecond(motorASpeed);
-
-    if (motorASpeed > 0){
-      motorA.startJogging(invertA);
-      motorB.startJogging(-invertB);
-    }
-    else if (motorASpeed < 0) {
-      motorA.startJogging(-invertA);
-      motorB.startJogging(invertB);
-    }
+  if (motorASpeed > 0){
+    motorA.spin(invertA * motorASpeed);
+    motorB.spin(-invertB * motorASpeed);
+  }
+  else if (motorASpeed < 0) {
+    motorA.spin(-invertA * motorASpeed);
+    motorB.spin(invertB * motorASpeed);
+  }
+  else {
+    motorA.stop();
+    motorB.stop();
   }
 
-  Serial.println(motorA.getCurrentVelocityInStepsPerSecond());
+  Serial.print(motorA.speed()); Serial.print(" "); Serial.println(motorB.speed());
 
   //Serial.println(motorASpeed);
   //Serial.println(motorA.getCurrentVelocityInStepsPerSecond());
@@ -126,37 +110,17 @@ void MotorRotateAcceleration(float acceleration){
 void InitMotors() {
   pinMode(MOTOR_MAIN, OUTPUT);
 
-  // Initialize motors
-  motorA.connectToPins(MOTOR_A_STEP_PIN, MOTOR_A_DIR_PIN);
-  motorB.connectToPins(MOTOR_B_STEP_PIN, MOTOR_B_DIR_PIN);
+  motorA.begin(MOTOR_A_STEP_PIN, MOTOR_A_DIR_PIN);
+  motorB.begin(MOTOR_B_STEP_PIN, MOTOR_B_DIR_PIN);
 
   // Set acceleration
-  motorA.setAccelerationInStepsPerSecondPerSecond(MOTOR_ACCELERATION);
-  motorB.setAccelerationInStepsPerSecondPerSecond(MOTOR_ACCELERATION);
-
-  motorA.setDecelerationInStepsPerSecondPerSecond(MOTOR_ACCELERATION);
-  motorB.setDecelerationInStepsPerSecondPerSecond(MOTOR_ACCELERATION);
-
-  motorA.setStepsPerMillimeter(10);
-  motorB.setStepsPerMillimeter(10);
-
-  // Initial speed
-  motorA.setTargetPositionToStop();
-  motorB.setTargetPositionToStop();
-
-  motorA.startAsService(1);
-  motorB.startAsService(1);
+  motorA.setAcceleration(MOTOR_ACCELERATION);
+  motorB.setAcceleration(MOTOR_ACCELERATION);
 }
 
 void MotorStop() {
-  motorA.setCurrentPositionInSteps(0);
-  motorB.setCurrentPositionInSteps(0);
-
-  motorA.setTargetPositionInSteps(0);
-  motorB.setTargetPositionInSteps(0);
-
-  motorA.setTargetPositionToStop();
-  motorB.setTargetPositionToStop();
+  motorA.stop();
+  motorB.stop();
 }
 
 void MotorMainOn() {
@@ -165,4 +129,20 @@ void MotorMainOn() {
 
 void MotorMainOff() {
   digitalWrite(MOTOR_MAIN, LOW);
+}
+
+void MotorTask(void* pvParameters){
+  String toSend = "";
+  int counter = 0;
+  while (1){
+    TickType_t xLastWakeTime;
+    const TickType_t xPeriod = pdMS_TO_TICKS(MILLIS_PER_SECOND / MOTOR_UPDATE_FREQUENCY);
+
+    xLastWakeTime = xTaskGetTickCount();
+
+    motorA.loop();
+    motorB.loop();
+
+    vTaskDelayUntil(&xLastWakeTime, xPeriod);
+  }
 }

@@ -28,7 +28,7 @@ bool InitIMU(){
 
   mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
   mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+  mpu.setFilterBandwidth(MPU6050_BAND_44_HZ);
   return true;
 }
 
@@ -85,12 +85,12 @@ void IMURead(){
   //Average acceleration readings
   IMURotAcc = 0;
   for (int i = IMUDataMaxSampleSize - 1; i > IMUDataMaxSampleSize - 1 - IMUDataSampleSize; i--){
-    IMURotAcc += (IMURotSpeedData[i] - IMURotSpeedData[i - 1]) / (1.0 / SENSORS_UPDATE_FREQUENCY);
+    IMURotAcc += (IMURotSpeedData[i] - IMURotSpeedData[i - 1]) / (1.0 / IMU_UPDATE_FREQUENCY);
   }
   IMURotAcc /= (float) IMUDataSampleSize;
 
   //Add current heading
-  IMUHeading = NormalizeAngle(IMUHeading + newRotSpeed / SENSORS_UPDATE_FREQUENCY);
+  IMUHeading = NormalizeAngle(IMUHeading + newRotSpeed / IMU_UPDATE_FREQUENCY);
 
   xSemaphoreGive(IMUMutex);
 
@@ -137,4 +137,18 @@ float IMUGetGyroZ(){
 //Temp
 float IMUGetTemp(){
   return IMU_temp.temperature;
+}
+
+
+void IMUTask(void* pvParameters){
+  while (1){
+    TickType_t xLastWakeTime;
+    const TickType_t xPeriod = pdMS_TO_TICKS(MILLIS_PER_SECOND / IMU_UPDATE_FREQUENCY);
+
+    xLastWakeTime = xTaskGetTickCount();
+
+    IMURead();
+
+    vTaskDelayUntil(&xLastWakeTime, xPeriod);
+  }
 }

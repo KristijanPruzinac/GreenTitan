@@ -69,6 +69,28 @@ void InitFreeRtos(){
   IMUMutex = xSemaphoreCreateMutex();
   GPSMutex = xSemaphoreCreateMutex();
 
+  //Motor task
+  xTaskCreatePinnedToCore (
+    MotorTask,     // Function to implement the task
+    "MotorTask",   // Name of the task
+    8192,      // Stack size in bytes
+    NULL,      // Task input parameter
+    2,         // Priority of the task
+    NULL,      // Task handle.
+    0          // Core where the task should run
+  );
+
+  //IMU task
+  xTaskCreatePinnedToCore (
+    IMUTask,     // Function to implement the task
+    "IMUTask",   // Name of the task
+    8192,      // Stack size in bytes
+    NULL,      // Task input parameter
+    2,         // Priority of the task
+    NULL,      // Task handle.
+    0          // Core where the task should run
+  );
+
   //Sensors task
   xTaskCreatePinnedToCore (
     SensorsTask,     // Function to implement the task
