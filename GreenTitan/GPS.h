@@ -15,7 +15,10 @@ extern int GPS_STABILITY_CHECK_DURATION;
 
 extern int GPS_ACCURACY_STABLE;
 
+extern SemaphoreHandle_t IMUMutex;
 extern SemaphoreHandle_t GPSMutex;
+
+extern float IMUHeading;
 
 void calcChecksum(unsigned char* CK);
 void GPSRead();

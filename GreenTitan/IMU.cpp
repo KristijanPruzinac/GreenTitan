@@ -64,6 +64,7 @@ void IMURead(){
   //Calculate angular speed and acceleration
   float newRotSpeed = IMUGetGyroZ();
 
+/*
   //Shift data for averaging
   for (int i = 0; i < IMUDataMaxSampleSize - 1; i++){
     IMURotSpeedData[i] = IMURotSpeedData[i + 1];
@@ -88,6 +89,7 @@ void IMURead(){
     IMURotAcc += (IMURotSpeedData[i] - IMURotSpeedData[i - 1]) / (1.0 / IMU_UPDATE_FREQUENCY);
   }
   IMURotAcc /= (float) IMUDataSampleSize;
+  */
 
   //Add current heading
   IMUHeading = NormalizeAngle(IMUHeading + newRotSpeed / IMU_UPDATE_FREQUENCY);

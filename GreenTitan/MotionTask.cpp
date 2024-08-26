@@ -36,17 +36,15 @@ void MotionUpdateSensorData(){
 
   //If GPS heading changed adjust IMU heading
   if (fabs(MowerGPSHeading - GPS_Heading) > 0.1){
-    //IMUHeading = NormalizeAngle(IMUHeading + ShortestRotation(GPS_Heading, IMUHeading) * GPS_HEADING_CORRECTION_FACTOR);
+    IMUHeading = NormalizeAngle(IMUHeading - ShortestRotation(GPS_Heading, IMUHeading) * GPS_HEADING_CORRECTION_FACTOR);
+    Serial.println("Updated heading");
   }
 
-  MowerGPSHeading = GPS_Heading;
-  //MowerHeading = 360.0 - GPS_Heading;
+  //MowerGPSHeading = GPS_Heading;
   MowerHeading = IMUHeading;
 
   xSemaphoreGive(GPSMutex);
   xSemaphoreGive(IMUMutex);
-
-  Serial.println(MowerHeading);
 
   //Serial.print("0 360 ");
   //Serial.print(MowerHeading); Serial.print(" "); Serial.println(MowerGPSHeading);
@@ -230,10 +228,12 @@ void MotionTask(void* pvParameters){
 
       }
       else {
-        //MotorDriveAngle(ShortestRotation(MowerTargetAngle, MowerHeading), FORWARD, 1.0);
-        //MotorDriveAngle((ShortestRotation(MowerTargetAngle, MowerHeading) / fabs(ShortestRotation(MowerTargetAngle, MowerHeading))) * DistOffset*DistOffset*DistOffset/38.0, FORWARD, 1.0);
-        //float angle = NormalizeAngle(PrevTargetAngle + (ShortestRotation(MowerTargetAngle, MowerHeading) / fabs(ShortestRotation(MowerTargetAngle, MowerHeading))) * DistOffset*DistOffset*DistOffset/80.0);
+        //float AngleToAdd = (ShortestRotation(MowerTargetAngle, PrevTargetAngle) / fabs(ShortestRotation(MowerTargetAngle, PrevTargetAngle))) * DistOffset*DistOffset*DistOffset/80.0;
+        float AngleToAdd = (ShortestRotation(MowerTargetAngle, PrevTargetAngle) / fabs(ShortestRotation(MowerTargetAngle, PrevTargetAngle))) * DistOffset * 3;
+        AngleToAdd = constrain(AngleToAdd, -90, 90);
+        float CurrentTargetAngle = NormalizeAngle(PrevTargetAngle + AngleToAdd);
 
+        //MotorDriveAngle(ShortestRotation(MowerTargetAngle, MowerHeading) * 3, FORWARD, 1.0);
         MotorDriveAngle(ShortestRotation(0, MowerHeading) * 3, FORWARD, 1.0);
       }
     }

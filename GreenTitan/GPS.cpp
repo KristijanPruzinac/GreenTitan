@@ -22,9 +22,13 @@ NAV_POSLLH posllh;
 int prevLon = 1;
 int prevLat = 1;
 int prevAcc = -2;
-bool gpsFirstMeasurement = true;
+
+float GPS_PrevIMUHeading = 0;
+float GPS_CurrentIMUHeading = 0;
+
 float GPS_PrevHeading = 0;
 float GPS_CurrentHeading = 0;
+
 float GPS_Heading = 0;
 float GPS_Dist = 0;
 
@@ -82,29 +86,39 @@ void GPSRead() {
     float heading = 0;
     float dist = 0;
 
-    heading = 360.0 - AngleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
+    heading = 360.0 - NormalizeAngle(180 + AngleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat));
     dist = Distance(prevLon, prevLat, posllh.lon, posllh.lat);
 
-    if (dist > 5){
-      //Correct azimuth
-      if (!(isnan(heading) || isnan(dist))){
-        xSemaphoreTake(GPSMutex, portMAX_DELAY);
-        if (gpsFirstMeasurement){
-          GPS_PrevHeading = heading;
-          GPS_CurrentHeading = heading;
-          gpsFirstMeasurement = false;
-        }
-        else {
-          GPS_PrevHeading = GPS_CurrentHeading;
-          GPS_CurrentHeading = heading;
+    //Distance between readings sufficient, values are not nan
+    if (dist >= GPS_MIN_DIST_BETWEEN_READINGS && !(isnan(heading) || isnan(dist))){
+      xSemaphoreTake(IMUMutex, portMAX_DELAY);
+      GPS_CurrentIMUHeading = IMUHeading;
+      xSemaphoreGive(IMUMutex);
 
-          GPS_Heading = GPS_CurrentHeading;//NormalizeAngle(GPS_PrevHeading + ShortestRotation(GPS_CurrentHeading, GPS_PrevHeading) / 2);
-        }
-        xSemaphoreGive(GPSMutex);
-
-        GPS_Dist = dist;
+      //Avoid possible division by zero error
+      if (ShortestRotation(GPS_CurrentIMUHeading, GPS_PrevIMUHeading) < 0.1){
+        GPS_CurrentIMUHeading = NormalizeAngle(GPS_PrevIMUHeading + 0.1);
+      }
+      if (ShortestRotation(GPS_CurrentHeading, GPS_PrevHeading) < 0.1){
+        GPS_CurrentHeading = NormalizeAngle(GPS_PrevHeading + 0.1);
       }
 
+      //Update previous data
+      GPS_CurrentHeading = heading;
+
+      GPS_PrevIMUHeading = GPS_CurrentIMUHeading;
+      GPS_PrevHeading = GPS_CurrentHeading;
+
+      //Correct azimuth if gps data is accurate enough
+      if (fabs(ShortestRotation(GPS_CurrentIMUHeading, GPS_PrevIMUHeading)) <= GPS_HEADING_CORRECTION_ANGLE && fabs(ShortestRotation(GPS_CurrentIMUHeading, GPS_PrevIMUHeading) - ShortestRotation(heading, GPS_PrevHeading)) <= GPS_HEADING_CORRECTION_ANGLE){
+        xSemaphoreTake(GPSMutex, portMAX_DELAY);
+        GPS_Heading = heading;
+
+        xSemaphoreGive(GPSMutex);
+      }
+
+      GPS_Dist = dist;
+      
       prevLon = (int) posllh.lon;
       prevLat = (int) posllh.lat;
     }
