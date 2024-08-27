@@ -36,8 +36,7 @@ void MotionUpdateSensorData(){
 
   //If GPS heading changed adjust IMU heading
   if (fabs(MowerGPSHeading - GPS_Heading) > 0.1){
-    IMUHeading = NormalizeAngle(IMUHeading - ShortestRotation(GPS_Heading, IMUHeading) * GPS_HEADING_CORRECTION_FACTOR);
-    Serial.println("Updated heading");
+    IMUHeading = NormalizeAngle(IMUHeading - ShortestRotation(GPS_Heading, IMUHeading) * GPS_HEADING_CORRECTION_FACTOR - pow(ShortestRotation(GPS_Heading, IMUHeading), 3) * GPS_HEADING_CORRECTION_FACTOR / 25000.0);
   }
 
   //MowerGPSHeading = GPS_Heading;
