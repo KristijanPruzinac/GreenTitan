@@ -61,8 +61,8 @@ void MotorRotate(float speedFactor) {
     invertB = -invertB;
   }
   
-  motorA.spin(-invertA * MOTOR_MAX_SPEED * speedFactor);
-  motorB.spin(invertB * MOTOR_MAX_SPEED * speedFactor);
+  motorA.spin(invertA * MOTOR_MAX_SPEED * speedFactor);
+  motorB.spin(-invertB * MOTOR_MAX_SPEED * speedFactor);
 }
 
 float motorASpeed = 0;

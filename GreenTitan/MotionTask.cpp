@@ -34,8 +34,8 @@ void MotionUpdateSensorData(){
   //Grab GPS data
   xSemaphoreTake(GPSMutex, portMAX_DELAY);
 
-  //If GPS heading changed adjust IMU heading
-  if (fabs(MowerGPSHeading - GPS_Heading) > 0.1){
+  //In MOVING mode, If GPS heading changed adjust IMU heading
+  if (MotionMode == MOVING && fabs(MowerGPSHeading - GPS_Heading) > 0.1){
     IMUHeading = NormalizeAngle(IMUHeading - ShortestRotation(GPS_Heading, IMUHeading) * GPS_HEADING_CORRECTION_FACTOR - pow(ShortestRotation(GPS_Heading, IMUHeading), 3) * GPS_HEADING_CORRECTION_FACTOR / 25000.0);
   }
 
@@ -56,120 +56,12 @@ void MotionSetTarget(int tLon, int tLat){
   MotionTargetLon = tLon;
   MotionTargetLat = tLat;
 
-  //MotionMode = ROTATING;// TODO: Uncomment
-  MotionSetMode(MOVING);
+  MotionMode = ROTATING;
+  //MotionSetMode(MOVING);
   //MotionSetMode(TEST);
 }
 
-
-class SV_A_Controller {
-private:
-  float Position;
-  float Target;
-
-  float Speed;
-  float MaxSpeed;
-
-  float Acceleration;
-  float MaxAcceleration;
-  float NormalAccelerationFactor;
-
-  float Reaction;
-  
-public:
-  SV_A_Controller(float Position, float Target, float MaxSpeed, float MaxAcceleration, float NormalAccelerationFactor, float Reaction) {
-    this->Position = Position;
-    this->Target = Target;
-    
-    this->MaxSpeed = MaxSpeed;
-    
-    this->MaxAcceleration = MaxAcceleration;
-    this->NormalAccelerationFactor = NormalAccelerationFactor;
-    
-    this->Reaction = Reaction;
-    
-    this->Acceleration = 0;
-  }
-
-  void SetTarget(float Target){
-    this->Target = Target;
-  }
-  
-  // Calculations
-  void Update(float Position, float Speed, float TimeElapsed) {
-    this->Position = Position;
-    this->Acceleration = (Speed - this->Speed) / TimeElapsed;
-    this->Speed = Speed;
-    
-    // Minimum path needed to stop
-    float StoppingAcceleration = MaxAcceleration * NormalAccelerationFactor;
-    float StoppingSpeed = MaxSpeed;
-    float StoppingPath = pow(StoppingSpeed, 2) / (2 * StoppingAcceleration);
-    
-    // If in range of stopping path, adjust speed linearly
-    float TargetSpeed;
-    float DistanceToTarget = Target - Position;
-    if (abs(DistanceToTarget) < StoppingPath) {
-      TargetSpeed = ((Target - Position) / StoppingPath) * MaxSpeed;
-    }
-    // Else speed up to MaxSpeed
-    else {
-      TargetSpeed = (Target - Position) / abs(Target - Position) * MaxSpeed;
-    }
-    
-    // Match speed
-    this->Acceleration = constrain(((TargetSpeed - Speed) / MaxSpeed) * MaxAcceleration * Reaction, -MaxAcceleration, MaxAcceleration);
-  }
-  
-  float GetAcceleration() {
-    return this->Acceleration;
-  }
-};
-
-SV_A_Controller* MotionController;
-
-/*
-class S_x_Controller {
-private:
-  float Variable;
-  
-  float TargetPosition;
-  float MaxPosition;
-  
-  float Reaction;
-
-public:
-  S_x_Controller(float Variable, float TargetPosition, float MaxPosition, float Reaction){
-    this->Variable = Variable;
-    
-    this->TargetPosition = TargetPosition;
-    this->MaxPosition = MaxPosition;
-    
-    this->Reaction = Reaction;
-  }
-  
-  //Calculations
-  void Update(float Position, float TimeElapsed){
-    this->Variable += ((TargetPosition - Position) / MaxPosition) * Reaction;
-  }
-
-  void SetTarget(float TargetPosition){
-    this->TargetPosition = TargetPosition;
-  }
-  
-  float GetVariable(){
-    return this->Variable;
-  }
-};
-
-S_x_Controller* AccelerationController;
-*/
-
 void MotionTask(void* pvParameters){
-
-  //MotionController = new SV_A_Controller(0, 0, MOTION_CORRECTION_SPEED, MOTION_CORRECTION_ACCELERATION, MOTION_CORRECTION_ACCELERATION_FACTOR, MOTION_CORRECTION_REACTION);
-  //AccelerationController = new S_x_Controller(0, 0, MOTION_CORRECTION_ACCELERATION, ACCELERATION_CORRECTION_REACTION);
-
   String toSend = "";
   int counter = 0;
   while (1){
@@ -181,18 +73,32 @@ void MotionTask(void* pvParameters){
     //Sensor data
     MotionUpdateSensorData();
 
+    //Calculate needed values for navigating
+    float PrevTargetAngle = AngleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat); //Angle from line start point to end point
+    float MowerTargetAngle = AngleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat); //Angle from current position to end point
+
+    float AngleDiff = ShortestRotation(PrevTargetAngle, MowerTargetAngle);
+    float MowerTargetDist = sqrt(pow(GpsGetLon() - MotionTargetLon, 2) + pow(GpsGetLat() - MotionTargetLat, 2));
+    
+    float DistAint = MowerTargetDist * cos(radians(abs(AngleDiff))); //Distance on line remaining to target
+    float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff))); //Distance from current position to line 
+
+    //Check for nan values
+    if (isnan(DistAint)) DistAint = 0;
+    if (isnan(DistOffset)) DistOffset = 0;
+
     if (MotionMode == ROTATING){
-      MotorRotate(ShortestRotation(0, MowerHeading) / 180);
+      if (fabs(ShortestRotation(MowerHeading, MowerTargetAngle)) <= MOTION_ACCEPTED_ROTATION_TO_POINT){
+        MotionSetMode(MOVING);
+
+        //TODO: Remove
+        BluetoothWrite("Ended rotating.");
+      }
+      else {
+        MotorRotate(ShortestRotation(MowerTargetAngle, MowerHeading) / 180);
+      }
     }
     else if (MotionMode == MOVING){
-      float PrevTargetAngle = AngleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat);
-      float MowerTargetAngle = AngleBetweenPoints(GpsGetLon(), GpsGetLat(), MotionTargetLon, MotionTargetLat);
-      float AngleDiff = ShortestRotation(PrevTargetAngle, MowerTargetAngle);
-      
-      float MowerTargetDist = sqrt(pow(GpsGetLon() - MotionTargetLon, 2) + pow(GpsGetLat() - MotionTargetLat, 2));
-      
-      float DistAint = MowerTargetDist * cos(radians(abs(AngleDiff))); //Distance left to target
-      float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff))); //Distance from expected line to 
       /*
       //STRAYED FROM PATH
       if (DistOffset > MAX_DEVIATION){
@@ -202,10 +108,10 @@ void MotionTask(void* pvParameters){
         //TODO: Remove
         //BluetoothWrite("Mower strayed from path!");
       }
-
+*/
       if (counter % 2 == 0){//TODO: Remove
-        //toSend += String(DistOffset * (AngleDiff / fabs(AngleDiff))) + "\n";
-        toSend += String(MowerRotAcc) + "\n";
+        //toSend += String((ShortestRotation(MowerTargetAngle, PrevTargetAngle) / fabs(ShortestRotation(MowerTargetAngle, PrevTargetAngle))) * DistOffset) + "\n";
+        //toSend += String(MowerHeading) + " " + String(PrevTargetAngle) + " " + String(CurrentTargetAngle) + " " + "\n";
       }
       counter++;
 
@@ -216,24 +122,24 @@ void MotionTask(void* pvParameters){
 
         toSend = "";
       }
-      */
       
-      if (DistAint < MOTION_ACCEPTED_DIST_TO_POINT || abs(AngleDiff) > 90.0){
+      
+      if (DistAint < MOTION_ACCEPTED_DIST_TO_POINT){
         MotorStop();
         MotionSetMode(WAITING);
 
         //TODO: Remove
-        BluetoothWrite("Ended motion.");
+        BluetoothWrite("Ended moving.");
 
       }
       else {
         //float AngleToAdd = (ShortestRotation(MowerTargetAngle, PrevTargetAngle) / fabs(ShortestRotation(MowerTargetAngle, PrevTargetAngle))) * DistOffset*DistOffset*DistOffset/80.0;
-        float AngleToAdd = (ShortestRotation(MowerTargetAngle, PrevTargetAngle) / fabs(ShortestRotation(MowerTargetAngle, PrevTargetAngle))) * DistOffset * 3;
-        AngleToAdd = constrain(AngleToAdd, -90, 90);
-        float CurrentTargetAngle = NormalizeAngle(PrevTargetAngle + AngleToAdd);
+        float AngleToAdd = (ShortestRotation(MowerTargetAngle, PrevTargetAngle) / fabs(ShortestRotation(MowerTargetAngle, PrevTargetAngle))) * DistOffset / 3.0;
+        AngleToAdd = constrain(AngleToAdd, -30, 30);
+        float CurrentTargetAngle = NormalizeAngle(PrevTargetAngle - AngleToAdd);
 
-        //MotorDriveAngle(ShortestRotation(MowerTargetAngle, MowerHeading) * 3, FORWARD, 1.0);
-        MotorDriveAngle(ShortestRotation(0, MowerHeading) * 3, FORWARD, 1.0);
+        MotorDriveAngle(ShortestRotation(CurrentTargetAngle, MowerHeading) * 3, FORWARD, 1.0);
+        //MotorDriveAngle(ShortestRotation(0, MowerHeading) * 3, FORWARD, 1.0);
       }
     }
     /*

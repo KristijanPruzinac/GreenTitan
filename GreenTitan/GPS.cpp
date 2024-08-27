@@ -113,7 +113,6 @@ void GPSRead() {
       if (fabs(ShortestRotation(GPS_CurrentIMUHeading, GPS_PrevIMUHeading)) <= GPS_HEADING_CORRECTION_ANGLE && fabs(ShortestRotation(GPS_CurrentIMUHeading, GPS_PrevIMUHeading) - ShortestRotation(heading, GPS_PrevHeading)) <= GPS_HEADING_CORRECTION_ANGLE){
         xSemaphoreTake(GPSMutex, portMAX_DELAY);
         GPS_Heading = heading;
-
         xSemaphoreGive(GPSMutex);
       }
 
@@ -157,15 +156,27 @@ void GPSCheck(){
 }
 
 int GpsGetLon(){
-  return prevLon;
+  xSemaphoreTake(GPSMutex, portMAX_DELAY);
+  int valueToReturn = prevLon;
+  xSemaphoreGive(GPSMutex);
+
+  return valueToReturn;
 }
 
 int GpsGetLat(){
-  return prevLat;
+  xSemaphoreTake(GPSMutex, portMAX_DELAY);
+  int valueToReturn = prevLat;
+  xSemaphoreGive(GPSMutex);
+
+  return valueToReturn;
 }
 
 int GpsGetAcc(){
-  return prevAcc;
+  xSemaphoreTake(GPSMutex, portMAX_DELAY);
+  int valueToReturn = prevAcc;
+  xSemaphoreGive(GPSMutex);
+
+  return valueToReturn;
 }
 
 void InitGPS(){
