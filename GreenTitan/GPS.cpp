@@ -86,7 +86,7 @@ void GPSRead() {
     float heading = 0;
     float dist = 0;
 
-    heading = 360.0 - NormalizeAngle(180 + AngleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat));
+    heading = AngleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
     dist = Distance(prevLon, prevLat, posllh.lon, posllh.lat);
 
     //Distance between readings sufficient, values are not nan

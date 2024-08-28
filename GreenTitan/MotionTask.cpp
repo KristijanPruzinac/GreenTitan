@@ -1,20 +1,30 @@
 #include "MotionTask.h"
 
+//IMU
 float MowerRotAngle = 0;
 float MowerRotSpeed = 0;
 float MowerRotAcc = 0;
 float MowerIMUHeading = 0;
 
+//GPS
 float MowerGPSHeading = 0;
 
+//GPS corrected current mower heading
 float MowerHeading = 0;
 
+//Current heading reliabillity, how many degrees heading changes per second due to GPS correction
+float HeadingReliabillity = 360;
+
+float HeadingCorrectionData[10] = {360};
+
+//Start and end point
 int MotionPrevLon;
 int MotionPrevLat;
 
 int MotionTargetLon;
 int MotionTargetLat;
 
+//Current mode of motion
 int MotionMode = WAITING;
 
 void MotionSetMode(int mode){
@@ -36,10 +46,24 @@ void MotionUpdateSensorData(){
 
   //In MOVING mode, If GPS heading changed adjust IMU heading
   if (MotionMode == MOVING && fabs(MowerGPSHeading - GPS_Heading) > 0.1){
-    IMUHeading = NormalizeAngle(IMUHeading - ShortestRotation(GPS_Heading, IMUHeading) * GPS_HEADING_CORRECTION_FACTOR - pow(ShortestRotation(GPS_Heading, IMUHeading), 3) * GPS_HEADING_CORRECTION_FACTOR / 25000.0);
+    float HeadingAdjustment = -(ShortestRotation(GPS_Heading, IMUHeading) * GPS_HEADING_CORRECTION_FACTOR - pow(ShortestRotation(GPS_Heading, IMUHeading), 3) * GPS_HEADING_CORRECTION_FACTOR / 25000.0);
+    
+    //Update heading reliabillity
+    for (int i = 9; i > 0; i--){
+      HeadingCorrectionData[i] = HeadingCorrectionData[i - 1];
+    }
+    HeadingCorrectionData[0] = HeadingAdjustment;
+
+    HeadingReliabillity = 0;
+    for (int i = 0; i < 10; i++){
+      HeadingReliabillity += HeadingCorrectionData[i];
+    }
+    
+    //Correct heading with GPS data
+    IMUHeading = NormalizeAngle(IMUHeading + HeadingAdjustment);
   }
 
-  //MowerGPSHeading = GPS_Heading;
+  MowerGPSHeading = GPS_Heading;
   MowerHeading = IMUHeading;
 
   xSemaphoreGive(GPSMutex);
@@ -83,10 +107,6 @@ void MotionTask(void* pvParameters){
     float DistAint = MowerTargetDist * cos(radians(abs(AngleDiff))); //Distance on line remaining to target
     float DistOffset = MowerTargetDist * sin(radians(abs(AngleDiff))); //Distance from current position to line 
 
-    //Check for nan values
-    if (isnan(DistAint)) DistAint = 0;
-    if (isnan(DistOffset)) DistOffset = 0;
-
     if (MotionMode == ROTATING){
       if (fabs(ShortestRotation(MowerHeading, MowerTargetAngle)) <= MOTION_ACCEPTED_ROTATION_TO_POINT){
         MotionSetMode(MOVING);
@@ -110,8 +130,8 @@ void MotionTask(void* pvParameters){
       }
 */
       if (counter % 2 == 0){//TODO: Remove
-        //toSend += String((ShortestRotation(MowerTargetAngle, PrevTargetAngle) / fabs(ShortestRotation(MowerTargetAngle, PrevTargetAngle))) * DistOffset) + "\n";
-        //toSend += String(MowerHeading) + " " + String(PrevTargetAngle) + " " + String(CurrentTargetAngle) + " " + "\n";
+        float DistanceFromLineToSend = (ShortestRotation(MowerTargetAngle, PrevTargetAngle) / fabs(ShortestRotation(MowerTargetAngle, PrevTargetAngle))) * DistOffset; if (isnan(DistanceFromLineToSend)) DistanceFromLineToSend = 0;
+        toSend += String(DistanceFromLineToSend) + "\n";
       }
       counter++;
 
@@ -139,7 +159,6 @@ void MotionTask(void* pvParameters){
         float CurrentTargetAngle = NormalizeAngle(PrevTargetAngle - AngleToAdd);
 
         MotorDriveAngle(ShortestRotation(CurrentTargetAngle, MowerHeading) * 3, FORWARD, 1.0);
-        //MotorDriveAngle(ShortestRotation(0, MowerHeading) * 3, FORWARD, 1.0);
       }
     }
     /*

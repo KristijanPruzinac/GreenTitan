@@ -15,10 +15,10 @@ float Distance(int x1, int y1, int x2, int y2){
 // Angle is 0 for NORTH and revolves 360 degrees clockwise
 float AngleBetweenPoints(int x1, int y1, int x2, int y2) {
   // Calculate the angle in radians
-  float angleRad = atan2(y2 - y1, x2 - x1);
+  float angleRad = atan2(y1 - y2, x1 - x2);
 
   // Convert radians to degrees, map and normalize
-  return NormalizeAngle((angleRad * 180 / PI) + 90.0);
+  return 360.0 - NormalizeAngle((angleRad * 180 / PI) + 90.0);
 }
 
 float NormalizeAngle(float angle){
