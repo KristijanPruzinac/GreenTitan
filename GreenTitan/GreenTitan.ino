@@ -175,7 +175,7 @@ void loop(){
     if (!InitIMU()){
       Error("Gyro failed to initialize!");
     }
-    InitGPS();
+    //InitGPS();
     InitBattery();
     InitRainSensor();
 
@@ -199,9 +199,9 @@ void loop(){
     //TODO: Move to setup
     IMUCalibrate();
 
-    delay(2500);
+    delay(500);
     if (SETUP_COMPLETED){
-      Mode = "START";
+      Mode = "RUNNING";
     }
     else {
       Mode = "SETUP";
@@ -254,14 +254,18 @@ void loop(){
     }
   }
   else if (Mode == "RUNNING"){
-
-    if (!MowerIsInMotion()){
-      std::vector<int> NextPointCoords = AlgorithmNextPoint();
-
-      MotionSetTarget(NextPointCoords[0], NextPointCoords[1]);
+    MotorDriveAngle(0, FORWARD, 1.0);
+    delay(1000);
+    MotionSetTarget(1, -101);
+    while (MowerIsInMotion()){
+      delay(10);
     }
+    MotorDriveAngle(0, FORWARD, 1.0);
+    delay(1000);
 
-    delay(50);
+    while (1){
+      delay(100);
+    }
   }
   delay(10);
 }

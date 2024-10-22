@@ -122,7 +122,7 @@ void MotionTask(void* pvParameters){
 
     if (MotionMode == ROTATING){
       if (fabs(ShortestRotation(MowerHeading, MowerTargetAngle)) <= MOTION_ACCEPTED_ROTATION_TO_POINT){
-        MotionSetMode(MOVING);
+        MotionSetMode(WAITING);
       }
       else {
         MotorRotate(ShortestRotation(MowerTargetAngle, MowerHeading) / 180);
