@@ -43,6 +43,7 @@ float MOTION_ACC_FACTOR = 1.0;
 
 SemaphoreHandle_t IMUMutex;
 SemaphoreHandle_t GPSMutex;
+SemaphoreHandle_t MotionMutex;
 
 // -------------------------------------------------------- DEPENDENCIES ---------------------------------------------------------------
 
@@ -68,6 +69,7 @@ SemaphoreHandle_t GPSMutex;
 void InitFreeRtos(){
   IMUMutex = xSemaphoreCreateMutex();
   GPSMutex = xSemaphoreCreateMutex();
+  MotionMutex = xSemaphoreCreateMutex();
 
   //Motor task
   xTaskCreatePinnedToCore (
@@ -245,9 +247,21 @@ void loop(){
     } else if (message == "SAVE_CONFIGURATION"){
         FileResult result = SaveConfiguration();
         BluetoothWrite(String(result));
+    } else if (message == "MOWER_START"){
+      Mode = "RUNNING";
     } else if (message == "TEST" || message == "GPS/GET/ACCURACY"){
       MotionSetTarget(GpsGetLon(), GpsGetLat() + 800);
     }
+  }
+  else if (Mode == "RUNNING"){
+
+    if (!MowerIsInMotion()){
+      std::vector<int> NextPointCoords = AlgorithmNextPoint();
+
+      MotionSetTarget(NextPointCoords[0], NextPointCoords[1]);
+    }
+
+    delay(50);
   }
   delay(10);
 }

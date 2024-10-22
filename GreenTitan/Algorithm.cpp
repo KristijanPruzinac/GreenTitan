@@ -1,5 +1,9 @@
 #include "Algorithm.h"
 
+void MainChargingStart(){
+  
+}
+
 //Charging station
 int prevPointLon = 0;
 int prevPointLat = 0;

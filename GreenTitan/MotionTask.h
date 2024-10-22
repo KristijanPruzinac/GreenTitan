@@ -12,6 +12,7 @@ extern int MAX_DEVIATION;
 
 extern SemaphoreHandle_t IMUMutex;
 extern SemaphoreHandle_t GPSMutex;
+extern SemaphoreHandle_t MotionMutex;
 
 //Main
 extern void MainStop();
@@ -32,12 +33,14 @@ extern void MotorStop();
 
 extern void MotorRotateAcceleration(float acceleration);
 
-//IMU
+
 void MotionSetMode(int mode);
 void MotionSetTarget(int tLon, int tLat);
 void MotionMoveToTarget();
 void MotionRotateToTarget();
 void MotionTask(void* pvParameters);
+
+bool MowerIsInMotion();
 
 extern float IMURotSpeed;
 extern float IMURotAcc;

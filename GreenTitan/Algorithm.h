@@ -28,8 +28,8 @@ extern void MotorDriveAngle(float angle, bool forward, float speedFactor);
 extern void MotorMainOn();
 extern void MotorMainOff();
 
-//Main
-extern void MainChargingStart();
+
+//extern void MainChargingStart();
 
 void ClearOutlines();
 void FindTerrainBounds();

@@ -28,11 +28,13 @@ int MotionTargetLat;
 int MotionMode = WAITING;
 
 void MotionSetMode(int mode){
+  xSemaphoreTake(MotionMutex, portMAX_DELAY);
   if (mode == WAITING){
     MotorStop();
   }
 
   MotionMode = mode;
+  xSemaphoreGive(MotionMutex);
 }
 
 void MotionUpdateSensorData(){
@@ -80,9 +82,20 @@ void MotionSetTarget(int tLon, int tLat){
   MotionTargetLon = tLon;
   MotionTargetLat = tLat;
 
-  MotionMode = ROTATING;
+  MotionSetMode(ROTATING);
   //MotionSetMode(MOVING);
   //MotionSetMode(TEST);
+}
+
+bool MowerIsInMotion(){
+  bool returnValue = false;
+  xSemaphoreTake(MotionMutex, portMAX_DELAY);
+  if (MotionMode != WAITING){
+    returnValue = true;
+  }
+  xSemaphoreGive(MotionMutex);
+
+  return returnValue;
 }
 
 void MotionTask(void* pvParameters){
@@ -110,9 +123,6 @@ void MotionTask(void* pvParameters){
     if (MotionMode == ROTATING){
       if (fabs(ShortestRotation(MowerHeading, MowerTargetAngle)) <= MOTION_ACCEPTED_ROTATION_TO_POINT){
         MotionSetMode(MOVING);
-
-        //TODO: Remove
-        BluetoothWrite("Ended rotating.");
       }
       else {
         MotorRotate(ShortestRotation(MowerTargetAngle, MowerHeading) / 180);
@@ -129,13 +139,13 @@ void MotionTask(void* pvParameters){
         //BluetoothWrite("Mower strayed from path!");
       }
 */
-      if (counter % 2 == 0){//TODO: Remove
+      if (counter % 6 == 0){//TODO: Remove
         float DistanceFromLineToSend = (ShortestRotation(MowerTargetAngle, PrevTargetAngle) / fabs(ShortestRotation(MowerTargetAngle, PrevTargetAngle))) * DistOffset; if (isnan(DistanceFromLineToSend)) DistanceFromLineToSend = 0;
         toSend += String(DistanceFromLineToSend) + "\n";
       }
       counter++;
 
-      if (counter >= 5){
+      if (counter >= 15){
         counter = 0;
 
         BluetoothWrite(toSend);
@@ -147,11 +157,6 @@ void MotionTask(void* pvParameters){
       if (DistAint < MOTION_ACCEPTED_DIST_TO_POINT){
         MotorStop();
         MotionSetMode(WAITING);
-
-        MotionSetTarget(GpsGetLon(), GpsGetLat() - 800);
-
-        //TODO: Remove
-        BluetoothWrite("Ended moving.");
 
       }
       else {
