@@ -158,12 +158,6 @@ void MotionTask(void* pvParameters){
         MotorStop();
         MotionSetMode(WAITING);
 
-<<<<<<< HEAD
-=======
-        //TODO: Remove
-        BluetoothWrite("Ended moving.");
-
->>>>>>> parent of 0694990 (+-6cm accuracy on line following)
       }
       else {
         //float AngleToAdd = (ShortestRotation(MowerTargetAngle, PrevTargetAngle) / fabs(ShortestRotation(MowerTargetAngle, PrevTargetAngle))) * DistOffset*DistOffset*DistOffset/80.0;
@@ -171,7 +165,7 @@ void MotionTask(void* pvParameters){
         AngleToAdd = constrain(AngleToAdd, -30, 30);
         float CurrentTargetAngle = NormalizeAngle(PrevTargetAngle - AngleToAdd);
 
-        MotorDriveAngle(ShortestRotation(CurrentTargetAngle, MowerHeading) * 3, FORWARD, 1.0);
+        MotorDriveAngle(ShortestRotation(CurrentTargetAngle, MowerHeading) * 5, FORWARD, 1.0);
       }
     }
     /*
