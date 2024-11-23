@@ -105,9 +105,7 @@ FileResult InitConfiguration(){
     return INIT_FAILED;
   }
 
-  FileResult configurationResult = LoadConfiguration();
-
-  return configurationResult;
+  return SUCCESS;
 }
 
 FileResult SaveConfiguration() {

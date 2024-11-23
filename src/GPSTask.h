@@ -24,9 +24,9 @@ void calcChecksum(unsigned char* CK);
 void GPSRead();
 void GPSCheck();
 bool InitGPS();
-int GpsGetLon();
-int GpsGetLat();
-int GpsGetAcc();
+long GpsGetLon();
+long GpsGetLat();
+long GpsGetAcc();
 void GPSTask(void* pvParameters);
 
 #endif

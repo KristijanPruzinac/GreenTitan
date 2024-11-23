@@ -15,8 +15,8 @@ extern SemaphoreHandle_t GPSMutex;
 extern SemaphoreHandle_t MotionMutex;
 
 //Gps
-extern int GpsGetLon();
-extern int GpsGetLat();
+extern long GpsGetLon();
+extern long GpsGetLat();
 extern float GPS_Heading;
 extern float GPS_PrevHeading;
 
@@ -32,7 +32,7 @@ extern void MotorRotateAcceleration(float acceleration);
 
 
 void MotionSetMode(int mode);
-void MotionSetTarget(int tLon, int tLat);
+void MotionSetTarget(long tLon, long tLat);
 void MotionMoveToTarget();
 void MotionRotateToTarget();
 void MotionTask(void* pvParameters);

@@ -8,12 +8,12 @@ float DegRad(float degVal){
   return (degVal / 360.0) * (2 * PI);
 }
 
-float Distance(int x1, int y1, int x2, int y2){
+float Distance(long long x1, long long y1, long long x2, long long y2){
   return sqrt((y2-y1)*(y2-y1) + (x2-x1)*(x2-x1));
 }
 
 // Angle is 0 for NORTH and revolves 360 degrees clockwise
-float AngleBetweenPoints(int x1, int y1, int x2, int y2) {
+float AngleBetweenPoints(long long x1, long long y1, long long x2, long long y2) {
   // Calculate the angle in radians
   float angleRad = atan2(y1 - y2, x1 - x2);
 

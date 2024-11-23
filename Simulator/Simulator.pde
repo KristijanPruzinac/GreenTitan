@@ -1,4 +1,4 @@
-//Adapt to Arduino IDE
+
 String String(long val){return str(val);}
 String String(int val){return str(val);}
 String String(float val){return str(val);}
@@ -6,7 +6,7 @@ String String(float val){return str(val);}
 int translateYVal;
 
 boolean MirrorX = false;
-boolean MirrorY = false;
+boolean MirrorY = true;
 
 String MotorEmulation = "ROTATING";
 float TurnAmountLeft = 0;
@@ -53,10 +53,10 @@ void setup(){
 }
 
 long adjustX(long in){
-  return in - baseLon;
+  return in;
 }
 long adjustY(long in){
-  return in - baseLat;
+  return in;
 }
 
 void mousePressed(){
@@ -65,6 +65,8 @@ void mousePressed(){
   targetPointLat = targetPoint.get(1);
   
   MotionMoveToTarget();
+  
+  print(targetPointLon); print(" "); println(targetPointLat);
   
   //println("{" + str(int(mouseX - width / 2 + mowerLon)) + ", " + str(int(mouseY - height * 6 / 7 + mowerLat)) + "},");
 }
@@ -99,7 +101,7 @@ void draw(){
   
   background(255);
   pushMatrix();
-  translate(width / 2, translateYVal);
+  translate(width / 2 - (terrainMaxX - terrainMinX) / 2, height / 2 - (terrainMaxY - terrainMinY) / 2);
   
   //Boundaries
   stroke(220);

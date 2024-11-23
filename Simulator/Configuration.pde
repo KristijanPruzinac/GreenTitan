@@ -1,5 +1,5 @@
 //ALGORITHM SETTINGS
-int MOWER_OVERLAP = 85;
+int MOWER_OVERLAP = 15;
 int MAX_DEVIATION = 50;
 
 void SaveConfiguration(){}

@@ -2,11 +2,11 @@ import java.io.*; //<>//
 import java.util.*;
 
 //Charging station
-long baseLon = -5672328; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
-long baseLat = 3376391; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
+long baseLon = 1000000000; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
+long baseLat = 1000000000; //TODO: REMOVE HARDCODED VALUE (Filled at power on)
 
-long prevPointLon = 0;
-long prevPointLat = 0;
+long prevPointLon = 1000000000;
+long prevPointLat = 1000000000;
 
 //Globals
 int numOfLines;
@@ -586,6 +586,10 @@ ArrayList<Long> AlgorithmNextPoint(){
   
   ArrayList<Long> returnList = new ArrayList<Long>();
   returnList.add(NextX); returnList.add(NextY);
+  
+  //TODO: Remove, for testing purposes
+  println(str(NextX) + " " + str(NextY));
+  
   return returnList;
 }
 

@@ -16,11 +16,11 @@ extern int BASE_EXIT_LON;
 extern int BASE_EXIT_LAT;
 
 //Gps
-extern int GpsGetLon();
-extern int GpsGetLat();
+extern long GpsGetLon();
+extern long GpsGetLat();
 
 //Motion
-extern void MotionSetTarget(int tLon, int tLat);
+extern void MotionSetTarget(long long tLon, long long tLat);
 extern void MotionMoveToTarget();
 
 //Motor
@@ -40,7 +40,7 @@ bool GenerateGcode();
 int ShortestOutlinePath(int outline_index, int current_point, int target_point);
 int OutlineTraverseInc(int outline_index, int current_point, int amount);
 int OutlineTraverseDec(int outline_index, int current_point, int amount);
-std::vector<int> AlgorithmNextPoint();
+std::vector<long long> AlgorithmNextPoint();
 void AlgorithmAbort(bool full_abort);
 
 void AlgorithmCaptureStart();
@@ -48,7 +48,7 @@ void AlgorithmCaptureBasePoint();
 void AlgorithmCaptureBaseExitPoint();
 void AlgorithmCaptureNewOutline();
 void AlgorithmCaptureNewPoint();
-void AlgorithmCaptureSetNewPoint(int lon, int lat);
+void AlgorithmCaptureSetNewPoint(long long lon, long long lat);
 bool AlgorithmCaptureRemoveOutline();
 bool AlgorithmCaptureRemovePoint();
 bool AlgorithmCaptureEnd();

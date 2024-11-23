@@ -5,12 +5,12 @@ void MainChargingStart(){
 }
 
 //Charging station
-int prevPointLon = 0;
-int prevPointLat = 0;
+long long prevPointLon = 0;
+long long prevPointLat = 0;
 
 //Target
-int targetPointLon = BASE_LON;
-int targetPointLat = BASE_LAT;
+long long targetPointLon = BASE_LON;
+long long targetPointLat = BASE_LAT;
 
 //Globals
 int numOfLines = 1;
@@ -39,14 +39,14 @@ int algorithmCurrentOutline = 0;
 int algorithmCurrentPoint = 0;
 
 //Outlines - First point is the charging station exit point
-std::vector<std::vector<std::vector<int>>> outlines;
-std::vector<std::vector<std::vector<int>>> extOutlines; //Outlines with intersection points inserted
-std::vector<std::vector<std::vector<int>>> intersectionPaths; //Collections of points where infill intersects terrain and outer outline
+std::vector<std::vector<std::vector<long long>>> outlines;
+std::vector<std::vector<std::vector<long long>>> extOutlines; //Outlines with intersection points inserted
+std::vector<std::vector<std::vector<long long>>> intersectionPaths; //Collections of points where infill intersects terrain and outer outline
 
-int terrainMinX;
-int terrainMaxX;
-int terrainMinY;
-int terrainMaxY;
+long long terrainMinX;
+long long terrainMaxX;
+long long terrainMinY;
+long long terrainMaxY;
 
 void ClearOutlines(){
   extOutlines.clear();
@@ -62,8 +62,8 @@ void FindTerrainBounds(){
   
   for (int i = 0; i < outlines.size(); i++){
     for (int j = 0; j < outlines.at(i).size(); j++){
-      int xVal = outlines.at(i).at(j).at(0);
-      int yVal = outlines.at(i).at(j).at(1);
+      long long xVal = outlines.at(i).at(j).at(0);
+      long long yVal = outlines.at(i).at(j).at(1);
       
       if (xVal < terrainMinX){terrainMinX = xVal;}
       if (yVal < terrainMinY){terrainMinY = yVal;}
@@ -79,7 +79,7 @@ void FindTerrainBounds(){
 void ClearInterference(){
   for (int i = 0; i < numOfLines; i++)
   {
-    int currentY = (int) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
+    long long currentY = (long long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) / 2.0);
     
     for (int o = 0; o < outlines.size(); o++){
       for (int p = 0; p < outlines.at(o).size(); p++){
@@ -94,10 +94,10 @@ void ClearInterference(){
 bool FindOutlineIntersections(){
   //Extend outlines with intersection points
   for (int i = 0; i < outlines.size(); i++){
-    extOutlines.push_back( std::vector<std::vector<int>>());
+    extOutlines.push_back( std::vector<std::vector<long long>>());
 
     for (int j = 0; j < outlines.at(i).size(); j++){
-      extOutlines.back().push_back( std::vector<int>());
+      extOutlines.back().push_back( std::vector<long long>());
       
       for (int k = 0; k < outlines.at(i).at(j).size(); k++){
         extOutlines.back().back().push_back(outlines.at(i).at(j).at(k));
@@ -107,20 +107,20 @@ bool FindOutlineIntersections(){
 
   for (int i = 0; i < numOfLines; i++)
   {
-    int currentY = (int) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
+    long long currentY = (long long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) / 2.0);
     
     //Traverse outlines and extend outlines with intersections
     for (int o = 0; o < extOutlines.size(); o++){
       
-      std::vector<std::vector<int>> intersections;
+      std::vector<std::vector<long long>> intersections;
       // X1, Y1, NX, NY
-      
+
       //Find intersections for current outline
       for (int p = 0; p < extOutlines.at(o).size(); p++){
-        int p1X = extOutlines.at(o).at(p).at(0);
-        int p1Y = extOutlines.at(o).at(p).at(1);
+        long long p1X = extOutlines.at(o).at(p).at(0);
+        long long p1Y = extOutlines.at(o).at(p).at(1);
 
-        int p2X, p2Y;
+        long long p2X, p2Y;
         
         //First-last case
         if (p == extOutlines.at(o).size() - 1){
@@ -135,13 +135,13 @@ bool FindOutlineIntersections(){
         //Check if lines intersect, and add intersection
         if ((currentY >= p1Y && currentY <= p2Y) || (currentY <= p1Y && currentY >= p2Y))
         {
-            intersections.push_back( std::vector<int>());
+            intersections.push_back( std::vector<long long>());
 
-            int thisX;
+            long long thisX;
 
             if (p1X != p2X)
             {
-                thisX = (int)((currentY - p1Y) / (float)(p2Y - p1Y) * (p2X - p1X) + p1X);
+                thisX = (long long)((currentY - p1Y) / (double)(p2Y - p1Y) * (p2X - p1X) + p1X);
             }
             else { thisX = p1X; } //Vertical slope
 
@@ -152,12 +152,12 @@ bool FindOutlineIntersections(){
             intersections.at(intersections.size() - 1).push_back(currentY);
         }
       }
-      
+
       //Insert intersections into list
       int p = 0;
       while (p < extOutlines.at(o).size()){
-        int p1X = extOutlines.at(o).at(p).at(0);
-        int p1Y = extOutlines.at(o).at(p).at(1);
+        long long p1X = extOutlines.at(o).at(p).at(0);
+        long long p1Y = extOutlines.at(o).at(p).at(1);
         
         //Check corresponding intersections
         for (int it = 0; it < intersections.size(); it++){
@@ -166,11 +166,11 @@ bool FindOutlineIntersections(){
           if ((intersections.at(it).at(0) == p1X) &&
               (intersections.at(it).at(1) == p1Y))
           {
-            std::vector<int> appendList;
+            std::vector<long long> appendList;
             appendList.push_back(intersections.at(it).at(2));
             appendList.push_back(intersections.at(it).at(3));
-            
-            extOutlines.at(o).insert(extOutlines[o].begin() + p + 1, appendList);
+
+            extOutlines.at(o).insert(extOutlines.at(o).begin() + p + 1, appendList);
 
             p++;
           }
@@ -188,18 +188,18 @@ bool GeneratePaths(){
   //Scan and find intersections
   for (int i = 0; i < numOfLines; i++)
   {
-    int currentY = (int) (terrainMinY + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (float)(numOfLines) / 2.0);
+    long long currentY = (long long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) / 2.0);
 
-    intersectionPaths.push_back( std::vector<std::vector<int>>());
+    intersectionPaths.push_back( std::vector<std::vector<long long>>());
     
     for (int o = 0; o < extOutlines.size(); o++){
       for (int p = 0; p < extOutlines.at(o).size(); p++){
         if (extOutlines.at(o).at(p).at(1) == currentY){
           //O, P, NX
-          intersectionPaths.at(intersectionPaths.size() - 1).push_back( std::vector<int>());
-          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((int) o);
-          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((int) p);
-          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((int) extOutlines.at(o).at(p).at(0));
+          intersectionPaths.at(intersectionPaths.size() - 1).push_back( std::vector<long long>());
+          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((long long) o);
+          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((long long) p);
+          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((long long) extOutlines.at(o).at(p).at(0));
         }
       }
     }
@@ -207,7 +207,7 @@ bool GeneratePaths(){
   
   //Sort by intitude
   for (int d = 0; d < intersectionPaths.size(); d++){
-    ace_sorting::quickSortMiddle(intersectionPaths.at(d).data(), (uint16_t) intersectionPaths.at(d).size(), [](std::vector<int> o1, std::vector<int> o2) { return o1.at(2) < o2.at(2); });
+    ace_sorting::quickSortMiddle(intersectionPaths.at(d).data(), (uint16_t) intersectionPaths.at(d).size(), [](std::vector<long long> o1, std::vector<long long> o2) { return o1.at(2) < o2.at(2); });
   }
 
   return true;
@@ -216,12 +216,13 @@ bool GeneratePaths(){
 bool GenerateGcode(){
   //Clean up
   ClearOutlines();
-
   //Error conditions
   if (outlines.size() < 1){return false;}
   if (outlines.at(0).size() <= 2){return false;}
   
   FindTerrainBounds();
+
+  //Here it gets stuck
   ClearInterference(); //Makes sure no point in outlines is directly on infill Y (Patch for intersection check in FindOutlineIntersections)
   if (!FindOutlineIntersections()){return false;}
   if (!GeneratePaths()){return false;}
@@ -239,8 +240,8 @@ OUTLINE NEEDS TO HAVE AT LEAST 2 POINTS.
 POINTS MUST BE IN OUTLINE
 */
 int ShortestOutlinePath(int outline_index, int current_point, int target_point){
-  float path_length_inc = 0;
-  float path_length_dec = 0;
+  double path_length_inc = 0;
+  double path_length_dec = 0;
   
   int tmp_index;
   
@@ -252,13 +253,13 @@ int ShortestOutlinePath(int outline_index, int current_point, int target_point){
     //End of list
     if (tmp_index == extOutlines.at(outline_index).size() - 1){
       
-      path_length_inc += (float) sqrt(pow(extOutlines.at(outline_index).at(extOutlines.at(outline_index).size() - 1).at(0) - extOutlines.at(outline_index).at(0).at(0), 2) + pow(extOutlines.at(outline_index).at(extOutlines.at(outline_index).size() - 1).at(1) - extOutlines.at(outline_index).at(0).at(1), 2));
+      path_length_inc += (double) sqrt(pow(extOutlines.at(outline_index).at(extOutlines.at(outline_index).size() - 1).at(0) - extOutlines.at(outline_index).at(0).at(0), 2) + pow(extOutlines.at(outline_index).at(extOutlines.at(outline_index).size() - 1).at(1) - extOutlines.at(outline_index).at(0).at(1), 2));
       
       tmp_index = 0;
       continue;
     }
     
-    path_length_inc += (float) sqrt(pow(extOutlines.at(outline_index).at(tmp_index).at(0) - extOutlines.at(outline_index).at(tmp_index + 1).at(0), 2) + pow(extOutlines.at(outline_index).at(tmp_index).at(1) - extOutlines.at(outline_index).at(tmp_index + 1).at(1), 2));
+    path_length_inc += (double) sqrt(pow(extOutlines.at(outline_index).at(tmp_index).at(0) - extOutlines.at(outline_index).at(tmp_index + 1).at(0), 2) + pow(extOutlines.at(outline_index).at(tmp_index).at(1) - extOutlines.at(outline_index).at(tmp_index + 1).at(1), 2));
     tmp_index++;
   }
   
@@ -270,21 +271,21 @@ int ShortestOutlinePath(int outline_index, int current_point, int target_point){
     //End of list
     if (tmp_index == 0){
       
-      path_length_dec += (float) sqrt(pow(extOutlines.at(outline_index).at(extOutlines.at(outline_index).size() - 1).at(0) - extOutlines.at(outline_index).at(0).at(0), 2) + pow(extOutlines.at(outline_index).at(extOutlines.at(outline_index).size() - 1).at(1) - extOutlines.at(outline_index).at(0).at(1), 2));
+      path_length_dec += (double) sqrt(pow(extOutlines.at(outline_index).at(extOutlines.at(outline_index).size() - 1).at(0) - extOutlines.at(outline_index).at(0).at(0), 2) + pow(extOutlines.at(outline_index).at(extOutlines.at(outline_index).size() - 1).at(1) - extOutlines.at(outline_index).at(0).at(1), 2));
       
       tmp_index = extOutlines.at(outline_index).size() - 1;
       continue;
     }
     
-    path_length_dec += (float) sqrt(pow(extOutlines.at(outline_index).at(tmp_index).at(0) - extOutlines.at(outline_index).at(tmp_index - 1).at(0), 2) + pow(extOutlines.at(outline_index).at(tmp_index).at(1) - extOutlines.at(outline_index).at(tmp_index - 1).at(1), 2));
+    path_length_dec += (double) sqrt(pow(extOutlines.at(outline_index).at(tmp_index).at(0) - extOutlines.at(outline_index).at(tmp_index - 1).at(0), 2) + pow(extOutlines.at(outline_index).at(tmp_index).at(1) - extOutlines.at(outline_index).at(tmp_index - 1).at(1), 2));
     tmp_index--;
   }
   
   if (path_length_inc < path_length_dec){
-    return (int) ceil(path_length_inc);
+    return (long long) ceil(path_length_inc);
   }
   else {
-    return (int) -ceil(path_length_dec);
+    return (long long) -ceil(path_length_dec);
   }
 }
 
@@ -308,9 +309,9 @@ int OutlineTraverseDec(int outline_index, int current_point, int amount){
   return current_point;
 }
 
-std::vector<int> AlgorithmNextPoint(){
-  int NextX = 0;
-  int NextY = 0;
+std::vector<long long> AlgorithmNextPoint(){
+  long long NextX = 0;
+  long long NextY = 0;
   
   if (algorithmTarget == "FORWARD"){
     if (algorithmMode == "INFILL"){
@@ -320,8 +321,8 @@ std::vector<int> AlgorithmNextPoint(){
       if (algorithmInfillDirection == 1 && algorithmInfillPoint == intersectionPaths.at(algorithmInfillIndex).size() - 1){
         algorithmMode = "SEEK";
         
-        algorithmCurrentOutline = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
+        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
+        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
         
         algorithmInfillIndex++;
         
@@ -329,15 +330,15 @@ std::vector<int> AlgorithmNextPoint(){
           algorithmTarget = "BASE";
           algorithmMode = "SEEK";
           
-          algorithmCurrentOutline = int(intersectionPaths.at(algorithmInfillIndex - 1).at(algorithmInfillPoint).at(0));
-          algorithmCurrentPoint = int(intersectionPaths.at(algorithmInfillIndex - 1).at(algorithmInfillPoint).at(1));
+          algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex - 1).at(algorithmInfillPoint).at(0));
+          algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex - 1).at(algorithmInfillPoint).at(1));
         }
       }
       else if (algorithmInfillDirection == 0 && algorithmInfillPoint == 0){
         algorithmMode = "SEEK";
         
-        algorithmCurrentOutline = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
+        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
+        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
         
         algorithmInfillIndex++;
         
@@ -345,8 +346,8 @@ std::vector<int> AlgorithmNextPoint(){
           algorithmTarget = "BASE";
           algorithmMode = "SEEK";
           
-          algorithmCurrentOutline = int(intersectionPaths.at(algorithmInfillIndex - 1).at(algorithmInfillPoint).at(0));
-          algorithmCurrentPoint = int(intersectionPaths.at(algorithmInfillIndex - 1).at(algorithmInfillPoint).at(1));
+          algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex - 1).at(algorithmInfillPoint).at(0));
+          algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex - 1).at(algorithmInfillPoint).at(1));
         }
       }
       else {
@@ -359,8 +360,8 @@ std::vector<int> AlgorithmNextPoint(){
             algorithmInfillPoint--;
           }
           
-          algorithmCurrentOutline = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-          algorithmCurrentPoint = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
+          algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
+          algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
         }
         //Traverse outline
         else {
@@ -377,7 +378,7 @@ std::vector<int> AlgorithmNextPoint(){
           }
           
           //Find shortest path to the next infill point
-          shortestPath = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.at(algorithmInfillIndex).at(nextInfillPoint).at(1)));
+          shortestPath = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, (long long) (intersectionPaths.at(algorithmInfillIndex).at(nextInfillPoint).at(1)));
           
           //Traverse in shortest direction
           if (shortestPath > 0){
@@ -388,7 +389,7 @@ std::vector<int> AlgorithmNextPoint(){
           }
           
           //Reached continuation of infill
-          if (algorithmCurrentPoint == int(intersectionPaths.at(algorithmInfillIndex).at(nextInfillPoint).at(1))){
+          if (algorithmCurrentPoint == (long long) (intersectionPaths.at(algorithmInfillIndex).at(nextInfillPoint).at(1))){
             if (algorithmInfillDirection == 1){
               algorithmInfillPoint++;
             }
@@ -396,8 +397,8 @@ std::vector<int> AlgorithmNextPoint(){
               algorithmInfillPoint--;
             }
             
-            algorithmCurrentOutline = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-            algorithmCurrentPoint = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
+            algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
+            algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
           }
         }
       }
@@ -409,8 +410,8 @@ std::vector<int> AlgorithmNextPoint(){
       MotorMainOff();
       
       //Calculate distances
-      int distInfillA = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.at(algorithmInfillIndex).at(0).at(1)));
-      int distInfillB = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.at(algorithmInfillIndex).at(intersectionPaths.at(algorithmInfillIndex).size() - 1).at(1)));
+      int distInfillA = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, (long long) (intersectionPaths.at(algorithmInfillIndex).at(0).at(1)));
+      int distInfillB = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, (long long) (intersectionPaths.at(algorithmInfillIndex).at(intersectionPaths.at(algorithmInfillIndex).size() - 1).at(1)));
       
       int shortestPath;
       
@@ -431,12 +432,12 @@ std::vector<int> AlgorithmNextPoint(){
       }
       
       //If reached infill, switch mode
-      if (algorithmCurrentPoint == int(intersectionPaths.at(algorithmInfillIndex).at(0).at(1))){
+      if (algorithmCurrentPoint == (long long) (intersectionPaths.at(algorithmInfillIndex).at(0).at(1))){
         algorithmMode = "INFILL";
         algorithmInfillPoint = 0;
         algorithmInfillDirection = 1;
       }
-      else if (algorithmCurrentPoint == int(intersectionPaths.at(algorithmInfillIndex).at(intersectionPaths.at(algorithmInfillIndex).size() - 1).at(1))){
+      else if (algorithmCurrentPoint == (long long) (intersectionPaths.at(algorithmInfillIndex).at(intersectionPaths.at(algorithmInfillIndex).size() - 1).at(1))){
         algorithmMode = "INFILL";
         algorithmInfillPoint = intersectionPaths.at(algorithmInfillIndex).size() - 1;
         algorithmInfillDirection = 0;
@@ -475,8 +476,8 @@ std::vector<int> AlgorithmNextPoint(){
           algorithmInfillPoint++;
         }
         
-        algorithmCurrentOutline = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
+        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
+        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
       }
       //Traverse outline
       else {
@@ -491,7 +492,7 @@ std::vector<int> AlgorithmNextPoint(){
         }
         
         //Reached continuation of infill
-        if (algorithmCurrentPoint == int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1))){
+        if (algorithmCurrentPoint == (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1))){
           if (algorithmInfillDirection == 1){
             algorithmInfillPoint--;
           }
@@ -499,15 +500,15 @@ std::vector<int> AlgorithmNextPoint(){
             algorithmInfillPoint++;
           }
           
-          algorithmCurrentOutline = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-          algorithmCurrentPoint = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
+          algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
+          algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
         }
         
         //Calculate distances
         int shortestPath;
         
         //Find shortest path to the next infill point
-        shortestPath = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1)));
+        shortestPath = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1)));
         
         //Traverse in shortest direction
         if (shortestPath > 0){
@@ -526,8 +527,8 @@ std::vector<int> AlgorithmNextPoint(){
         
         algorithmMode = "SEEK";
         
-        algorithmCurrentOutline = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
+        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
+        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
         
         algorithmInfillIndex++;
         
@@ -542,8 +543,8 @@ std::vector<int> AlgorithmNextPoint(){
         
         algorithmMode = "SEEK";
         
-        algorithmCurrentOutline = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
+        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
+        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
         
         algorithmInfillIndex++;
         
@@ -580,7 +581,7 @@ std::vector<int> AlgorithmNextPoint(){
   prevPointLon = targetPointLon;
   prevPointLat = targetPointLat;
   
-  std::vector<int> returnList;
+  std::vector<long long> returnList;
   returnList.push_back(NextX); returnList.push_back(NextY);
   return returnList;
 }
@@ -608,8 +609,8 @@ void AlgorithmAbort(bool full_abort){
         
         algorithmMode = "SEEK";
         
-        algorithmCurrentOutline = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
+        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
+        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
         
         algorithmInfillIndex++;
         
@@ -624,8 +625,8 @@ void AlgorithmAbort(bool full_abort){
         
         algorithmMode = "SEEK";
         
-        algorithmCurrentOutline = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = int(intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
+        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
+        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
         
         algorithmInfillIndex++;
         
@@ -639,7 +640,7 @@ void AlgorithmAbort(bool full_abort){
     MotorDriveAngle(0, false, 1.0);
     delay(750);
     
-    std::vector<int> targetPoint = AlgorithmNextPoint();
+    std::vector<long long> targetPoint = AlgorithmNextPoint();
     targetPointLon = targetPoint.at(0);
     targetPointLat = targetPoint.at(1);
     
@@ -652,7 +653,7 @@ void AlgorithmCaptureStart(){
 }
 
 void AlgorithmCaptureNewOutline(){
-  outlines.push_back( std::vector<std::vector<int>>());
+  outlines.push_back( std::vector<std::vector<long long>>());
 }
 void AlgorithmCaptureBasePoint(){
   BASE_LON = GpsGetLon();
@@ -663,13 +664,13 @@ void AlgorithmCaptureBaseExitPoint(){
   BASE_EXIT_LAT = GpsGetLat();
 }
 void AlgorithmCaptureNewPoint(){
-  outlines.back().push_back( std::vector<int>());
+  outlines.back().push_back( std::vector<long long>());
 
   outlines.back().back().push_back(GpsGetLon());
   outlines.back().back().push_back(GpsGetLat());
 }
-void AlgorithmCaptureSetNewPoint(int lon, int lat){
-  outlines.back().push_back( std::vector<int>());
+void AlgorithmCaptureSetNewPoint(long long lon, long long lat){
+  outlines.back().push_back( std::vector<long long>());
 
   outlines.back().back().push_back(lon);
   outlines.back().back().push_back(lat);
@@ -703,7 +704,7 @@ String AlgorithmGetPathString(){
     PathString += "O\n";
 
     for (int j = 0; j < outlines.at(i).size(); j++){
-      PathString += String(outlines.at(i).at(j).at(0)) + " " + String(outlines.at(i).at(j).at(1)) + "\n";
+      PathString += String((int) outlines.at(i).at(j).at(0)) + " " + String((int) outlines.at(i).at(j).at(1)) + "\n";
     }
   }
 

@@ -8,8 +8,8 @@
 
 float RadDeg(float radVal);
 float DegRad(float degVal);
-float Distance(int x1, int y1, int x2, int y2);
-float AngleBetweenPoints(int x1, int y1, int x2, int y2);
+float Distance(long long x1, long long y1, long long x2, long long y2);
+float AngleBetweenPoints(long long x1, long long y1, long long x2, long long y2);
 float NormalizeAngle(float angle);
 float absAngle(float angle);
 float ShortestRotation(float targetAngle, float currentAngle);

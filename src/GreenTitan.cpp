@@ -207,6 +207,9 @@ START
 RUNNING PAUSE
 STOP
 CHARGING
+
+SETUP_TEST
+TEST
 */
 
 void MainCharging();
@@ -223,10 +226,16 @@ void loop() {
     if (Mode == "POWER_ON") {
         FileResult result = InitConfiguration();
         if (result != SUCCESS) {
+            Error("Filesystem failed to initialize with FileResult error " + String(result));
+        }
+
+        //TODO: Uncomment, commented because load cant handle bigger than int coordinates
+        //result = LoadConfiguration();
+        if (result != SUCCESS) {
             result = SaveConfiguration();
 
             if (result != SUCCESS){
-              Error("Configuration failed to initialize with FileResult error " + String(result));
+              Error("Unable to create missing configuration with FileResult error " + String(result));
             }
 
             Warning("Configuration file missing. Creating new configuration...");
@@ -256,15 +265,17 @@ void loop() {
     } else if (Mode == "SETUP_TEST"){ // ### USED FOR TESTING ###
       AlgorithmCaptureStart();
       AlgorithmCaptureNewOutline();
-      AlgorithmCaptureSetNewPoint(0, 0);
-      AlgorithmCaptureSetNewPoint(50, 150);
-      AlgorithmCaptureSetNewPoint(-100, 100);
-      AlgorithmCaptureSetNewPoint(-80, 50);
+      AlgorithmCaptureSetNewPoint(1000000000ll, 1000000000ll);
+      AlgorithmCaptureSetNewPoint(50 + 1000000000ll, 150 + 1000000000ll);
+      AlgorithmCaptureSetNewPoint(-100 + 1000000000ll, 100 + 1000000000ll);
+      AlgorithmCaptureSetNewPoint(-80 + 1000000000ll, 50 + 1000000000ll);
       AlgorithmCaptureNewOutline();
-      AlgorithmCaptureSetNewPoint(20, 0);
-      AlgorithmCaptureSetNewPoint(30, 10);
-      AlgorithmCaptureSetNewPoint(-10, 10);
+      AlgorithmCaptureSetNewPoint(-10 + 1000000000ll, 20 + 1000000000ll);
+      AlgorithmCaptureSetNewPoint(-30 + 1000000000ll, 30 + 1000000000ll);
+      AlgorithmCaptureSetNewPoint(-10 + 1000000000ll, 80 + 1000000000ll);
       AlgorithmCaptureEnd();
+
+      SaveConfiguration();
 
       Mode = "TEST";
     } else if (Mode == "START") {
@@ -311,7 +322,7 @@ void loop() {
     } else if (Mode == "RUNNING") {
       
     } else if (Mode == "TEST") { // ### USED FOR TESTING ###
-        std::vector<int> NextPointCoords = AlgorithmNextPoint();
+        std::vector<long long> NextPointCoords = AlgorithmNextPoint();
         Serial.print(NextPointCoords[0]); Serial.print(" "); Serial.println(NextPointCoords[1]);
 
         delay(200);

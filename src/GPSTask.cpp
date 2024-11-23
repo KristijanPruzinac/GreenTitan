@@ -19,9 +19,9 @@ struct NAV_POSLLH {
 
 NAV_POSLLH posllh;
 
-int prevLon = 1;
-int prevLat = 1;
-int prevAcc = -2;
+long prevLon = 1;
+long prevLat = 1;
+long prevAcc = -2;
 
 float GPS_PrevIMUHeading = 0;
 float GPS_CurrentIMUHeading = 0;
@@ -118,12 +118,12 @@ void GPSRead() {
 
       GPS_Dist = dist;
       
-      prevLon = (int) posllh.lon;
-      prevLat = (int) posllh.lat;
+      prevLon = posllh.lon;
+      prevLat = posllh.lat;
     }
   }
 
-  prevAcc = (int) posllh.hAcc;
+  prevAcc = posllh.hAcc;
 
   GPSCheck();
 
@@ -155,25 +155,25 @@ void GPSCheck(){
     }
 }
 
-int GpsGetLon(){
+long GpsGetLon(){
   xSemaphoreTake(GPSMutex, portMAX_DELAY);
-  int valueToReturn = prevLon;
+  long valueToReturn = prevLon;
   xSemaphoreGive(GPSMutex);
 
   return valueToReturn;
 }
 
-int GpsGetLat(){
+long GpsGetLat(){
   xSemaphoreTake(GPSMutex, portMAX_DELAY);
-  int valueToReturn = prevLat;
+  long valueToReturn = prevLat;
   xSemaphoreGive(GPSMutex);
 
   return valueToReturn;
 }
 
-int GpsGetAcc(){
+long GpsGetAcc(){
   xSemaphoreTake(GPSMutex, portMAX_DELAY);
-  int valueToReturn = prevAcc;
+  long valueToReturn = prevAcc;
   xSemaphoreGive(GPSMutex);
 
   return valueToReturn;

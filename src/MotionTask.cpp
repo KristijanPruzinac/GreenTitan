@@ -18,11 +18,11 @@ float HeadingReliabillity = 360;
 float HeadingCorrectionData[10] = {360};
 
 //Start and end point
-int MotionPrevLon;
-int MotionPrevLat;
+long MotionPrevLon;
+long MotionPrevLat;
 
-int MotionTargetLon;
-int MotionTargetLat;
+long MotionTargetLon;
+long MotionTargetLat;
 
 //Current mode of motion
 int MotionMode = WAITING;
@@ -79,7 +79,7 @@ void MotionUpdateSensorData(){
   //Serial.print(MowerHeading); Serial.print(" "); Serial.println(MowerGPSHeading);
 }
 
-void MotionSetTarget(int tLon, int tLat){
+void MotionSetTarget(long tLon, long tLat){
   MotionPrevLon = GpsGetLon();
   MotionPrevLat = GpsGetLat();
 
