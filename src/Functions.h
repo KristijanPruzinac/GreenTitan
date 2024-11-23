@@ -13,6 +13,7 @@ float AngleBetweenPoints(int x1, int y1, int x2, int y2);
 float NormalizeAngle(float angle);
 float absAngle(float angle);
 float ShortestRotation(float targetAngle, float currentAngle);
+void Warning(String message);
 void Error(String message);
 
 #endif

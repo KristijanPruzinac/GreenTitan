@@ -43,29 +43,33 @@ void MotionUpdateSensorData(){
   MowerRotSpeed = IMURotSpeed;
   MowerRotAcc = IMURotAcc;
 
-  //Grab GPS data
-  xSemaphoreTake(GPSMutex, portMAX_DELAY);
+  //If GPS is enabled, do corrections, otherwise use IMU only mode
+  if (ENABLE_GPS){
+    //Grab GPS data
+    xSemaphoreTake(GPSMutex, portMAX_DELAY);
 
-  //In MOVING mode, If GPS heading changed adjust IMU heading
-  if (MotionMode == MOVING && fabs(MowerGPSHeading - GPS_Heading) > 0.1){
-    float HeadingAdjustment = -(ShortestRotation(GPS_Heading, IMUHeading) * GPS_HEADING_CORRECTION_FACTOR - pow(ShortestRotation(GPS_Heading, IMUHeading), 3) * GPS_HEADING_CORRECTION_FACTOR / 25000.0);
-    
-    //Update heading reliabillity
-    for (int i = 9; i > 0; i--){
-      HeadingCorrectionData[i] = HeadingCorrectionData[i - 1];
-    }
-    HeadingCorrectionData[0] = HeadingAdjustment;
+    //In MOVING mode, If GPS heading changed adjust IMU heading
+    if (MotionMode == MOVING && fabs(MowerGPSHeading - GPS_Heading) > 0.1){
+      float HeadingAdjustment = -(ShortestRotation(GPS_Heading, IMUHeading) * GPS_HEADING_CORRECTION_FACTOR - pow(ShortestRotation(GPS_Heading, IMUHeading), 3) * GPS_HEADING_CORRECTION_FACTOR / 25000.0);
+      
+      //Update heading reliabillity
+      for (int i = 9; i > 0; i--){
+        HeadingCorrectionData[i] = HeadingCorrectionData[i - 1];
+      }
+      HeadingCorrectionData[0] = HeadingAdjustment;
 
-    HeadingReliabillity = 0;
-    for (int i = 0; i < 10; i++){
-      HeadingReliabillity += HeadingCorrectionData[i];
+      HeadingReliabillity = 0;
+      for (int i = 0; i < 10; i++){
+        HeadingReliabillity += HeadingCorrectionData[i];
+      }
+      
+      //Correct heading with GPS data
+      IMUHeading = NormalizeAngle(IMUHeading + HeadingAdjustment);
     }
-    
-    //Correct heading with GPS data
-    IMUHeading = NormalizeAngle(IMUHeading + HeadingAdjustment);
+
+    MowerGPSHeading = GPS_Heading;
   }
 
-  MowerGPSHeading = GPS_Heading;
   MowerHeading = IMUHeading;
 
   xSemaphoreGive(GPSMutex);

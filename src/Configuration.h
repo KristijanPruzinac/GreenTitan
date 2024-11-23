@@ -8,7 +8,7 @@
 #include <LittleFS.h>
 
 //Config
-extern bool CONFIG_PATH ;
+extern bool CONFIG_PATH;
 extern bool CONFIG_BATTERY;
 extern bool CONFIG_MOTORS;
 extern bool CONFIG_GYRO;

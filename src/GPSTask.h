@@ -1,7 +1,7 @@
 //FUNCTIONAL
 
-#ifndef GPS_H
-#define GPS_H
+#ifndef GPS_TASK_H
+#define GPS_TASK_H
 
 #include "Arduino.h"
 #include "Defines.h"
@@ -23,9 +23,10 @@ extern float IMUHeading;
 void calcChecksum(unsigned char* CK);
 void GPSRead();
 void GPSCheck();
-void InitGPS();
+bool InitGPS();
 int GpsGetLon();
 int GpsGetLat();
 int GpsGetAcc();
+void GPSTask(void* pvParameters);
 
 #endif

@@ -6,8 +6,6 @@
 #include "Arduino.h"
 #include "Defines.h"
 
-#include "Battery.h"
-
 //#include <ESP_FlexyStepper.h>
 #include <ContinuousStepper.h>
 
@@ -20,7 +18,7 @@ float MowerAngularDegreesToMotorSteps(float unit);
 void MotorDriveAngle(float angle, bool forward, float speedFactor);
 void MotorRotate(float speedFactor);
 void MotorRotateAcceleration(float acceleration);
-void InitMotors();
+bool InitMotors();
 void MotorStop();
 void MotorMainOn();
 void MotorMainOff();

@@ -1,4 +1,4 @@
-#include "GPS.h"
+#include "GPSTask.h"
 
 HardwareSerial SerialGPS(2);
 
@@ -179,7 +179,7 @@ int GpsGetAcc(){
   return valueToReturn;
 }
 
-void InitGPS(){
+bool InitGPS(){
   SerialGPS.begin(GPS_BAUDRATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
   SerialGPS.setTimeout(COMMUNICATION_TIMEOUT);
 
@@ -187,4 +187,39 @@ void InitGPS(){
   posllh.lon = 1;
   posllh.lat = 1;
   prevAcc = -1;
+
+  //TODO: Implement check for GPS initializing properly
+  return true;
+}
+
+void GPSTask(void* pvParameters){
+  String toSend = "";
+  int counter = 0;
+  while (1){
+    TickType_t xLastWakeTime;
+    const TickType_t xPeriod = pdMS_TO_TICKS(MILLIS_PER_SECOND / GPS_UPDATE_FREQUENCY);
+
+    xLastWakeTime = xTaskGetTickCount();
+
+    GPSRead();
+
+
+    if (counter % 2 == 0){
+      //toSend += String(String(IMUGetHeading()) + " " + String(millis()) + "\n");
+    }
+    counter++;
+
+    if (counter >= 10){
+      counter = 0;
+
+      //BluetoothWrite(toSend);
+
+      toSend = "";
+    }
+    
+
+    //TODO: Implement rain sensor
+
+    vTaskDelayUntil(&xLastWakeTime, xPeriod);
+  }
 }

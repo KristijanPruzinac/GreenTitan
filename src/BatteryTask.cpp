@@ -1,5 +1,5 @@
-#include "Battery.h"
-
+#include "BatteryTask.h"
+ 
 //Sampling and voltage divider
 const int battery_sampling_count = 100;
 const float battery_divider_factor = 1.0 / 11.0; // 1k ohm MEASURED , 10k ohm
@@ -68,5 +68,38 @@ void BatteryCheck(){
   }
   else {
     STATUS_BATTERY_CHARGED = false;
+  }
+}
+
+void BatteryTask(void* pvParameters){
+  String toSend = "";
+  int counter = 0;
+  while (1){
+    TickType_t xLastWakeTime;
+    const TickType_t xPeriod = pdMS_TO_TICKS(MILLIS_PER_SECOND / BATTERY_UPDATE_FREQUENCY);
+
+    xLastWakeTime = xTaskGetTickCount();
+
+    //Read sensors
+    BatteryUpdate();
+    BatteryCheck();
+
+    if (counter % 2 == 0){
+      //toSend += String(String(IMUGetHeading()) + " " + String(millis()) + "\n");
+    }
+    counter++;
+
+    if (counter >= 10){
+      counter = 0;
+
+      //BluetoothWrite(toSend);
+
+      toSend = "";
+    }
+    
+
+    //TODO: Implement rain sensor
+
+    vTaskDelayUntil(&xLastWakeTime, xPeriod);
   }
 }

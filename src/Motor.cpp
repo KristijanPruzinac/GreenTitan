@@ -107,7 +107,7 @@ void MotorRotateAcceleration(float acceleration){
   //Serial.println(motorA.getCurrentVelocityInStepsPerSecond());
 }
 
-void InitMotors() {
+bool InitMotors() {
   pinMode(MOTOR_MAIN, OUTPUT);
 
   motorA.begin(MOTOR_A_STEP_PIN, MOTOR_A_DIR_PIN);
@@ -116,6 +116,9 @@ void InitMotors() {
   // Set acceleration
   motorA.setAcceleration(MOTOR_ACCELERATION);
   motorB.setAcceleration(MOTOR_ACCELERATION);
+
+  //COMMENT: If needed, there is functionality for checking motor validity
+  return true;
 }
 
 void MotorStop() {

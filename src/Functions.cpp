@@ -60,6 +60,10 @@ float ShortestRotation(float targetAngle, float currentAngle){
   }
 }
 
+void Warning(String message){
+  Serial.println("WARNING: " + message);
+}
+
 void Error(String message){
   Serial.println("ERROR: " + message);
   //TODO: Implement additional user feedback and uncomment

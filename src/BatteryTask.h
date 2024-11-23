@@ -1,7 +1,5 @@
-//FUNCTIONAL
-
-#ifndef BATTERY_H
-#define BATTERY_H
+#ifndef BATTERY_TASK_H
+#define BATTERY_TASK_H
 
 #include "Arduino.h"
 #include "Defines.h"
@@ -18,5 +16,7 @@ int BatteryReadPercentage();
 float BatteryCurrentVoltage();
 void BatteryUpdate();
 void BatteryCheck();
+
+void BatteryTask(void* pvParameters);
 
 #endif

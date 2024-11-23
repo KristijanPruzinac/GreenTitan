@@ -14,9 +14,6 @@ extern SemaphoreHandle_t IMUMutex;
 extern SemaphoreHandle_t GPSMutex;
 extern SemaphoreHandle_t MotionMutex;
 
-//Main
-extern void MainStop();
-
 //Gps
 extern int GpsGetLon();
 extern int GpsGetLat();
@@ -41,6 +38,8 @@ void MotionRotateToTarget();
 void MotionTask(void* pvParameters);
 
 bool MowerIsInMotion();
+
+extern bool ENABLE_GPS;
 
 extern float IMURotSpeed;
 extern float IMURotAcc;
