@@ -34,10 +34,10 @@ bool SETUP_COMPLETED = true;
 
 int MOWER_OVERLAP = 15; // In cm
 int MAX_DEVIATION = 50;
-int BASE_LON = -5672328;
-int BASE_LAT = 3376391;
-int BASE_EXIT_LON = -5672328;
-int BASE_EXIT_LAT = 3376391;
+long long BASE_LON = -5672328;
+long long BASE_LAT = 3376391;
+long long BASE_EXIT_LON = -5672328;
+long long BASE_EXIT_LAT = 3376391;
 
 int GPS_ACC_THRESHOLD = 18;
 int GPS_STABILITY_CHECK_DURATION = 300; // 5 minutes
@@ -229,8 +229,7 @@ void loop() {
             Error("Filesystem failed to initialize with FileResult error " + String(result));
         }
 
-        //TODO: Uncomment, commented because load cant handle bigger than int coordinates
-        //result = LoadConfiguration();
+        result = LoadConfiguration();
         if (result != SUCCESS) {
             result = SaveConfiguration();
 
@@ -241,7 +240,7 @@ void loop() {
             Warning("Configuration file missing. Creating new configuration...");
         }
         else {
-          Serial.println("Configuration loaded!");
+          Serial.println("Configuration loaded.");
         }
 
         delay(200);
@@ -263,17 +262,78 @@ void loop() {
     } else if (Mode == "SETUP") {
         // Setup-specific logic
     } else if (Mode == "SETUP_TEST"){ // ### USED FOR TESTING ###
+
       AlgorithmCaptureStart();
       AlgorithmCaptureNewOutline();
-      AlgorithmCaptureSetNewPoint(1000000000ll, 1000000000ll);
-      AlgorithmCaptureSetNewPoint(50 + 1000000000ll, 150 + 1000000000ll);
-      AlgorithmCaptureSetNewPoint(-100 + 1000000000ll, 100 + 1000000000ll);
-      AlgorithmCaptureSetNewPoint(-80 + 1000000000ll, 50 + 1000000000ll);
+      AlgorithmCaptureSetNewPoint(0, 0);
+      AlgorithmCaptureSetNewPoint(20, 20);
+      AlgorithmCaptureSetNewPoint(30, 50);
+      AlgorithmCaptureSetNewPoint(10, 100);
+      AlgorithmCaptureSetNewPoint(-20, 30);
+      AlgorithmCaptureSetNewPoint(-25, -10);
+      AlgorithmCaptureSetNewPoint(-10, 5);
+
       AlgorithmCaptureNewOutline();
-      AlgorithmCaptureSetNewPoint(-10 + 1000000000ll, 20 + 1000000000ll);
-      AlgorithmCaptureSetNewPoint(-30 + 1000000000ll, 30 + 1000000000ll);
-      AlgorithmCaptureSetNewPoint(-10 + 1000000000ll, 80 + 1000000000ll);
+      AlgorithmCaptureSetNewPoint(5, 30);
+      AlgorithmCaptureSetNewPoint(5, 60);
+      AlgorithmCaptureSetNewPoint(-10, 35);
+
       AlgorithmCaptureEnd();
+
+      for (int i = 0; i < 200; i++){
+        std::vector<long long> NextPointCoords = AlgorithmNextPoint();
+        Serial.println(">gcode:" + String(NextPointCoords[0]) + ":" + String(NextPointCoords[1]) + "|xy");
+      }
+
+      delay(5000);
+
+      AlgorithmCaptureStart();
+      AlgorithmCaptureNewOutline();
+      AlgorithmCaptureSetNewPoint(0, 0);
+      AlgorithmCaptureSetNewPoint(-20, 20);
+      AlgorithmCaptureSetNewPoint(-30, 50);
+      AlgorithmCaptureSetNewPoint(-10, 100);
+      AlgorithmCaptureSetNewPoint(20, 30);
+      AlgorithmCaptureSetNewPoint(25, -10);
+      AlgorithmCaptureSetNewPoint(10, 5);
+
+      AlgorithmCaptureNewOutline();
+      AlgorithmCaptureSetNewPoint(5, 30);
+      AlgorithmCaptureSetNewPoint(50, 100);
+      AlgorithmCaptureSetNewPoint(-100, 35);
+
+      AlgorithmCaptureEnd();
+
+      for (int i = 0; i < 200; i++){
+        std::vector<long long> NextPointCoords = AlgorithmNextPoint();
+        Serial.println(">gcode:" + String(NextPointCoords[0]) + ":" + String(NextPointCoords[1]) + "|xy");
+      }
+
+      delay(5000);
+
+      AlgorithmCaptureStart();
+      AlgorithmCaptureNewOutline();
+      AlgorithmCaptureSetNewPoint(0, 0);
+      AlgorithmCaptureSetNewPoint(0, 50);
+      AlgorithmCaptureSetNewPoint(100, 50);
+      AlgorithmCaptureSetNewPoint(-50, 150);
+      AlgorithmCaptureSetNewPoint(85, 30);
+      AlgorithmCaptureSetNewPoint(25, -10);
+      AlgorithmCaptureSetNewPoint(10, 5);
+
+      AlgorithmCaptureNewOutline();
+      AlgorithmCaptureSetNewPoint(5, 30);
+      AlgorithmCaptureSetNewPoint(50, 100);
+      AlgorithmCaptureSetNewPoint(-100, 35);
+
+      AlgorithmCaptureEnd();
+
+      for (int i = 0; i < 200; i++){
+        std::vector<long long> NextPointCoords = AlgorithmNextPoint();
+        Serial.println(">gcode:" + String(NextPointCoords[0]) + ":" + String(NextPointCoords[1]) + "|xy");
+      }
+
+      delay(5000);
 
       SaveConfiguration();
 
@@ -322,8 +382,6 @@ void loop() {
     } else if (Mode == "RUNNING") {
       
     } else if (Mode == "TEST") { // ### USED FOR TESTING ###
-        std::vector<long long> NextPointCoords = AlgorithmNextPoint();
-        Serial.print(NextPointCoords[0]); Serial.print(" "); Serial.println(NextPointCoords[1]);
 
         delay(200);
     }

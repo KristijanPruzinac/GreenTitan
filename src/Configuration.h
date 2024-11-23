@@ -19,10 +19,10 @@ extern bool SETUP_COMPLETED;
 
 extern int MOWER_OVERLAP;
 extern int MAX_DEVIATION;
-extern int BASE_LON;
-extern int BASE_LAT;
-extern int BASE_EXIT_LON;
-extern int BASE_EXIT_LAT;
+extern long long BASE_LON;
+extern long long BASE_LAT;
+extern long long BASE_EXIT_LON;
+extern long long BASE_EXIT_LAT;
 
 extern int GPS_ACC_THRESHOLD;
 extern int GPS_STABILITY_CHECK_DURATION;

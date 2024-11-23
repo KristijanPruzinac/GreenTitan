@@ -167,13 +167,13 @@ FileResult LoadConfiguration() {
             } else if (variableName == "MAX_DEVIATION") {
                 MAX_DEVIATION = variableValue.toInt();
             } else if (variableName == "BASE_LON") {
-                BASE_LON = variableValue.toInt();
+                BASE_LON = strtoll(variableValue.c_str(), nullptr, 10);
             } else if (variableName == "BASE_LAT") {
-                BASE_LAT = variableValue.toInt();
+                BASE_LAT = strtoll(variableValue.c_str(), nullptr, 10);
             } else if (variableName == "BASE_EXIT_LON") {
-                BASE_EXIT_LON = variableValue.toInt();
+                BASE_EXIT_LON = strtoll(variableValue.c_str(), nullptr, 10);
             } else if (variableName == "BASE_EXIT_LAT") {
-                BASE_EXIT_LAT = variableValue.toInt();
+                BASE_EXIT_LAT = strtoll(variableValue.c_str(), nullptr, 10);
             } else if (variableName == "GPS_ACC_THRESHOLD"){
                 GPS_ACC_THRESHOLD = variableValue.toInt();
             } else if (variableName == "GPS_STABILITY_CHECK_DURATION"){

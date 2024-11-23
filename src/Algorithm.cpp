@@ -674,6 +674,9 @@ void AlgorithmCaptureSetNewPoint(long long lon, long long lat){
 
   outlines.back().back().push_back(lon);
   outlines.back().back().push_back(lat);
+
+  //TODO: Remove
+  Serial.println(">point:" + String(lon) + ":" + String(lat) + "|xy");
 }
 bool AlgorithmCaptureRemoveOutline(){
   //Index out of bounds, failed
