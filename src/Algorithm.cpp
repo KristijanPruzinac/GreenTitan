@@ -637,6 +637,7 @@ void AlgorithmAbort(bool full_abort){
     }
     
     //Mower reverse for a bit from obstacle
+    //TODO: Make into a function
     MotorDriveAngle(0, false, 1.0);
     delay(750);
     
@@ -676,7 +677,7 @@ void AlgorithmCaptureSetNewPoint(long long lon, long long lat){
   outlines.back().back().push_back(lat);
 
   //TODO: Remove
-  Serial.println(">point:" + String(lon) + ":" + String(lat) + "|xy");
+  //Serial.println(">point:" + String(lon) + ":" + String(lat) + "|xy");
 }
 bool AlgorithmCaptureRemoveOutline(){
   //Index out of bounds, failed

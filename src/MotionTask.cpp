@@ -26,6 +26,7 @@ long MotionTargetLat;
 
 //Current mode of motion
 int MotionMode = WAITING;
+int MotionMoveAfterRotation = 0;
 
 void MotionSetMode(int mode){
   xSemaphoreTake(MotionMutex, portMAX_DELAY);
@@ -91,6 +92,16 @@ void MotionSetTarget(long tLon, long tLat){
   //MotionSetMode(TEST);
 }
 
+void MotionSetTargetRotation(float azimuthDegrees){
+  MotionPrevLon = GpsGetLon();
+  MotionPrevLat = GpsGetLat();
+
+  MotionTargetLon = MotionPrevLon + 100 * sin(radians(azimuthDegrees));
+  MotionTargetLat = MotionPrevLat + 100 * cos(radians(azimuthDegrees)); //Calculate target based on azimuth
+
+  MotionMoveAfterRotation = 0; //Don't move after rotation
+}
+
 bool MowerIsInMotion(){
   bool returnValue = false;
   xSemaphoreTake(MotionMutex, portMAX_DELAY);
@@ -126,7 +137,13 @@ void MotionTask(void* pvParameters){
 
     if (MotionMode == ROTATING){
       if (fabs(ShortestRotation(MowerHeading, MowerTargetAngle)) <= MOTION_ACCEPTED_ROTATION_TO_POINT){
-        MotionSetMode(MOVING);
+        if (MotionMoveAfterRotation){
+          MotionSetMode(MOVING);
+        }
+        else {
+          MotorStop();
+          MotionSetMode(WAITING);
+        }
       }
       else {
         MotorRotate(ShortestRotation(MowerTargetAngle, MowerHeading) / 180);

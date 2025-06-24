@@ -33,6 +33,7 @@ extern void MotorRotateAcceleration(float acceleration);
 
 void MotionSetMode(int mode);
 void MotionSetTarget(long tLon, long tLat);
+void MotionSetTargetRotation(float azimuthDegrees);
 void MotionMoveToTarget();
 void MotionRotateToTarget();
 void MotionTask(void* pvParameters);

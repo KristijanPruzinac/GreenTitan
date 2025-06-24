@@ -61,7 +61,7 @@ SemaphoreHandle_t MotionMutex;
 // -------------------------------------------------------- DEPENDENCIES ---------------------------------------------------------------
 
 // Peripherals
-#include "IMU.h"
+#include "IMUTask.h"
 #include "GPSTask.h"
 #include "BatteryTask.h"
 #include "RainSensor.h"
@@ -258,7 +258,7 @@ void loop() {
         }
 
         //TODO: Remove, used for testing
-        Mode = "SETUP_TEST";
+        Mode = "TEST";
     } else if (Mode == "SETUP") {
         // Setup-specific logic
     } else if (Mode == "SETUP_TEST"){ // ### USED FOR TESTING ###
@@ -353,7 +353,7 @@ void loop() {
             BluetoothWrite("Executed!");
         } else if (message == "CAPTURE_BASE_EXIT_POINT") {
             AlgorithmCaptureBaseExitPoint();
-            BluetoothWrite("Executed!");
+            BluetoothWrite("Execulight themeted!");
         } else if (message == "CAPTURE_NEW_OUTLINE") {
             AlgorithmCaptureNewOutline();
             BluetoothWrite("Executed!");
@@ -380,10 +380,30 @@ void loop() {
             MotionSetTarget(GpsGetLon(), GpsGetLat() + 800);
         }
     } else if (Mode == "RUNNING") {
-      
+      delay(200);
     } else if (Mode == "TEST") { // ### USED FOR TESTING ###
+        Serial.println("TESTING STARTED");
+        delay(5000);
 
-        delay(200);
+        MotionSetTargetRotation(90); // Rotate to 90 degrees
+        while (MowerIsInMotion()) {
+            delay(100);
+        }
+        delay(1000);
+
+        MotionSetTargetRotation(180); // Rotate to 90 degrees
+        while (MowerIsInMotion()) {
+            delay(100);
+        }
+        delay(1000);
+
+        MotionSetTargetRotation(0); // Rotate to 90 degrees
+        while (MowerIsInMotion()) {
+            delay(100);
+        }
+        delay(1000);
+
+        Mode = "RUNNING";
     }
     delay(10);
 }
