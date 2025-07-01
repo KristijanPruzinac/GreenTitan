@@ -143,6 +143,7 @@ float IMUGetTemp(){
 
 
 void IMUTask(void* pvParameters){
+  IMUCalibrate();
   while (1){
     TickType_t xLastWakeTime;
     const TickType_t xPeriod = pdMS_TO_TICKS(MILLIS_PER_SECOND / IMU_UPDATE_FREQUENCY);

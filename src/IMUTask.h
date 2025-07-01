@@ -1,7 +1,7 @@
 #ifndef IMU_H
 #define IMU_H
 
-#include "Arduino.h"
+#include <Arduino.h>
 #include "Defines.h"
 #include "Functions.h"
 

@@ -247,9 +247,6 @@ void loop() {
         InitPeripherals();
         delay(200);
 
-        // TODO: Move to setup
-        IMUCalibrate();
-
         delay(2500);
         if (SETUP_COMPLETED) {
             Mode = "START";
