@@ -1,14 +1,14 @@
 #include "IMUTask.h"
 
 //Globals
-const int IMUDataMaxSampleSize = 9;
+const int IMUDataMaxSampleSize = 7;
 float IMURotSpeedData[IMUDataMaxSampleSize];
 float IMURotAccData[IMUDataMaxSampleSize];
 int IMUDataSampleSize = 3;
 
 float IMURotSpeed = 0;
 float IMURotAcc = 0;
-float IMUHeading = 0;
+float IMUHeadingChange = 0;
 
 //Calibration
 float IMUGyroXOffset = 0;
@@ -64,7 +64,7 @@ void IMURead(){
   //Calculate angular speed and acceleration
   float newRotSpeed = IMUGetGyroZ();
 
-/*
+
   //Shift data for averaging
   for (int i = 0; i < IMUDataMaxSampleSize - 1; i++){
     IMURotSpeedData[i] = IMURotSpeedData[i + 1];
@@ -89,20 +89,11 @@ void IMURead(){
     IMURotAcc += (IMURotSpeedData[i] - IMURotSpeedData[i - 1]) / (1.0 / IMU_UPDATE_FREQUENCY);
   }
   IMURotAcc /= (float) IMUDataSampleSize;
-  */
 
   //Add current heading
-  IMUHeading = NormalizeAngle(IMUHeading + newRotSpeed / IMU_UPDATE_FREQUENCY);
+  IMUHeadingChange = NormalizeAngle(IMUHeadingChange + newRotSpeed / IMU_UPDATE_FREQUENCY);
 
   xSemaphoreGive(IMUMutex);
-
-  //Printout TODO: REMOVE
-  /*
-  Serial.print("IMURotSpeed: ");
-  Serial.print(IMURotSpeed);
-  Serial.print(", IMURotAcc: ");
-  */
-  //Serial.println(IMURotAcc);
 }
 
 //Accelerometer
@@ -140,7 +131,6 @@ float IMUGetGyroZ(){
 float IMUGetTemp(){
   return IMU_temp.temperature;
 }
-
 
 void IMUTask(void* pvParameters){
   IMUCalibrate();
