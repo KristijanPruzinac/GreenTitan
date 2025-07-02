@@ -645,7 +645,7 @@ void AlgorithmAbort(bool full_abort){
     targetPointLon = targetPoint.at(0);
     targetPointLat = targetPoint.at(1);
     
-    MotionSetTarget(targetPointLon, targetPointLat);
+    MotionSetTargetPoint(targetPointLon, targetPointLat);
   }
 }
 
@@ -657,18 +657,18 @@ void AlgorithmCaptureNewOutline(){
   outlines.push_back( std::vector<std::vector<long long>>());
 }
 void AlgorithmCaptureBasePoint(){
-  BASE_LON = GpsGetLon();
-  BASE_LAT = GpsGetLat();
+  BASE_LON = GetLon();
+  BASE_LAT = GetLat();
 }
 void AlgorithmCaptureBaseExitPoint(){
-  BASE_EXIT_LON = GpsGetLon();
-  BASE_EXIT_LAT = GpsGetLat();
+  BASE_EXIT_LON = GetLon();
+  BASE_EXIT_LAT = GetLat();
 }
 void AlgorithmCaptureNewPoint(){
   outlines.back().push_back( std::vector<long long>());
 
-  outlines.back().back().push_back(GpsGetLon());
-  outlines.back().back().push_back(GpsGetLat());
+  outlines.back().back().push_back(GetLon());
+  outlines.back().back().push_back(GetLat());
 }
 void AlgorithmCaptureSetNewPoint(long long lon, long long lat){
   outlines.back().push_back( std::vector<long long>());
