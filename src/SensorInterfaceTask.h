@@ -45,7 +45,9 @@ long GetLon();
 long GetLat();
 long GetGpsAcc();
 
+//Interface
 float GetHeading();
+float GetHeadingReliability();
 bool IsGpsStable();
 
 void SensorInterfaceTask(void* pvParameters);

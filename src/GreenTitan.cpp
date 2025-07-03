@@ -38,8 +38,8 @@ long long BASE_LAT = 3376391;
 long long BASE_EXIT_LON = -5672328;
 long long BASE_EXIT_LAT = 3376391;
 
-int GPS_ACC_THRESHOLD = 18;
-int GPS_STABILITY_CHECK_DURATION = 300; // 5 minutes
+int GPS_ACC_THRESHOLD = 30; //TODO: Revert to 18
+int GPS_STABILITY_CHECK_DURATION = 15; // 5 minutes TODO: Revert to 5 minutes
 
 float BATTERY_LEVEL_MIN = 16;
 float BATTERY_LEVEL_MAX = 18;
@@ -415,9 +415,80 @@ void loop() {
         Mode = "RUNNING";
         */
         while (1){
-            //PlotIMUData(); // Plot IMU data for debugging
+            delay(5000);
 
-            delay(50);
+            //PlotIMUData(); // Plot IMU data for debugging
+/*
+            while (!IsGpsStable()) {
+                Serial.print(">");
+                Serial.print("Accuracy:");
+                Serial.print(GetGpsAcc());
+                Serial.print("\r\n");
+                delay(200);
+            }*/
+
+            long startLon = GetLon();
+            long startLat = GetLat();
+
+            for (int i = 0; i < 1; i++){
+                MotionSetTargetPoint(startLon, startLat + 200);
+
+                while (MowerIsInMotion()) {
+                    Serial.print(">");
+                    Serial.print("Heading:");
+                    Serial.print(GetHeading());
+                    Serial.print(",Accuracy:");
+                    Serial.print(GetGpsAcc());
+                    Serial.print(",Reliabillity:");
+                    Serial.print(GetHeadingReliability());
+                    Serial.print("\r\n");
+                    delay(50);
+                }
+
+                MotionSetTargetPoint(startLon + 200, startLat + 200);
+
+                while (MowerIsInMotion()) {
+                    Serial.print(">");
+                    Serial.print("Heading:");
+                    Serial.print(GetHeading());
+                    Serial.print(",Accuracy:");
+                    Serial.print(GetGpsAcc());
+                    Serial.print(",Reliabillity:");
+                    Serial.print(GetHeadingReliability());
+                    Serial.print("\r\n");
+                    delay(50);
+                }
+
+                MotionSetTargetPoint(startLon + 200, startLat);
+
+                while (MowerIsInMotion()) {
+                    Serial.print(">");
+                    Serial.print("Heading:");
+                    Serial.print(GetHeading());
+                    Serial.print(",Accuracy:");
+                    Serial.print(GetGpsAcc());
+                    Serial.print(",Reliabillity:");
+                    Serial.print(GetHeadingReliability());
+                    Serial.print("\r\n");
+                    delay(50);
+                }
+
+                MotionSetTargetPoint(startLon, startLat);
+
+                while (MowerIsInMotion()) {
+                    Serial.print(">");
+                    Serial.print("Heading:");
+                    Serial.print(GetHeading());
+                    Serial.print(",Accuracy:");
+                    Serial.print(GetGpsAcc());
+                    Serial.print(",Reliabillity:");
+                    Serial.print(GetHeadingReliability());
+                    Serial.print("\r\n");
+                    delay(50);
+                }
+            }
+
+            delay(50000);
         }
     }
     delay(10);

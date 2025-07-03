@@ -24,7 +24,7 @@ extern void MotorStop();
 extern void MotorRotateAcceleration(float acceleration);
 
 
-void MotionSetMode(int mode);
+void MotionSetMode(int mode, int MoveAfterRotation = 0);
 void MotionSetTargetPoint(long tLon, long tLat);
 void MotionSetTargetPointRotation(float azimuthDegrees);
 void MotionMoveToTarget();

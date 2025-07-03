@@ -11,13 +11,16 @@ long MotionTargetLat;
 int MotionMode = WAITING;
 int MotionMoveAfterRotation = 0;
 
-void MotionSetMode(int mode){
+void MotionSetMode(int mode, int MoveAfterRotation){
   xSemaphoreTake(MotionMutex, portMAX_DELAY);
   if (mode == WAITING){
     MotorStop();
   }
 
   MotionMode = mode;
+
+  MotionMoveAfterRotation = MoveAfterRotation;
+
   xSemaphoreGive(MotionMutex);
 }
 
@@ -28,9 +31,7 @@ void MotionSetTargetPoint(long tLon, long tLat){
   MotionTargetLon = tLon;
   MotionTargetLat = tLat;
 
-  MotionSetMode(ROTATING);
-  //MotionSetMode(MOVING);
-  //MotionSetMode(TEST);
+  MotionSetMode(ROTATING, 1);
 }
 
 void MotionSetTargetPointRotation(float azimuthDegrees){
@@ -40,7 +41,7 @@ void MotionSetTargetPointRotation(float azimuthDegrees){
   MotionTargetLon = MotionPrevLon + 100 * sin(radians(azimuthDegrees));
   MotionTargetLat = MotionPrevLat + 100 * cos(radians(azimuthDegrees)); //Calculate target based on azimuth
 
-  MotionMoveAfterRotation = 0; //Don't move after rotation
+  MotionSetMode(ROTATING, 0);
 }
 
 bool MowerIsInMotion(){
@@ -66,6 +67,8 @@ void MotionTask(void* pvParameters){
     //Calculate needed values for navigating
     float PrevTargetAngle = AngleBetweenPoints(MotionPrevLon, MotionPrevLat, MotionTargetLon, MotionTargetLat); //Angle from line start point to end point
     float MowerTargetAngle = AngleBetweenPoints(GetLon(), GetLat(), MotionTargetLon, MotionTargetLat); //Angle from current position to end point
+
+    Serial.println(MowerTargetAngle);
 
     float AngleDiff = ShortestRotation(PrevTargetAngle, MowerTargetAngle);
     float MowerTargetDist = sqrt(pow(GetLon() - MotionTargetLon, 2) + pow(GetLat() - MotionTargetLat, 2));

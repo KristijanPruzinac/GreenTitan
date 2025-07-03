@@ -159,6 +159,12 @@ float GetHeading(){
     xSemaphoreGive(SensorInterfaceMutex);
     return returnVal;
 }
+float GetHeadingReliability(){
+    xSemaphoreTake(SensorInterfaceMutex, portMAX_DELAY);
+    float returnVal = HeadingReliabillity;
+    xSemaphoreGive(SensorInterfaceMutex);
+    return returnVal;
+}
 bool IsGpsStable(){
     xSemaphoreTake(SensorInterfaceMutex, portMAX_DELAY);
     bool returnVal = GPS_AccuracyStable;
