@@ -3,6 +3,7 @@
 
 #include "Arduino.h"
 #include "Defines.h"
+#include "SensorInterfaceTask.h"
 
 #include <AceSorting.h>
 #include <vector>
@@ -15,12 +16,8 @@ extern long long BASE_LAT;
 extern long long BASE_EXIT_LON;
 extern long long BASE_EXIT_LAT;
 
-//Gps
-extern long GpsGetLon();
-extern long GpsGetLat();
-
 //Motion
-extern void MotionSetTarget(long long tLon, long long tLat);
+extern void MotionSetTargetPoint(long long tLon, long long tLat);
 extern void MotionMoveToTarget();
 
 //Motor
@@ -28,8 +25,6 @@ extern void MotorDriveAngle(float angle, bool forward, float speedFactor);
 extern void MotorMainOn();
 extern void MotorMainOff();
 
-
-//extern void MainChargingStart();
 
 void ClearOutlines();
 void FindTerrainBounds();

@@ -2,13 +2,14 @@
 
 //Globals
 const int IMUDataMaxSampleSize = 9;
-float IMURotSpeedData[IMUDataMaxSampleSize];
-float IMURotAccData[IMUDataMaxSampleSize];
+float IMU_RotSpeedData[IMUDataMaxSampleSize];
+float IMU_RotAccData[IMUDataMaxSampleSize];
 int IMUDataSampleSize = 3;
 
-float IMURotSpeed = 0;
-float IMURotAcc = 0;
-float IMUHeading = 0;
+float IMU_RotSpeedRaw = 0;
+float IMU_RotSpeed = 0;
+float IMU_RotAcc = 0;
+float IMU_HeadingChange = 0;
 
 //Calibration
 float IMUGyroXOffset = 0;
@@ -62,47 +63,37 @@ void IMURead(){
 
   xSemaphoreTake(IMUMutex, portMAX_DELAY);
   //Calculate angular speed and acceleration
-  float newRotSpeed = IMUGetGyroZ();
+  IMU_RotSpeedRaw = IMUGetGyroZ();
 
-/*
   //Shift data for averaging
   for (int i = 0; i < IMUDataMaxSampleSize - 1; i++){
-    IMURotSpeedData[i] = IMURotSpeedData[i + 1];
+    IMU_RotSpeedData[i] = IMU_RotSpeedData[i + 1];
   }
   for (int i = 0; i < IMUDataMaxSampleSize - 1; i++){
-    IMURotAccData[i] = IMURotAccData[i + 1];
+    IMU_RotAccData[i] = IMU_RotAccData[i + 1];
   }
 
   //Add speed reading
-  IMURotSpeedData[IMUDataMaxSampleSize - 1] = newRotSpeed;
+  IMU_RotSpeedData[IMUDataMaxSampleSize - 1] = IMU_RotSpeedRaw;
 
   //Average speed readings
-  IMURotSpeed = 0;
+  IMU_RotSpeed = 0;
   for (int i = IMUDataMaxSampleSize - 1; i > IMUDataMaxSampleSize - 1 - IMUDataSampleSize; i--){
-    IMURotSpeed += IMURotSpeedData[i];
+    IMU_RotSpeed += IMU_RotSpeedData[i];
   }
-  IMURotSpeed /= (float) IMUDataSampleSize;
+  IMU_RotSpeed /= (float) IMUDataSampleSize;
 
   //Average acceleration readings
-  IMURotAcc = 0;
+  IMU_RotAcc = 0;
   for (int i = IMUDataMaxSampleSize - 1; i > IMUDataMaxSampleSize - 1 - IMUDataSampleSize; i--){
-    IMURotAcc += (IMURotSpeedData[i] - IMURotSpeedData[i - 1]) / (1.0 / IMU_UPDATE_FREQUENCY);
+    IMU_RotAcc += (IMU_RotSpeedData[i] - IMU_RotSpeedData[i - 1]) / (1.0 / IMU_UPDATE_FREQUENCY);
   }
-  IMURotAcc /= (float) IMUDataSampleSize;
-  */
+  IMU_RotAcc /= (float) IMUDataSampleSize;
 
   //Add current heading
-  IMUHeading = NormalizeAngle(IMUHeading + newRotSpeed / IMU_UPDATE_FREQUENCY);
+  IMU_HeadingChange = NormalizeAngle(IMU_HeadingChange + IMU_RotSpeedRaw / IMU_UPDATE_FREQUENCY);
 
   xSemaphoreGive(IMUMutex);
-
-  //Printout TODO: REMOVE
-  /*
-  Serial.print("IMURotSpeed: ");
-  Serial.print(IMURotSpeed);
-  Serial.print(", IMURotAcc: ");
-  */
-  //Serial.println(IMURotAcc);
 }
 
 //Accelerometer
@@ -140,7 +131,6 @@ float IMUGetGyroZ(){
 float IMUGetTemp(){
   return IMU_temp.temperature;
 }
-
 
 void IMUTask(void* pvParameters){
   IMUCalibrate();

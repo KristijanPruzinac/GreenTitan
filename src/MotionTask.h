@@ -4,21 +4,14 @@
 #include "Arduino.h"
 #include "Defines.h"
 #include "Functions.h"
+#include "SensorInterfaceTask.h"
 
 #include <vector>
 #include <math.h>
 
 extern int MAX_DEVIATION;
 
-extern SemaphoreHandle_t IMUMutex;
-extern SemaphoreHandle_t GPSMutex;
 extern SemaphoreHandle_t MotionMutex;
-
-//Gps
-extern long GpsGetLon();
-extern long GpsGetLat();
-extern float GPS_Heading;
-extern float GPS_PrevHeading;
 
 //Motor
 extern float MowerAngularDegreesToMotorSteps(float unit);
@@ -31,20 +24,15 @@ extern void MotorStop();
 extern void MotorRotateAcceleration(float acceleration);
 
 
-void MotionSetMode(int mode);
-void MotionSetTarget(long tLon, long tLat);
-void MotionSetTargetRotation(float azimuthDegrees);
+void MotionSetMode(int mode, int MoveAfterRotation = 0);
+void MotionSetTargetPoint(long tLon, long tLat);
+void MotionSetTargetPointRotation(float azimuthDegrees);
 void MotionMoveToTarget();
 void MotionRotateToTarget();
 void MotionTask(void* pvParameters);
 
 bool MowerIsInMotion();
 
-extern bool ENABLE_GPS;
-
-extern float IMURotSpeed;
-extern float IMURotAcc;
-extern float IMUHeading;
 extern float MOTION_ACC_FACTOR;
 
 //TODO: Remove

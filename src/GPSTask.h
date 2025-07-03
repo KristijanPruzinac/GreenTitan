@@ -10,23 +10,17 @@
 #include <math.h>
 #include <HardwareSerial.h>
 
-extern int GPS_ACC_THRESHOLD;
-extern int GPS_STABILITY_CHECK_DURATION;
-
-extern int GPS_ACCURACY_STABLE;
-
-extern SemaphoreHandle_t IMUMutex;
 extern SemaphoreHandle_t GPSMutex;
 
-extern float IMUHeading;
+extern QueueHandle_t GPS_SensorInterface_Queue;
 
 void calcChecksum(unsigned char* CK);
 void GPSRead();
 void GPSCheck();
 bool InitGPS();
-long GpsGetLon();
-long GpsGetLat();
-long GpsGetAcc();
+long GPS_GetLon();
+long GPS_GetLat();
+long GPS_GetAcc();
 void GPSTask(void* pvParameters);
 
 #endif

@@ -23,14 +23,7 @@ long prevLon = 1;
 long prevLat = 1;
 long prevAcc = -2;
 
-float GPS_PrevIMUHeading = 0;
-float GPS_CurrentIMUHeading = 0;
-
-float GPS_PrevHeading = 0;
-float GPS_CurrentHeading = 0;
-
-float GPS_Heading = 0;
-float GPS_Dist = 0;
+GPS_SensorInterface_Unit GPS_gpsData;
 
 void calcChecksum(unsigned char* CK) {
   memset(CK, 0, 2);
@@ -45,6 +38,7 @@ void GPSRead() {
   static unsigned char checksum[2];
   const int payloadSize = sizeof(NAV_POSLLH);
 
+  xSemaphoreTake(GPSMutex, portMAX_DELAY);
   while ( SerialGPS.available() ) {
     byte c = SerialGPS.read();
     if ( fpos < 2 ) {
@@ -79,103 +73,38 @@ void GPSRead() {
     }
   }
 
-  //Serial.print(posllh.lon); Serial.print(" "); Serial.print(posllh.lat); Serial.print(" ");  Serial.println(posllh.hAcc); 
-
-  //Calculate heading if changed
+  //Calculate heading if position changed
   if (prevLon != posllh.lon || prevLat != posllh.lat){
-    float heading = 0;
-    float dist = 0;
+    GPS_gpsData.heading = AngleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
+    GPS_gpsData.distance = Distance(prevLon, prevLat, posllh.lon, posllh.lat);
+    GPS_gpsData.accuracy = posllh.hAcc;
 
-    heading = AngleBetweenPoints(prevLon, prevLat, posllh.lon, posllh.lat);
-    dist = Distance(prevLon, prevLat, posllh.lon, posllh.lat);
+    xQueueSend(GPS_SensorInterface_Queue, &GPS_gpsData, 0);
 
-    //Distance between readings sufficient, values are not nan
-    if (dist >= GPS_MIN_DIST_BETWEEN_READINGS && !(isnan(heading) || isnan(dist))){
-      xSemaphoreTake(IMUMutex, portMAX_DELAY);
-      GPS_CurrentIMUHeading = IMUHeading;
-      xSemaphoreGive(IMUMutex);
-
-      //Avoid possible division by zero error
-      if (ShortestRotation(GPS_CurrentIMUHeading, GPS_PrevIMUHeading) < 0.1){
-        GPS_CurrentIMUHeading = NormalizeAngle(GPS_PrevIMUHeading + 0.1);
-      }
-      if (ShortestRotation(GPS_CurrentHeading, GPS_PrevHeading) < 0.1){
-        GPS_CurrentHeading = NormalizeAngle(GPS_PrevHeading + 0.1);
-      }
-
-      //Update previous data
-      GPS_CurrentHeading = heading;
-
-      GPS_PrevIMUHeading = GPS_CurrentIMUHeading;
-      GPS_PrevHeading = GPS_CurrentHeading;
-
-      //Correct azimuth if gps data is accurate enough
-      if (fabs(ShortestRotation(GPS_CurrentIMUHeading, GPS_PrevIMUHeading)) <= GPS_HEADING_CORRECTION_ANGLE && fabs(ShortestRotation(GPS_CurrentIMUHeading, GPS_PrevIMUHeading) - ShortestRotation(heading, GPS_PrevHeading)) <= GPS_HEADING_CORRECTION_ANGLE){
-        xSemaphoreTake(GPSMutex, portMAX_DELAY);
-        GPS_Heading = heading;
-        xSemaphoreGive(GPSMutex);
-      }
-
-      GPS_Dist = dist;
-      
-      prevLon = posllh.lon;
-      prevLat = posllh.lat;
-    }
+    prevLon = posllh.lon;
+    prevLat = posllh.lat;
+    prevAcc = posllh.hAcc;
   }
 
-  prevAcc = posllh.hAcc;
-
-  GPSCheck();
-
-  //return returnVal;
+  xSemaphoreGive(GPSMutex);
 }
 
-unsigned long TimerGPS = -1;
-bool TimerGPSActive = false;
-
-void GPSCheck(){
-  int gpsAccuracy = GpsGetAcc();
-    if (gpsAccuracy <= GPS_ACC_THRESHOLD && gpsAccuracy > 0){ //Check to see if accuracy is within threshold, and if so try to check if it is stable
-      if (!GPS_ACCURACY_STABLE){
-        if (TimerGPSActive){
-          if ((millis() - TimerGPS) / MILLIS_PER_SECOND > (unsigned long) GPS_STABILITY_CHECK_DURATION){ //If accuracy is stable for long enough, set GPS_ACCURACY_STABLE to true
-            TimerGPSActive = false;
-            GPS_ACCURACY_STABLE = true;
-          }
-        }
-        else {  //Start timing
-          TimerGPSActive = true;
-          TimerGPS = millis();
-        }
-      }
-    }
-    else {  //Accuracy loss, immediately determines GPS_ACCURACY_STABLE = false
-      GPS_ACCURACY_STABLE = false;
-      TimerGPSActive = false;
-    }
-}
-
-long GpsGetLon(){
+long GPS_GetLon(){
   xSemaphoreTake(GPSMutex, portMAX_DELAY);
   long valueToReturn = prevLon;
   xSemaphoreGive(GPSMutex);
-
   return valueToReturn;
 }
-
-long GpsGetLat(){
+long GPS_GetLat(){
   xSemaphoreTake(GPSMutex, portMAX_DELAY);
   long valueToReturn = prevLat;
   xSemaphoreGive(GPSMutex);
-
   return valueToReturn;
 }
-
-long GpsGetAcc(){
+long GPS_GetAcc(){
   xSemaphoreTake(GPSMutex, portMAX_DELAY);
   long valueToReturn = prevAcc;
   xSemaphoreGive(GPSMutex);
-
   return valueToReturn;
 }
 
@@ -183,7 +112,7 @@ bool InitGPS(){
   SerialGPS.begin(GPS_BAUDRATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
   SerialGPS.setTimeout(COMMUNICATION_TIMEOUT);
 
-  //Dont remove
+  //Dont touch magic numbers
   posllh.lon = 1;
   posllh.lat = 1;
   prevAcc = -1;
@@ -202,21 +131,6 @@ void GPSTask(void* pvParameters){
     xLastWakeTime = xTaskGetTickCount();
 
     GPSRead();
-
-
-    if (counter % 2 == 0){
-      //toSend += String(String(IMUGetHeading()) + " " + String(millis()) + "\n");
-    }
-    counter++;
-
-    if (counter >= 10){
-      counter = 0;
-
-      //BluetoothWrite(toSend);
-
-      toSend = "";
-    }
-    
 
     //TODO: Implement rain sensor
 
