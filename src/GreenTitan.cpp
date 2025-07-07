@@ -417,6 +417,8 @@ void loop() {
         while (1){
             delay(5000);
 
+            continue;
+
             //PlotIMUData(); // Plot IMU data for debugging
 /*
             while (!IsGpsStable()) {
