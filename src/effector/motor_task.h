@@ -9,6 +9,8 @@
 
 #include <ContinuousStepper.h>
 
+extern bool ENABLE_MOTORS;
+
 bool init_motors();
 
 void motor_task(void* parameter);

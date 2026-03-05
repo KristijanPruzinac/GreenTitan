@@ -2,6 +2,14 @@
 #include "freertos/task.h"
 #include "Arduino.h"
 
+#include <micro_ros_platformio.h>
+
+#include <rcl/rcl.h>
+#include <rclc/rclc.h>
+#include <rclc/executor.h>
+
+#include <std_msgs/msg/int32.h>
+
 // -------------------------------------------------------- DEFINITIONS ---------------------------------------------------------------
 #include "Definitions.h"
 
@@ -62,6 +70,70 @@ float MOTION_ACC_FACTOR = 1.0;
 // Effectors
 #include "effector/motor_task.h"
 
+// -------------------------------------------------------- Micro-ROS ------------------------------------------------------------------
+
+rcl_publisher_t publisher;
+std_msgs__msg__Int32 msg;
+
+rclc_executor_t executor;
+rclc_support_t support;
+rcl_allocator_t allocator;
+rcl_node_t node;
+rcl_timer_t timer;
+
+#define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
+#define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){}}
+
+// Error handle loop
+void error_loop() {
+  while(1) {
+    delay(100);
+  }
+}
+
+void timer_callback(rcl_timer_t * timer, int64_t last_call_time) {
+  RCLC_UNUSED(last_call_time);
+  if (timer != NULL) {
+    RCSOFTCHECK(rcl_publish(&publisher, &msg, NULL));
+    msg.data++;
+  }
+}
+
+void InitMicroRos(){
+    while (RMW_RET_OK != rmw_uros_ping_agent(100, 1)) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    allocator = rcl_get_default_allocator();
+
+    //create init_options
+    RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
+
+    // create node
+    RCCHECK(rclc_node_init_default(&node, "micro_ros_platformio_node", "", &support));
+
+    // create publisher
+    RCCHECK(rclc_publisher_init_default(
+        &publisher,
+        &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
+        "micro_ros_platformio_node_publisher"));
+
+    // create timer,
+    const unsigned int timer_timeout = 1000;
+    RCCHECK(rclc_timer_init_default(
+        &timer,
+        &support,
+        RCL_MS_TO_NS(timer_timeout),
+        timer_callback));
+
+    // create executor
+    RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
+    RCCHECK(rclc_executor_add_timer(&executor, &timer));
+
+    msg.data = 0;
+}
+
 
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
 
@@ -106,21 +178,21 @@ void InitFreeRtos() {
 void InitPeripherals() {
     if (ENABLE_IMU) {
         if (!init_imu()) {
-            Error("IMU initialization failed.");
+            ENABLE_IMU = false;
             return;
         }
     }
 
     if (ENABLE_GPS) {
         if (!init_gps()) {
-            Error("GPS initialization failed.");
+            ENABLE_GPS = false;
             return;
         }
     }
 
     if (ENABLE_MOTORS) {
         if (!init_motors()) {
-            Error("Motor initialization failed.");
+            ENABLE_MOTORS = false;
             return;
         }
     }
@@ -129,11 +201,11 @@ void InitPeripherals() {
 // -------------------------------------------------------- PROGRAM START ---------------------------------------------------------------
 void setup() {
     Serial.begin(SERIAL_BAUDRATE);
+    set_microros_serial_transports(Serial);
 
-    InitPeripherals();
-    delay(500);
-
-    InitFreeRtos(); // Initialize FreeRTOS tasks
+    InitMicroRos();
+    //InitPeripherals(); //TODO: Make init functions check if peripherals are actually connected
+    //InitFreeRtos(); 
 
     delay(500);
 }
@@ -152,5 +224,6 @@ TEST
 */
 
 void loop() {
-    vTaskDelay(1000);
+    vTaskDelay(100);
+    RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
 }

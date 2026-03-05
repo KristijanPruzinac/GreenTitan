@@ -12,6 +12,8 @@
 #include "esp_dds.h"
 #include "esp_timer.h"
 
+extern bool ENABLE_IMU;
+
 extern bool IMU_INVERT;
 
 bool init_imu();

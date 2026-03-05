@@ -13,6 +13,8 @@
 #include "esp_dds.h"
 #include "esp_timer.h"
 
+extern bool ENABLE_GPS;
+
 bool init_gps();
 void gps_task(void* parameter);
 

@@ -61,6 +61,12 @@ static void motor_topic_callback(dds_callback_context_t* context) {
 static dds_thread_context_t thread_context;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
 void motor_task(void* parameter) {
+
+    if (!ENABLE_MOTORS) {
+        vTaskDelete(NULL);
+        return;
+    }
+
     thread_context.task = xTaskGetCurrentTaskHandle();
     thread_context.queue = xQueueCreate(5, sizeof(dds_callback_context_t));
     thread_context.sync_mutex = xSemaphoreCreateMutex();
