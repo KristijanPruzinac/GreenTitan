@@ -227,7 +227,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             motor_task,
             "MotorTask",
-            4096,
+            2048,
             NULL,
             2,
             NULL,
@@ -236,10 +236,10 @@ void init_freertos() {
     }
 
     if (ENABLE_IMU) {
-        xTaskCreatePinnedToCore(
+        xTaskCreatePinnedToCore( // TODO: FIX: ESP32 dies here, possible RAM overflow?
             imu_task,
             "IMUTask",
-            4096,
+            2048,
             NULL,
             1,
             NULL,
@@ -251,7 +251,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             gps_task,
             "GPSTask",
-            4096,
+            2048,
             NULL,
             1,
             NULL,
