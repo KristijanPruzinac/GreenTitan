@@ -1,7 +1,7 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
-//PINOUT
+#define SIMULATION_ENABLED true
 
 //GPS
 #define GPS_RX_PIN 16

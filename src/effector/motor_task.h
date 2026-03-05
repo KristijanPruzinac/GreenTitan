@@ -2,7 +2,8 @@
 #define MOTOR_TASK_H
 
 #include "Arduino.h"
-#include "../Definitions.h"
+#include "../definitions.h"
+#include "../functions.h"
 
 #include "esp_dds.h"
 #include "esp_timer.h"

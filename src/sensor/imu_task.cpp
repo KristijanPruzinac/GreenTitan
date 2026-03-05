@@ -17,6 +17,11 @@ static sensors_event_t imu_acc, imu_gyro, imu_temp;
 static Adafruit_MPU6050 mpu;
 
 bool init_imu(){
+  if (SIMULATION_ENABLED){
+    calibration_completed = true;
+    return true;
+  }
+
   if (!mpu.begin()) {
     return false;
   }
@@ -28,6 +33,8 @@ bool init_imu(){
 }
 
 void imu_calibrate(){
+  if (SIMULATION_ENABLED) return;
+
   //Init temp values
   float gyro_x = 0;
   float gyro_y = 0;
@@ -68,9 +75,17 @@ void imu_calibrate(){
 }
 
 static bool imu_read(){
-  if (!calibration_completed){
-    return false;
+  if (SIMULATION_ENABLED) {
+      imu_acc.acceleration.x = gaussian_noise(0.05f);
+      imu_acc.acceleration.y = gaussian_noise(0.05f);
+      imu_acc.acceleration.z = 9.81f + gaussian_noise(0.05f);
+      imu_gyro.gyro.x = gaussian_noise(0.005f);
+      imu_gyro.gyro.y = gaussian_noise(0.005f);
+      imu_gyro.gyro.z = sim_angular_velocity + gaussian_noise(0.01f);
+      return true;
   }
+
+  if (!calibration_completed) return false;
 
   mpu.getEvent(&imu_acc, &imu_gyro, &imu_temp);
 
@@ -80,12 +95,6 @@ static bool imu_read(){
 static dds_thread_context_t thread_context;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
 void imu_task(void* parameter) {
-
-    if (!ENABLE_IMU) {
-        vTaskDelete(NULL);
-        return;
-    }
-
     thread_context.task = xTaskGetCurrentTaskHandle();
     thread_context.queue = xQueueCreate(5, sizeof(dds_callback_context_t));
     thread_context.sync_mutex = xSemaphoreCreateMutex();
@@ -95,7 +104,7 @@ void imu_task(void* parameter) {
         .arg = NULL,
     };
     esp_timer_create(&timer_args, &(thread_context.timer));
-    esp_timer_start_periodic(thread_context.timer, 100 * 1000); // 100 ms
+    esp_timer_start_periodic(thread_context.timer, 1000 * 1000 / IMU_UPDATE_FREQUENCY);
 
     // ------- THREAD SETUP CODE START -------
 
@@ -118,22 +127,20 @@ void imu_task(void* parameter) {
 
             // ------- THREAD LOOP CODE START -------
 
-            if (!imu_read()){
-              continue;
-            }
+            if (imu_read()){
+              float gz;
+              if (IMU_INVERT){
+                gz = -(imu_gyro.gyro.z - gyro_z_offset);
+              }
+              else {
+                gz = imu_gyro.gyro.z - gyro_z_offset;
+              }
 
-            float gz;
-            if (IMU_INVERT){
-              gz = -(imu_gyro.gyro.z - gyro_z_offset);
-            }
-            else {
-              gz = imu_gyro.gyro.z - gyro_z_offset;
-            }
+              IMU_data_t IMU_data = {imu_acc.acceleration.x - acc_x_offset, imu_acc.acceleration.y - acc_y_offset, imu_acc.acceleration.z - acc_z_offset,
+                                    imu_gyro.gyro.x - gyro_x_offset, imu_gyro.gyro.y - gyro_y_offset, gz};
 
-            IMU_data_t IMU_data = {imu_acc.acceleration.x - acc_x_offset, imu_acc.acceleration.y - acc_y_offset, imu_acc.acceleration.z - acc_z_offset,
-                                   imu_gyro.gyro.x - gyro_x_offset, imu_gyro.gyro.y - gyro_y_offset, gz};
-
-            DDS_PUBLISH("/imu", IMU_data);
+              DDS_PUBLISH("/imu", IMU_data);
+            }
 
             // ------- THREAD LOOP CODE END -------
 
