@@ -1,6 +1,6 @@
 #include "motor_task.h"
 
-// create the stepper motor objects
+// Create the stepper motor objects
 ContinuousStepper<StepperDriver> motorA;
 ContinuousStepper<StepperDriver> motorB;
 
@@ -10,7 +10,18 @@ static float odom_x = 0;
 static float odom_y = 0;
 static float odom_theta = 0;
 
+// Simulation
+static float sim_left_speed = 0;
+static float sim_right_speed = 0;
+float sim_linear_velocity  = 0;
+float sim_angular_velocity = 0;
+float sim_pos_x     = 0;
+float sim_pos_y     = 0;
+float sim_pos_theta = 0;
+
 bool init_motors() {
+  if (SIMULATION_ENABLED) return true;
+
   pinMode(MOTOR_MAIN, OUTPUT);
 
   motorA.begin(MOTOR_A_STEP_PIN, MOTOR_A_DIR_PIN);
@@ -24,19 +35,35 @@ bool init_motors() {
 }
 
 static void motor_stop() {
+  if (SIMULATION_ENABLED){
+    sim_left_speed = 0;
+    sim_right_speed = 0;
+    return;
+  }
+
   motorA.stop();
   motorB.stop();
 }
 
 static void motor_main_on() {
+  if (SIMULATION_ENABLED) return;
+
   digitalWrite(MOTOR_MAIN, HIGH);
 }
 
 static void motor_main_off() {
+  if (SIMULATION_ENABLED) return;
+
   digitalWrite(MOTOR_MAIN, LOW);
 }
 
 static void motor_move(float leftSpeed, float rightSpeed) {
+  if (SIMULATION_ENABLED) {
+    sim_left_speed = leftSpeed;
+    sim_right_speed = rightSpeed;
+    return;
+  }
+  
   motorA.spin(leftSpeed);
   motorB.spin(rightSpeed);
 }
@@ -58,6 +85,8 @@ static void motor_topic_callback(dds_callback_context_t* context) {
   }
 }
 
+static int divide_frequency = 100;
+static int divide_counter = 0;
 static dds_thread_context_t thread_context;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
 void motor_task(void* parameter) {
@@ -99,37 +128,64 @@ void motor_task(void* parameter) {
 
             // ------- THREAD LOOP CODE START -------
 
-            motorA.loop();
-            motorB.loop();
+            divide_counter++;
+            if (divide_counter == divide_frequency) {
+              divide_counter = 0;
+            }
 
-            float leftStepsPerSecond = motorA.speed();
-            float rightStepsPerSecond = motorB.speed();
-            float leftSpeed = leftStepsPerSecond * MOTOR_METERS_PER_STEP;
-            float rightSpeed = rightStepsPerSecond * MOTOR_METERS_PER_STEP;
+            if (!SIMULATION_ENABLED){
+              motorA.loop();
+              motorB.loop();
+            }
 
-            // Odometry update
-            float dt = 1.0f / MOTOR_UPDATE_FREQUENCY;
-            float leftDist  = leftSpeed  * dt;
-            float rightDist = rightSpeed * dt;
-            float linear      = (leftDist + rightDist) / 2.0f;
-            float deltaTheta  = (rightDist - leftDist) / WHEEL_BASE;
+            if (divide_counter == 0) {
+              float leftSpeed, rightSpeed;
 
-            odom_x     += linear * cos(odom_theta);
-            odom_y     += linear * sin(odom_theta);
-            odom_theta += deltaTheta;
+              if (SIMULATION_ENABLED) {
+                  leftSpeed  = sim_left_speed;
+                  rightSpeed = sim_right_speed;
 
-            // Publish odometry
-            odom_data_t data = {
-                odom_x,
-                odom_y,
-                odom_theta,
-                (leftSpeed + rightSpeed) / 2.0f,
-                (rightSpeed - leftSpeed) / WHEEL_BASE,
-            };
+                  // Simulate missed steps - random 0-3% step loss per wheel
+                  leftSpeed  *= 1.0f - ((esp_random() % 30) / 1000.0f);
+                  rightSpeed *= 1.0f - ((esp_random() % 30) / 1000.0f);
 
-            result = DDS_PUBLISH("/odom", data);
-            if (result != DDS_SUCCESS) {
-                Serial.printf("Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
+                  sim_linear_velocity  = (leftSpeed + rightSpeed) / 2.0f;
+                  sim_angular_velocity = (rightSpeed - leftSpeed) / WHEEL_BASE;
+              } else {
+                  leftSpeed  = motorA.speed() * MOTOR_METERS_PER_STEP;
+                  rightSpeed = motorB.speed() * MOTOR_METERS_PER_STEP;
+              }
+
+              // Odometry update
+              float dt = (1.0f / MOTOR_UPDATE_FREQUENCY) * divide_frequency;
+              float leftDist  = leftSpeed  * dt;
+              float rightDist = rightSpeed * dt;
+              float linear      = (leftDist + rightDist) / 2.0f;
+              float deltaTheta  = (rightDist - leftDist) / WHEEL_BASE;
+
+              odom_x     += linear * cos(odom_theta);
+              odom_y     += linear * sin(odom_theta);
+              odom_theta += deltaTheta;
+
+              if (SIMULATION_ENABLED){
+                sim_pos_x     = odom_x;
+                sim_pos_y     = odom_y;
+                sim_pos_theta = odom_theta;
+              }
+
+              // Publish odometry
+              odom_data_t data = {
+                  odom_x,
+                  odom_y,
+                  odom_theta,
+                  (leftSpeed + rightSpeed) / 2.0f,
+                  (rightSpeed - leftSpeed) / WHEEL_BASE,
+              };
+
+              result = DDS_PUBLISH("/odom", data);
+              if (result != DDS_SUCCESS) {
+                  Serial.printf("Odom Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
+              }
             }
 
             // ------- THREAD LOOP CODE END -------

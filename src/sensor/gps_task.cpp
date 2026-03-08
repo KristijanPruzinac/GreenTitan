@@ -8,6 +8,8 @@ static const unsigned char UBX_HEADER[] = { 0xB5, 0x62 };
 static NAV_POSLLH posllh;
 
 bool init_gps(){
+  if (SIMULATION_ENABLED) return true;
+
   SerialGPS.begin(GPS_BAUDRATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
   SerialGPS.setTimeout(COMMUNICATION_TIMEOUT);
 
@@ -24,6 +26,24 @@ static void calc_checksum(unsigned char* CK) {
 }
 
 static void gps_read() {
+  if (SIMULATION_ENABLED) {
+    const float METERS_PER_LAT = 111111.0f;
+    const float base_lat = 55.0f; // Random latitude
+    const float base_lon = 32.0f; // Random longitude
+
+    gps_data_t gpsData = {
+        base_lat + (sim_pos_y / METERS_PER_LAT) + gaussian_noise(0.00003f),
+        base_lon + (sim_pos_x / (METERS_PER_LAT * cosf(base_lat * M_PI / 180.0f))) + gaussian_noise(0.00003f),
+        0.0f,
+        2.5f + gaussian_noise(0.5f),
+    };
+    dds_result_t result = DDS_PUBLISH("/gps", gpsData);
+    if (result != DDS_SUCCESS) {
+        Serial.printf("GPS Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
+    }
+    return;
+  }
+
   static int fpos = 0;
   static unsigned char checksum[2];
   const int payloadSize = sizeof(NAV_POSLLH);
@@ -71,7 +91,10 @@ static void gps_read() {
         posllh.hAcc / 1000.0f,   // horizontal accuracy in meters
     };
 
-    DDS_PUBLISH("/gps", gpsData);
+    dds_result_t result = DDS_PUBLISH("/gps", gpsData);
+    if (result != DDS_SUCCESS) {
+        Serial.printf("GPS Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
+    }
   }
 }
 
