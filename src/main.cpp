@@ -109,6 +109,8 @@ void init_micro_ros(){
         delay(100);
     }
 
+    rmw_uros_sync_session(1000);
+
     allocator = rcl_get_default_allocator();
 
     //create init_options
@@ -142,6 +144,11 @@ void init_micro_ros(){
 void odom_topic_callback(dds_callback_context_t* context) {
     odom_data_t* data = (odom_data_t*)context->message_data.data;
 
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    odom_msg.header.stamp.sec = ts.tv_sec;
+    odom_msg.header.stamp.nanosec = ts.tv_nsec;
+
     odom_msg.pose.pose.position.x = data->x;
     odom_msg.pose.pose.position.y = data->y;
 
@@ -169,6 +176,11 @@ void odom_topic_callback(dds_callback_context_t* context) {
 
 void imu_topic_callback(dds_callback_context_t* context) {
     IMU_data_t* data = (IMU_data_t*)context->message_data.data;
+
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    imu_msg.header.stamp.sec = ts.tv_sec;
+    imu_msg.header.stamp.nanosec = ts.tv_nsec;
 
     imu_msg.linear_acceleration.x = data->acc_x;
     imu_msg.linear_acceleration.y = data->acc_y;
@@ -199,6 +211,11 @@ void imu_topic_callback(dds_callback_context_t* context) {
 void gps_topic_callback(dds_callback_context_t* context) {
     gps_data_t* data = (gps_data_t*)context->message_data.data;
 
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    gps_msg.header.stamp.sec = ts.tv_sec;
+    gps_msg.header.stamp.nanosec = ts.tv_nsec;
+
     gps_msg.latitude  = data->latitude;
     gps_msg.longitude = data->longitude;
     gps_msg.altitude  = data->altitude;
@@ -227,7 +244,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             motor_task,
             "MotorTask",
-            2048,
+            4096,
             NULL,
             2,
             NULL,
@@ -236,10 +253,10 @@ void init_freertos() {
     }
 
     if (ENABLE_IMU) {
-        xTaskCreatePinnedToCore( // TODO: FIX: ESP32 dies here, possible RAM overflow?
+        xTaskCreatePinnedToCore(
             imu_task,
             "IMUTask",
-            2048,
+            4096,
             NULL,
             1,
             NULL,
@@ -251,7 +268,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             gps_task,
             "GPSTask",
-            2048,
+            4096,
             NULL,
             1,
             NULL,
@@ -286,6 +303,8 @@ void init_peripherals() {
 // -------------------------------------------------------- PROGRAM START ---------------------------------------------------------------
 void main_task(void* parameter);
 void setup() {
+    dds_init();
+
     Serial.begin(SERIAL_BAUDRATE);
     set_microros_serial_transports(Serial);
     init_micro_ros();

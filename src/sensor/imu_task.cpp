@@ -139,7 +139,10 @@ void imu_task(void* parameter) {
               IMU_data_t IMU_data = {imu_acc.acceleration.x - acc_x_offset, imu_acc.acceleration.y - acc_y_offset, imu_acc.acceleration.z - acc_z_offset,
                                     imu_gyro.gyro.x - gyro_x_offset, imu_gyro.gyro.y - gyro_y_offset, gz};
 
-              DDS_PUBLISH("/imu", IMU_data);
+              dds_result_t result = DDS_PUBLISH("/imu", IMU_data);
+              if (result != DDS_SUCCESS) {
+                  Serial.printf("IMU Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
+              }
             }
 
             // ------- THREAD LOOP CODE END -------

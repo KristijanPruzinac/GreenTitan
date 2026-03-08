@@ -85,17 +85,11 @@ static void motor_topic_callback(dds_callback_context_t* context) {
   }
 }
 
-static int divide_frequency = 50;
+static int divide_frequency = 100;
 static int divide_counter = 0;
 static dds_thread_context_t thread_context;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
 void motor_task(void* parameter) {
-
-    if (!ENABLE_MOTORS) {
-        vTaskDelete(NULL);
-        return;
-    }
-
     thread_context.task = xTaskGetCurrentTaskHandle();
     thread_context.queue = xQueueCreate(5, sizeof(dds_callback_context_t));
     thread_context.sync_mutex = xSemaphoreCreateMutex();
@@ -190,7 +184,7 @@ void motor_task(void* parameter) {
 
               result = DDS_PUBLISH("/odom", data);
               if (result != DDS_SUCCESS) {
-                  Serial.printf("Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
+                  Serial.printf("Odom Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
               }
             }
 

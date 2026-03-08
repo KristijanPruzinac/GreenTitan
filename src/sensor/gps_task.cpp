@@ -37,7 +37,10 @@ static void gps_read() {
         0.0f,
         2.5f + gaussian_noise(0.5f),
     };
-    DDS_PUBLISH("/gps", gpsData);
+    dds_result_t result = DDS_PUBLISH("/gps", gpsData);
+    if (result != DDS_SUCCESS) {
+        Serial.printf("GPS Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
+    }
     return;
   }
 
@@ -88,19 +91,16 @@ static void gps_read() {
         posllh.hAcc / 1000.0f,   // horizontal accuracy in meters
     };
 
-    DDS_PUBLISH("/gps", gpsData);
+    dds_result_t result = DDS_PUBLISH("/gps", gpsData);
+    if (result != DDS_SUCCESS) {
+        Serial.printf("GPS Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
+    }
   }
 }
 
 static dds_thread_context_t thread_context;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
 void gps_task(void* parameter) {
-
-    if (!ENABLE_GPS) {
-        vTaskDelete(NULL);
-        return;
-    }
-
     thread_context.task = xTaskGetCurrentTaskHandle();
     thread_context.queue = xQueueCreate(5, sizeof(dds_callback_context_t));
     thread_context.sync_mutex = xSemaphoreCreateMutex();
