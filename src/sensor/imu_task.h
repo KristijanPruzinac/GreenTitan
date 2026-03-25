@@ -14,8 +14,8 @@
 
 extern bool IMU_INVERT;
 
-extern float sim_linear_velocity;
-extern float sim_angular_velocity;
+extern float odom_linear_velocity;
+extern float odom_angular_velocity;
 
 bool init_imu();
 void imu_calibrate();

@@ -12,5 +12,7 @@ void Warning(String message);
 void Error(String message);
 float gaussian_noise(float stddev);
 void toggle_status_led();
+void warning();
+void error();
 
 #endif

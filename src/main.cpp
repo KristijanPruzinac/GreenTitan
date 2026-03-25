@@ -94,6 +94,8 @@ rclc_support_t support;
 rcl_allocator_t allocator;
 rcl_node_t node;
 
+unsigned long long time_offset = 0;
+
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){}}
 
@@ -104,12 +106,28 @@ void error_loop() {
   }
 }
 
+bool sync_time()
+{
+    const int timeout_ms = 1000;
+    if (rmw_uros_epoch_synchronized()) return true; // synchronized previously
+
+    if (RMW_RET_OK != rmw_uros_sync_session(timeout_ms)) return false; // not synchronized
+
+    if (rmw_uros_epoch_synchronized()) {
+        int64_t time_ns = rmw_uros_epoch_nanos();
+        timespec tp;
+        tp.tv_sec = time_ns / 1000000000;
+        tp.tv_nsec = time_ns % 1000000000;
+        clock_settime(CLOCK_REALTIME, &tp);
+        return true;
+    }
+    return false;
+}
+
 void init_micro_ros(){
     while (RMW_RET_OK != rmw_uros_ping_agent(100, 1)) {
         delay(100);
     }
-
-    rmw_uros_sync_session(1000);
 
     allocator = rcl_get_default_allocator();
 
@@ -139,6 +157,11 @@ void init_micro_ros(){
 
     // create executor
     RCCHECK(rclc_executor_init(&executor, &support.context, 5, &allocator));
+
+    bool success = sync_time();
+    if (!success) {
+        error();
+    }
 }
 
 void odom_topic_callback(dds_callback_context_t* context) {
@@ -165,6 +188,13 @@ void odom_topic_callback(dds_callback_context_t* context) {
     odom_msg.twist.twist.angular.x = 0.0f;
     odom_msg.twist.twist.angular.y = 0.0f;
     odom_msg.twist.twist.angular.z = data->angular_vel;
+
+    odom_msg.pose.covariance[0]  = 0.001f;  // x
+    odom_msg.pose.covariance[7]  = 0.001f;  // y
+    odom_msg.pose.covariance[35] = 0.005f;   // yaw
+
+    odom_msg.twist.covariance[0] = 0.001f;  // vx
+    odom_msg.twist.covariance[35] = 0.01f;
 
     odom_msg.header.frame_id.data = (char*)"odom";
     odom_msg.header.frame_id.size = strlen("odom");
@@ -306,8 +336,10 @@ void setup() {
     dds_init();
 
     Serial.begin(SERIAL_BAUDRATE);
-    set_microros_serial_transports(Serial);
-    init_micro_ros();
+
+    set_microros_serial_transports(Serial); //COMMENT OUT FOR SERIAL DEBUGGING
+    init_micro_ros(); //COMMENT OUT FOR SERIAL DEBUGGING
+
     init_peripherals(); //TODO: Make init functions check if peripherals are actually connected
     init_freertos();
 

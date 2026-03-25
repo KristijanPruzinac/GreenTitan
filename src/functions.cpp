@@ -27,3 +27,33 @@ void toggle_status_led() {
   status_led_on = !status_led_on;
   digitalWrite(LED_BUILTIN, status_led_on);
 }
+
+void error() {
+  toggle_status_led();
+  delay(200);
+  toggle_status_led();
+  delay(200);
+
+  toggle_status_led();
+  delay(200);
+  toggle_status_led();
+  delay(200);
+
+  toggle_status_led();
+  delay(200);
+  toggle_status_led();
+  delay(800);
+
+  while (1)
+  {
+    delay(1000);
+  }
+  
+}
+
+void warning() {
+  toggle_status_led();
+  delay(200);
+  toggle_status_led();
+  delay(800);
+}

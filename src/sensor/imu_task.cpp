@@ -81,7 +81,7 @@ static bool imu_read(){
       imu_acc.acceleration.z = 9.81f + gaussian_noise(0.05f);
       imu_gyro.gyro.x = gaussian_noise(0.005f);
       imu_gyro.gyro.y = gaussian_noise(0.005f);
-      imu_gyro.gyro.z = sim_angular_velocity + gaussian_noise(0.01f);
+      imu_gyro.gyro.z = odom_angular_velocity + gaussian_noise(0.01f);
       return true;
   }
 
