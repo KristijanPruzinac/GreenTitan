@@ -32,10 +32,10 @@ static void gps_read() {
     const float base_lon = 32.0f; // Random longitude
 
     gps_data_t gpsData = {
-        base_lat + (sim_pos_y / METERS_PER_LAT) + gaussian_noise(0.00003f),
-        base_lon + (sim_pos_x / (METERS_PER_LAT * cosf(base_lat * M_PI / 180.0f))) + gaussian_noise(0.00003f),
+        base_lat + (odom_y / METERS_PER_LAT) + gaussian_noise(0.0000001f),  // ~3cm
+        base_lon + (odom_x / (METERS_PER_LAT * cosf(base_lat * M_PI / 180.0f))) + gaussian_noise(0.0000001f),  // ~3cm
         0.0f,
-        2.5f + gaussian_noise(0.5f),
+        0.014f + gaussian_noise(0.005f),
     };
     dds_result_t result = DDS_PUBLISH("/gps", gpsData);
     if (result != DDS_SUCCESS) {

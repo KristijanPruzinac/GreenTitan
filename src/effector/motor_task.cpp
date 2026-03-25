@@ -6,18 +6,20 @@ ContinuousStepper<StepperDriver> motorB;
 
 static float MOTOR_METERS_PER_STEP = 2 * PI * WHEEL_RADIUS / MOTOR_STEPS_PER_REV;
 
-static float odom_x = 0;
-static float odom_y = 0;
-static float odom_theta = 0;
+float odom_x = 0;
+float odom_y = 0;
+float odom_theta = 0;
+float odom_linear_velocity  = 0;
+float odom_angular_velocity = 0;
 
 // Simulation
 static float sim_left_speed = 0;
 static float sim_right_speed = 0;
-float sim_linear_velocity  = 0;
-float sim_angular_velocity = 0;
-float sim_pos_x     = 0;
-float sim_pos_y     = 0;
-float sim_pos_theta = 0;
+static float sim_linear_velocity  = 0;
+static float sim_angular_velocity = 0;
+static float sim_pos_x     = 0;
+static float sim_pos_y     = 0;
+static float sim_pos_theta = 0;
 
 bool init_motors() {
   if (SIMULATION_ENABLED) return true;
@@ -144,13 +146,6 @@ void motor_task(void* parameter) {
               if (SIMULATION_ENABLED) {
                   leftSpeed  = sim_left_speed;
                   rightSpeed = sim_right_speed;
-
-                  // Simulate missed steps - random 0-3% step loss per wheel
-                  leftSpeed  *= 1.0f - ((esp_random() % 30) / 1000.0f);
-                  rightSpeed *= 1.0f - ((esp_random() % 30) / 1000.0f);
-
-                  sim_linear_velocity  = (leftSpeed + rightSpeed) / 2.0f;
-                  sim_angular_velocity = (rightSpeed - leftSpeed) / WHEEL_BASE;
               } else {
                   leftSpeed  = motorA.speed() * MOTOR_METERS_PER_STEP;
                   rightSpeed = motorB.speed() * MOTOR_METERS_PER_STEP;
@@ -163,24 +158,47 @@ void motor_task(void* parameter) {
               float linear      = (leftDist + rightDist) / 2.0f;
               float deltaTheta  = (rightDist - leftDist) / WHEEL_BASE;
 
+              // Update odometry / simulate data for gps and imu
               odom_x     += linear * cos(odom_theta);
               odom_y     += linear * sin(odom_theta);
               odom_theta += deltaTheta;
 
+              odom_linear_velocity  = (leftSpeed + rightSpeed) / 2.0f;
+              odom_angular_velocity = (rightSpeed - leftSpeed) / WHEEL_BASE;
+
+              // Simulation for odometry sensor output
               if (SIMULATION_ENABLED){
-                sim_pos_x     = odom_x;
-                sim_pos_y     = odom_y;
-                sim_pos_theta = odom_theta;
+                int chance = esp_random() % 5;
+                if (chance != 0){
+                  sim_pos_x     += linear * cos(sim_pos_theta);
+                  sim_pos_y     += linear * sin(sim_pos_theta);
+                  sim_pos_theta += deltaTheta;
+
+                  sim_linear_velocity  = (leftSpeed + rightSpeed) / 2.0f;
+                  sim_angular_velocity = (rightSpeed - leftSpeed) / WHEEL_BASE;
+                }
               }
 
               // Publish odometry
-              odom_data_t data = {
-                  odom_x,
-                  odom_y,
-                  odom_theta,
-                  (leftSpeed + rightSpeed) / 2.0f,
-                  (rightSpeed - leftSpeed) / WHEEL_BASE,
-              };
+              odom_data_t data;
+              if (SIMULATION_ENABLED){
+                data = {
+                    sim_pos_x,
+                    sim_pos_y,
+                    sim_pos_theta,
+                    sim_linear_velocity,
+                    sim_angular_velocity,
+                };
+              }
+              else {
+                data = {
+                    odom_x,
+                    odom_y,
+                    odom_theta,
+                    (leftSpeed + rightSpeed) / 2.0f,
+                    (rightSpeed - leftSpeed) / WHEEL_BASE,
+                };
+              }
 
               result = DDS_PUBLISH("/odom", data);
               if (result != DDS_SUCCESS) {

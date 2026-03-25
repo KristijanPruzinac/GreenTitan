@@ -15,8 +15,8 @@
 
 extern bool ENABLE_GPS;
 
-extern float sim_pos_x;
-extern float sim_pos_y;
+extern float odom_x;
+extern float odom_y;
 
 bool init_gps();
 void gps_task(void* parameter);
