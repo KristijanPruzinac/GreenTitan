@@ -108,7 +108,7 @@ void motor_task(void* parameter) {
     dds_result_t result;
     result = DDS_SUBSCRIBE("/motor", motor_topic_callback, &thread_context);
     if (result != DDS_SUCCESS) {
-        Serial.printf("Topic subscribe failed: %s\n", DDS_RESULT_TO_STRING(result));
+        SerialDebug.printf("Topic subscribe failed: %s\r\n", DDS_RESULT_TO_STRING(result));
     }
 
     // ------- THREAD SETUP CODE END -------
@@ -202,7 +202,7 @@ void motor_task(void* parameter) {
 
               result = DDS_PUBLISH("/odom", data);
               if (result != DDS_SUCCESS) {
-                  Serial.printf("Odom Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
+                  SerialDebug.printf("Odom Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
               }
             }
 

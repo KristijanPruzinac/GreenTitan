@@ -3,6 +3,10 @@
 
 #define SIMULATION_ENABLED true
 
+//DEBUG
+#define DEBUG_RX_PIN 13
+#define DEBUG_TX_PIN 27
+
 //GPS
 #define GPS_RX_PIN 16
 #define GPS_TX_PIN 17
@@ -28,10 +32,6 @@ typedef struct {
 } gps_data_t;
 
 //Motor
-#define MOTOR_LEFT_A 23
-#define MOTOR_LEFT_B 19
-#define MOTOR_RIGHT_A 13
-#define MOTOR_RIGHT_B 27
 #define MOTOR_MAIN 18
 
 //Battery
@@ -82,16 +82,15 @@ typedef struct {
 #define BATTERY_LEVEL_CHARGED 95
 
 //Sensors
-#define MAIN_UPDATE_FREQUENCY 100
 #define MOTION_UPDATE_FREQUENCY 10
 #define BATTERY_UPDATE_FREQUENCY 10
 #define IMU_UPDATE_FREQUENCY 10
-#define SENSORS_INTERFACE_UPDATE_FREQUENCY 25
 #define MOTOR_UPDATE_FREQUENCY 1000
 #define GPS_UPDATE_FREQUENCY 5
 
 //COMMUNICATION
 #define SERIAL_BAUDRATE 921600
+#define DEBUG_BAUDRATE 115200
 #define GPS_BAUDRATE 19200
 #define COMMUNICATION_TIMEOUT 150
 
@@ -143,5 +142,15 @@ enum FileResult {
     INIT_FAILED,
     ALGORITHM_FAILED,
 };
+
+// Fused pose from ROS2 EKF
+typedef struct {
+    float x;
+    float y;
+    float yaw;
+    float vx;
+    float omega;
+    int32_t stamp_sec;
+} fused_pose_data_t;
 
 #endif

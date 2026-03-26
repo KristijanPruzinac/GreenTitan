@@ -13,6 +13,8 @@
 #include "esp_dds.h"
 #include "esp_timer.h"
 
+extern HardwareSerial SerialDebug;
+
 extern bool ENABLE_GPS;
 
 extern float odom_x;

@@ -10,6 +10,8 @@
 
 #include <ContinuousStepper.h>
 
+extern HardwareSerial SerialDebug;
+
 extern bool ENABLE_MOTORS;
 
 bool init_motors();
