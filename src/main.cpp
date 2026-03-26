@@ -41,6 +41,8 @@ bool ENABLE_BATTERY = true;
 bool ENABLE_RAIN_SENSOR = true;
 bool ENABLE_BLUETOOTH = true;
 
+bool ENABLE_MOTION = true;
+
 // -------------------------------------------------------- GLOBALS ---------------------------------------------------------------
 HardwareSerial SerialDebug(1);
 
@@ -76,6 +78,9 @@ float MOTION_ACC_FACTOR = 1.0;
 
 // Effectors
 #include "effector/motor_task.h"
+
+//Motion
+#include "motion/motion_task.h"
 
 // Simulation
 #include "simulation/sim_task.h"
@@ -303,18 +308,15 @@ void fused_pose_callback(const void* msgin) {
     fused_pose_data_t data = {
         .x     = x,
         .y     = y,
-        .yaw   = yaw,
+        .yaw   = normalize_angle(yaw),
         .vx    = (float)msg->twist.twist.linear.x,
         .omega = (float)msg->twist.twist.angular.z,
-        .stamp_sec = msg->header.stamp.sec
     };
 
     dds_result_t result = DDS_PUBLISH("/fused_pose", data);
     if (result != DDS_SUCCESS) {
         SerialDebug.printf("Fused pose publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
     }
-
-    SerialDebug.printf("%f, %f, %f\r\n", x, y, yaw);
 }
 
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
@@ -348,6 +350,18 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             gps_task,
             "GPSTask",
+            4096,
+            NULL,
+            1,
+            NULL,
+            0
+        );
+    }
+
+    if (ENABLE_MOTION) {
+        xTaskCreatePinnedToCore(
+            motion_task,
+            "MotionTask",
             4096,
             NULL,
             1,
@@ -396,6 +410,7 @@ void setup() {
     init_peripherals(); //TODO: Make init functions check if peripherals are actually connected
     init_freertos();
 
+    /*
     if (SIMULATION_ENABLED){
         xTaskCreatePinnedToCore(
             sim_task,
@@ -407,6 +422,7 @@ void setup() {
             0
         );
     }
+    */
 
     // Start main task
     xTaskCreatePinnedToCore(

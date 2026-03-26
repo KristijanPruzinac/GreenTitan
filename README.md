@@ -16,6 +16,7 @@ Einhell battery adapter - GNU GPL v3 - Hans - https://www.printables.com/social/
 
 #### SOFTWARE  
 Recieve NAV_POSLLH message - iforce2d - https://www.youtube.com/watch?v=TwhCX0c8Xe0
+PID controller - Philip Salmony - https://github.com/pms67
 
 #### LIBRARIES  
 Adafruit MPU6050 - https://github.com/adafruit/Adafruit_MPU6050
