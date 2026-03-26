@@ -12,6 +12,8 @@
 #include "esp_dds.h"
 #include "esp_timer.h"
 
+extern HardwareSerial SerialDebug;
+
 extern bool IMU_INVERT;
 
 extern float odom_linear_velocity;

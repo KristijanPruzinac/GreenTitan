@@ -39,7 +39,7 @@ static void gps_read() {
     };
     dds_result_t result = DDS_PUBLISH("/gps", gpsData);
     if (result != DDS_SUCCESS) {
-        Serial.printf("GPS Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
+        SerialDebug.printf("GPS Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
     }
     return;
   }
@@ -93,7 +93,7 @@ static void gps_read() {
 
     dds_result_t result = DDS_PUBLISH("/gps", gpsData);
     if (result != DDS_SUCCESS) {
-        Serial.printf("GPS Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
+        SerialDebug.printf("GPS Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
     }
   }
 }

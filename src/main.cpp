@@ -41,7 +41,10 @@ bool ENABLE_BATTERY = true;
 bool ENABLE_RAIN_SENSOR = true;
 bool ENABLE_BLUETOOTH = true;
 
+bool ENABLE_MOTION = true;
+
 // -------------------------------------------------------- GLOBALS ---------------------------------------------------------------
+HardwareSerial SerialDebug(1);
 
 bool SETUP_COMPLETED = true;
 
@@ -76,23 +79,29 @@ float MOTION_ACC_FACTOR = 1.0;
 // Effectors
 #include "effector/motor_task.h"
 
+//Motion
+#include "motion/motion_task.h"
+
 // Simulation
 #include "simulation/sim_task.h"
 
 // -------------------------------------------------------- Micro-ROS ------------------------------------------------------------------
-
 rcl_publisher_t odom_publisher;
 rcl_publisher_t imu_publisher;
 rcl_publisher_t gps_publisher;
+rcl_subscription_t fused_pose_subscriber;
 
 nav_msgs__msg__Odometry odom_msg;
 sensor_msgs__msg__Imu imu_msg;
 sensor_msgs__msg__NavSatFix gps_msg;
+nav_msgs__msg__Odometry fused_pose_msg;
 
 rclc_executor_t executor;
 rclc_support_t support;
 rcl_allocator_t allocator;
 rcl_node_t node;
+
+void fused_pose_callback(const void* msgin);
 
 unsigned long long time_offset = 0;
 
@@ -154,9 +163,24 @@ void init_micro_ros(){
         &gps_publisher, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, NavSatFix),
         "gps/fix"));
+    
+    RCCHECK(rclc_subscription_init_default(
+        &fused_pose_subscriber,
+        &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
+        "/odometry/filtered/global"
+    ));
 
     // create executor
-    RCCHECK(rclc_executor_init(&executor, &support.context, 5, &allocator));
+    RCCHECK(rclc_executor_init(&executor, &support.context, 6, &allocator));
+
+    RCCHECK(rclc_executor_add_subscription(
+        &executor,
+        &fused_pose_subscriber,
+        &fused_pose_msg,
+        &fused_pose_callback,
+        ON_NEW_DATA
+    ));
 
     bool success = sync_time();
     if (!success) {
@@ -267,6 +291,34 @@ void gps_topic_callback(dds_callback_context_t* context) {
     RCSOFTCHECK(rcl_publish(&gps_publisher, &gps_msg, NULL));
 }
 
+void fused_pose_callback(const void* msgin) {
+    const nav_msgs__msg__Odometry* msg =
+        (const nav_msgs__msg__Odometry*)msgin;
+
+    // Extract x, y
+    float x = (float)msg->pose.pose.position.x;
+    float y = (float)msg->pose.pose.position.y;
+
+    // Quaternion → yaw (2D, so only z/w matter)
+    float qz = (float)msg->pose.pose.orientation.z;
+    float qw = (float)msg->pose.pose.orientation.w;
+    float yaw = atan2f(2.0f * qw * qz, 1.0f - 2.0f * qz * qz);
+
+    // Package and publish internally via your DDS system
+    fused_pose_data_t data = {
+        .x     = x,
+        .y     = y,
+        .yaw   = normalize_angle(yaw),
+        .vx    = (float)msg->twist.twist.linear.x,
+        .omega = (float)msg->twist.twist.angular.z,
+    };
+
+    dds_result_t result = DDS_PUBLISH("/fused_pose", data);
+    if (result != DDS_SUCCESS) {
+        SerialDebug.printf("Fused pose publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
+    }
+}
+
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
 
 void init_freertos() {
@@ -305,6 +357,18 @@ void init_freertos() {
             0
         );
     }
+
+    if (ENABLE_MOTION) {
+        xTaskCreatePinnedToCore(
+            motion_task,
+            "MotionTask",
+            4096,
+            NULL,
+            1,
+            NULL,
+            0
+        );
+    }
 }
 
 void init_peripherals() {
@@ -333,16 +397,20 @@ void init_peripherals() {
 // -------------------------------------------------------- PROGRAM START ---------------------------------------------------------------
 void main_task(void* parameter);
 void setup() {
+    SerialDebug.begin(DEBUG_BAUDRATE, SERIAL_8N1, DEBUG_RX_PIN, DEBUG_TX_PIN);
+    SerialDebug.setTimeout(COMMUNICATION_TIMEOUT);
+
     dds_init();
 
     Serial.begin(SERIAL_BAUDRATE);
 
-    set_microros_serial_transports(Serial); //COMMENT OUT FOR SERIAL DEBUGGING
-    init_micro_ros(); //COMMENT OUT FOR SERIAL DEBUGGING
+    set_microros_serial_transports(Serial);
+    init_micro_ros();
 
     init_peripherals(); //TODO: Make init functions check if peripherals are actually connected
     init_freertos();
 
+    /*
     if (SIMULATION_ENABLED){
         xTaskCreatePinnedToCore(
             sim_task,
@@ -354,6 +422,7 @@ void setup() {
             0
         );
     }
+    */
 
     // Start main task
     xTaskCreatePinnedToCore(
@@ -386,7 +455,7 @@ static dds_thread_context_t thread_context;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
 void main_task(void* parameter) {
     thread_context.task = xTaskGetCurrentTaskHandle();
-    thread_context.queue = xQueueCreate(20, sizeof(dds_callback_context_t));
+    thread_context.queue = xQueueCreate(30, sizeof(dds_callback_context_t));
     thread_context.sync_mutex = xSemaphoreCreateMutex();
     
     esp_timer_create_args_t timer_args = {
@@ -394,22 +463,22 @@ void main_task(void* parameter) {
         .arg = NULL,
     };
     esp_timer_create(&timer_args, &(thread_context.timer));
-    esp_timer_start_periodic(thread_context.timer, 100 * 1000); // 100 ms
+    esp_timer_start_periodic(thread_context.timer, 10 * 1000); // 10 ms
 
     // ------- THREAD SETUP CODE START -------
 
     dds_result_t result;
     result = DDS_SUBSCRIBE("/odom", odom_topic_callback, &thread_context);
     if (result != DDS_SUCCESS) {
-        Serial.printf("Topic subscribe failed: %s\n", DDS_RESULT_TO_STRING(result));
+        SerialDebug.printf("Topic subscribe failed: %s\r\n", DDS_RESULT_TO_STRING(result));
     }
     result = DDS_SUBSCRIBE("/imu", imu_topic_callback, &thread_context);
     if (result != DDS_SUCCESS) {
-        Serial.printf("Topic subscribe failed: %s\n", DDS_RESULT_TO_STRING(result));
+        SerialDebug.printf("Topic subscribe failed: %s\r\n", DDS_RESULT_TO_STRING(result));
     }
     result = DDS_SUBSCRIBE("/gps", gps_topic_callback, &thread_context);
     if (result != DDS_SUCCESS) {
-        Serial.printf("Topic subscribe failed: %s\n", DDS_RESULT_TO_STRING(result));
+        SerialDebug.printf("Topic subscribe failed: %s\r\n", DDS_RESULT_TO_STRING(result));
     }
 
     // ------- THREAD SETUP CODE END -------

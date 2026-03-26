@@ -141,7 +141,7 @@ void imu_task(void* parameter) {
 
               dds_result_t result = DDS_PUBLISH("/imu", IMU_data);
               if (result != DDS_SUCCESS) {
-                  Serial.printf("IMU Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
+                  SerialDebug.printf("IMU Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
               }
             }
 

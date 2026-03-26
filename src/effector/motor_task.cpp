@@ -70,6 +70,34 @@ static void motor_move(float leftSpeed, float rightSpeed) {
   motorB.spin(rightSpeed);
 }
 
+static void motor_move_vel(float linear_vel, float angular_vel) {
+    // Clamp velocities to safe limits
+    linear_vel = fminf(fmaxf(linear_vel, -MAX_LINEAR_VEL), MAX_LINEAR_VEL);
+    angular_vel = fminf(fmaxf(angular_vel, -MAX_ANGULAR_VEL), MAX_ANGULAR_VEL);
+    
+    // Differential drive kinematics
+    // Convert linear and angular velocities to wheel speeds
+    float left_speed = linear_vel - (angular_vel * WHEEL_BASE / 2.0f);
+    float right_speed = linear_vel + (angular_vel * WHEEL_BASE / 2.0f);
+    
+    // Convert to wheel rotational speed (rad/s) if needed by your motors
+    float left_rotational_speed = left_speed / WHEEL_RADIUS;
+    float right_rotational_speed = right_speed / WHEEL_RADIUS;
+
+    float left_rotational_speed_steps = left_rotational_speed * MOTOR_STEPS_PER_REV;
+    float right_rotational_speed_steps = right_rotational_speed * MOTOR_STEPS_PER_REV;
+    
+    if (SIMULATION_ENABLED) {
+        sim_left_speed = left_speed;
+        sim_right_speed = right_speed;
+        return;
+    }
+    
+    // Send to motors (assuming motorA.spin takes m/s)
+    motorA.spin(left_rotational_speed_steps);
+    motorB.spin(right_rotational_speed_steps);
+}
+
 static void motor_topic_callback(dds_callback_context_t* context) {
   motor_data_t* data = (motor_data_t*)context->message_data.data;
 
@@ -83,7 +111,7 @@ static void motor_topic_callback(dds_callback_context_t* context) {
     motor_main_off();
   }
   else if (data->instruction == MOTOR_MOVE) {
-    motor_move(data->left_speed_m_per_s, data->right_speed_m_per_s);
+    motor_move_vel(data->linear_vel, data->angular_vel);
   }
 }
 
@@ -108,7 +136,7 @@ void motor_task(void* parameter) {
     dds_result_t result;
     result = DDS_SUBSCRIBE("/motor", motor_topic_callback, &thread_context);
     if (result != DDS_SUCCESS) {
-        Serial.printf("Topic subscribe failed: %s\n", DDS_RESULT_TO_STRING(result));
+        SerialDebug.printf("Topic subscribe failed: %s\r\n", DDS_RESULT_TO_STRING(result));
     }
 
     // ------- THREAD SETUP CODE END -------
@@ -202,7 +230,7 @@ void motor_task(void* parameter) {
 
               result = DDS_PUBLISH("/odom", data);
               if (result != DDS_SUCCESS) {
-                  Serial.printf("Odom Topic publish failed: %s\n", DDS_RESULT_TO_STRING(result));
+                  SerialDebug.printf("Odom Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
               }
             }
 
