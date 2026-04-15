@@ -28,12 +28,12 @@ static void calc_checksum(unsigned char* CK) {
 static void gps_read() {
   if (SIMULATION_ENABLED) {
     const float METERS_PER_LAT = 111111.0f;
-    const float base_lat = 55.0f; // Random latitude
-    const float base_lon = 32.0f; // Random longitude
+    const double BASE_LAT = 55.0f; // Random latitude
+    const double BASE_LON = 32.0f; // Random longitude
 
     gps_data_t gpsData = {
-        base_lat + (odom_y / METERS_PER_LAT) + gaussian_noise(0.0000001f),  // ~3cm
-        base_lon + (odom_x / (METERS_PER_LAT * cosf(base_lat * M_PI / 180.0f))) + gaussian_noise(0.0000001f),  // ~3cm
+        BASE_LAT + (odom_y / METERS_PER_LAT) + gaussian_noise(0.0000001f),  // ~3cm
+        BASE_LON + (odom_x / (METERS_PER_LAT * cosf(BASE_LAT * M_PI / 180.0f))) + gaussian_noise(0.0000001f),  // ~3cm
         0.0f,
         0.014f + gaussian_noise(0.005f),
     };
@@ -85,10 +85,10 @@ static void gps_read() {
   //Publish GPS data if accuracy is valid
   if (posllh.hAcc > 0) {
     gps_data_t gpsData = {
-        posllh.lat / 1e7f,
-        posllh.lon / 1e7f,
-        posllh.height / 1000.0f,
-        posllh.hAcc / 1000.0f,   // horizontal accuracy in meters
+        posllh.lat / 1.0e7,
+        posllh.lon / 1.0e7,
+        posllh.height / 1000.0,
+        posllh.hAcc / 1000.0,   // horizontal accuracy in meters
     };
 
     dds_result_t result = DDS_PUBLISH("/gps", gpsData);

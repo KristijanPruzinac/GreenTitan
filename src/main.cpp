@@ -16,30 +16,14 @@
 #include "esp_dds.h"
 #include "esp_timer.h"
 
-// -------------------------------------------------------- DEFINITIONS ---------------------------------------------------------------
 #include "definitions.h"
 
-// -------------------------------------------------------- STATUS INDICATORS ---------------------------------------------------------------
-
-int STATUS_BATTERY_LOW = false;
-int STATUS_BATTERY_CHARGED = false;
-
 // -------------------------------------------------------- CONFIGURATION ---------------------------------------------------------------
-
-// Save which peripherals have been configured
-bool CONFIG_PATH = false;
-bool CONFIG_BATTERY = false;
-bool CONFIG_MOTORS = false;
-bool CONFIG_GYRO = false;
-bool CONFIG_RAIN_SENSOR = false;
 
 // Enable or disable peripherals for testing
 bool ENABLE_MOTORS = true;
 bool ENABLE_IMU = true;
 bool ENABLE_GPS = true;
-bool ENABLE_BATTERY = true;
-bool ENABLE_RAIN_SENSOR = true;
-bool ENABLE_BLUETOOTH = true;
 
 bool ENABLE_MOTION = true;
 
@@ -48,27 +32,15 @@ HardwareSerial SerialDebug(1);
 
 bool SETUP_COMPLETED = true;
 
-int MOWER_OVERLAP = 15; // In cm
-int MAX_DEVIATION = 50;
-long long BASE_LON = -5672328;
-long long BASE_LAT = 3376391;
-long long BASE_EXIT_LON = -5672328;
-long long BASE_EXIT_LAT = 3376391;
+double BASE_LON = -56.72328;
+double BASE_LAT = 33.76391;
+double BASE_EXIT_LON = -56.72328;
+double BASE_EXIT_LAT = 33.76391;
 
 int GPS_ACC_THRESHOLD = 30; //TODO: Revert to 18
-int GPS_STABILITY_CHECK_DURATION = 15; // 5 minutes TODO: Revert to 5 minutes
+int GPS_STABILITY_CHECK_DURATION_SECONDS = 15; // 5 minutes TODO: Revert to 5 minutes
 
-float BATTERY_LEVEL_MIN = 16;
-float BATTERY_LEVEL_MAX = 18;
-
-bool MOTOR_SIDE_INVERT = false;
-bool MOTOR_LEFT_INVERT = true;
-bool MOTOR_RIGHT_INVERT = false;
-float MOTOR_OPTIMAL_VOLTAGE = 12;
-
-//TODO: ADD TO CONFIG
 bool IMU_INVERT = false;
-float MOTION_ACC_FACTOR = 1.0;
 
 // -------------------------------------------------------- DEPENDENCIES ---------------------------------------------------------------
 
@@ -77,10 +49,13 @@ float MOTION_ACC_FACTOR = 1.0;
 #include "sensor/gps_task.h"
 
 // Effectors
-#include "effector/motor_task.h"
+#include "motor/motor_task.h"
 
 //Motion
 #include "motion/motion_task.h"
+
+//Controller
+#include "controller/controller_task.h"
 
 // Simulation
 #include "simulation/sim_task.h"
@@ -103,7 +78,7 @@ rcl_node_t node;
 
 void fused_pose_callback(const void* msgin);
 
-unsigned long long time_offset = 0;
+unsigned long time_offset = 0;
 
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){}}
@@ -423,6 +398,17 @@ void setup() {
         );
     }
     */
+
+    // Start controller task
+    xTaskCreatePinnedToCore(
+        controller_task,
+        "ControllerTask",
+        4096,
+        NULL,
+        1,
+        NULL,
+        0
+    );
 
     // Start main task
     xTaskCreatePinnedToCore(

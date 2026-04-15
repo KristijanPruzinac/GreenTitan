@@ -64,7 +64,16 @@ typedef struct {
 //Motion
 #define MOTION_ACCEPTED_DIST_TO_POINT 3
 #define MOTION_ACCEPTED_ROTATION_TO_POINT 10
-#define MOTION_MAX_CORRECTION_DIST 1.5f  // 1.5 meters drift = full 90° correction
+#define MOTION_MAX_CORRECTION_DIST 0.6f  // 0.6 meters drift = full 90° correction
+
+#define MOTION_FORWARD_SPEED_NORMAL  0.5f
+#define MOTION_FORWARD_SPEED_SLOW    0.25f
+#define MOTION_GOAL_SLOW_DOWN_DISTANCE    0.5f
+
+// Speed scaling based on heading error
+#define MOTION_HEADING_ERROR_FULL_SPEED 0.1f   // rad - full speed below this
+#define MOTION_HEADING_ERROR_MIN_SPEED  0.5f   // rad - minimum speed above this
+#define MOTION_MIN_SPEED_SCALE          0.2f   // Minimum speed factor (30%)
 
 //DAC
 #define DAC_MAX_VALUE 4096
@@ -122,21 +131,6 @@ typedef struct {
     float angular_vel;
 } odom_data_t;
 
-enum FileResult {
-    SUCCESS,
-    FAILED_OPEN,
-    NOT_A_DIRECTORY,
-    MKDIR_FAILED,
-    RMDIR_FAILED,
-    FAILED_READ,
-    FAILED_WRITE,
-    APPEND_FAILED,
-    RENAME_FAILED,
-    DELETE_FAILED,
-    INIT_FAILED,
-    ALGORITHM_FAILED,
-};
-
 // Fused pose from ROS2 EKF
 typedef struct {
     float x;
@@ -148,8 +142,59 @@ typedef struct {
 
 enum motion_mode {
     WAITING,
-    ROTATING,
     MOVING,
 };
+
+typedef struct {
+    int mode;
+    float start_x;
+    float start_y;
+    float end_x;
+    float end_y;
+} motion_command_t;
+
+enum robot_state {
+    ROBOT_STATE_IDLE,
+    ROBOT_STATE_MOWING,
+    ROBOT_STATE_PAUSED,
+    ROBOT_STATE_RETURNING_TO_BASE,
+    ROBOT_STATE_ENTERING_CHARGING_STATION,
+    ROBOT_STATE_CHARGING,
+    ROBOT_STATE_LEAVING_CHARGING_STATION,
+    ROBOT_STATE_RECORDING_OUTLINE,
+};
+
+enum controller_command {
+    CMD_START_MOWING,
+    CMD_PAUSE,
+    CMD_RESUME,
+    CMD_RETURN_TO_BASE,
+    CMD_START_RECORDING,
+    CMD_CAPTURE_POINT,
+    CMD_END_RECORDING,
+    CMD_ABORT,
+};
+
+typedef struct {
+    int command;
+} controller_command_t;
+
+enum controller_signal {
+    SIGNAL_MOTION_DONE,
+    SIGNAL_LOW_BATTERY,
+    SIGNAL_RAIN,
+    SIGNAL_OBSTACLE,
+    SIGNAL_MOTOR_MAIN_ON,
+    SIGNAL_MOTOR_MAIN_OFF,
+};
+
+typedef struct {
+    int signal;
+} controller_signal_t;
+
+typedef struct {
+    float x;
+    float y;
+} point_t;
 
 #endif

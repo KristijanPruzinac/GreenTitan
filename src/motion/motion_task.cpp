@@ -8,18 +8,13 @@ static PIDController heading_pid;
 #define PID_KI      0.01f    // Integral gain
 #define PID_KD      1.5f    // Derivative gain
 #define PID_TAU     0.1f   // Derivative low-pass filter time constant
-#define PID_LIM_MIN -2.2f    // Min rotation speed (rad/s)
-#define PID_LIM_MAX 2.2f   // Max rotation speed (rad/s)
+#define PID_LIM_MIN -2.6f    // Min rotation speed (rad/s)
+#define PID_LIM_MAX 2.6f   // Max rotation speed (rad/s)
 #define PID_LIM_MIN_INT -0.01f // Min integrator windup
 #define PID_LIM_MAX_INT 0.01f // Max integrator windup
 #define SAMPLE_TIME_S 0.1f   // Sample time (seconds)
 
-// Forward speed settings
-#define FORWARD_SPEED_NORMAL  0.5f
-#define FORWARD_SPEED_SLOW    0.25f
-#define SLOW_DOWN_DISTANCE    0.5f
-
-void PIDController_Init(PIDController *pid) {
+static void PIDController_Init(PIDController *pid) {
 	pid->integrator = 0.0f;
 	pid->prevError  = 0.0f;
 
@@ -29,7 +24,7 @@ void PIDController_Init(PIDController *pid) {
 	pid->out = 0.0f;
 }
 
-float PIDController_Update(PIDController *pid, float setpoint, float measurement) {
+static float PIDController_Update(PIDController *pid, float setpoint, float measurement) {
     float error = setpoint - measurement;
     float proportional = pid->Kp * error;
     pid->integrator = pid->integrator + 0.5f * pid->Ki * pid->T * (error + pid->prevError);
@@ -112,27 +107,22 @@ static void pose_updated_callback(dds_callback_context_t* context) {
         // Calculate heading error magnitude
         float heading_error_abs = fabsf(heading_error);
 
-        // Speed scaling based on heading error
-        #define HEADING_ERROR_FULL_SPEED 0.1f   // rad - full speed below this
-        #define HEADING_ERROR_MIN_SPEED  1.0f   // rad - minimum speed above this
-        #define MIN_SPEED_SCALE          0.3f   // Minimum speed factor (30%)
-
         float speed_scale;
-        if (heading_error_abs <= HEADING_ERROR_FULL_SPEED) {
+        if (heading_error_abs <= MOTION_HEADING_ERROR_FULL_SPEED) {
             speed_scale = 1.0f;
-        } else if (heading_error_abs >= HEADING_ERROR_MIN_SPEED) {
-            speed_scale = MIN_SPEED_SCALE;
+        } else if (heading_error_abs >= MOTION_HEADING_ERROR_MIN_SPEED) {
+            speed_scale = MOTION_MIN_SPEED_SCALE;
         } else {
             // Linear interpolation between full speed and min speed
-            float t = (heading_error_abs - HEADING_ERROR_FULL_SPEED) / 
-                    (HEADING_ERROR_MIN_SPEED - HEADING_ERROR_FULL_SPEED);
-            speed_scale = 1.0f - t * (1.0f - MIN_SPEED_SCALE);
+            float t = (heading_error_abs - MOTION_HEADING_ERROR_FULL_SPEED) / 
+                    (MOTION_HEADING_ERROR_MIN_SPEED - MOTION_HEADING_ERROR_FULL_SPEED);
+            speed_scale = 1.0f - t * (1.0f - MOTION_MIN_SPEED_SCALE);
         }
 
         // Base speed based on distance to goal
-        float base_speed = FORWARD_SPEED_NORMAL;
-        if (distance_to_goal < SLOW_DOWN_DISTANCE) {
-            base_speed = FORWARD_SPEED_SLOW;
+        float base_speed = MOTION_FORWARD_SPEED_NORMAL;
+        if (distance_to_goal < MOTION_GOAL_SLOW_DOWN_DISTANCE) {
+            base_speed = MOTION_FORWARD_SPEED_SLOW;
         }
 
         // Apply both scalings
@@ -141,10 +131,15 @@ static void pose_updated_callback(dds_callback_context_t* context) {
         // Check if goal reached
         bool passed_goal = has_passed_goal(x, y, start_x, start_y, end_x, end_y);
         if (passed_goal) {
-            linear_cmd = 0.0f;
-            rotation_cmd = 0.0f;
-            mode = WAITING;
             SerialDebug.printf("Goal reached! Final position: (%.2f, %.2f)\r\n", x, y);
+
+            motion_stop();
+
+            controller_signal_t signal = { SIGNAL_MOTION_DONE };
+            dds_result_t result = DDS_PUBLISH("/controller/signal", signal);
+            if (result != DDS_SUCCESS) {
+                SerialDebug.printf("Controller signal topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
+            }
         }
         
         // Create and publish motor command
@@ -161,6 +156,31 @@ static void pose_updated_callback(dds_callback_context_t* context) {
         // Debug output (optional - can comment out for performance)
         SerialDebug.printf("%f %f\r\n", linear_cmd, rotation_cmd);
         //SerialDebug.printf("Target=%.2f, Yaw=%.2f, Err=%.2f, Rot=%.2f, Lin=%.2f, Dist=%.2f\r\n", target_yaw, yaw, heading_error, rotation_cmd, linear_cmd, distance_to_goal);
+    }
+}
+
+static void motion_start(float p_start_x, float p_start_y, float p_end_x, float p_end_y) {
+    mode    = MOVING;
+    start_x = p_start_x;
+    start_y = p_start_y;
+    end_x   = p_end_x;
+    end_y   = p_end_y;
+}
+
+static void motion_stop() {
+    mode = WAITING;
+}
+
+static void motion_command_callback(dds_callback_context_t* context) {
+    motion_command_t* data = (motion_command_t*)context->message_data.data;
+    
+    if (data->mode == WAITING) {
+        SerialDebug.printf("Motion command: WAITING\r\n");
+        motion_stop();
+    }
+    else if (data->mode == MOVING) {
+        SerialDebug.printf("Motion command: MOVING\r\n");
+        motion_start(data->start_x, data->start_y, data->end_x, data->end_y);
     }
 }
 
@@ -192,6 +212,11 @@ void motion_task(void* parameter) {
     result = DDS_SUBSCRIBE("/fused_pose", pose_updated_callback, &thread_context);
     if (result != DDS_SUCCESS) {
         SerialDebug.printf("Fused pose topic subscribe failed: %s\r\n", DDS_RESULT_TO_STRING(result));
+    }
+
+    result = DDS_SUBSCRIBE("/motion/command", motion_command_callback, &thread_context);
+    if (result != DDS_SUCCESS) {
+        SerialDebug.printf("Motion command topic subscribe failed: %s\r\n", DDS_RESULT_TO_STRING(result));
     }
 
     // ------- THREAD SETUP CODE END -------
