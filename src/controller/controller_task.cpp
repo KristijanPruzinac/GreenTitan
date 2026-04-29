@@ -1,11 +1,17 @@
 #include "controller_task.h"
+#include "../algorithm/algorithm.h"
 
 static int robot_state = ROBOT_STATE_IDLE;
+
+// External globals from algorithm
+extern String algorithmTarget;
+extern String algorithmMode;
+extern bool algorithmAbortFull;
 
 // -------------------------------------------------------- HELPERS ---------------------------------------------------------------
 
 static void go_to_base() {
-    motion_command_t cmd = { MOVING, BASE_LON, BASE_LAT };
+    motion_command_t cmd = { MOVING, 0, 0, BASE_LON, BASE_LAT };
     dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
     if (result != DDS_SUCCESS) {
         SerialDebug.printf("[CTRL] Failed to send command: %d\r\n", result);
@@ -13,7 +19,7 @@ static void go_to_base() {
 }
 
 static void go_to_base_exit() {
-    motion_command_t cmd = { MOVING, BASE_EXIT_LON, BASE_EXIT_LAT };
+    motion_command_t cmd = { MOVING, 0, 0, BASE_EXIT_LON, BASE_EXIT_LAT };
     dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
     if (result != DDS_SUCCESS) {
         SerialDebug.printf("[CTRL] Failed to send command: %d\r\n", result);
@@ -21,22 +27,16 @@ static void go_to_base_exit() {
 }
 
 static void go_to_next_algorithm_point() {
-    point_t next = AlgorithmNextPoint();
-    if (next.x == 0 && next.y == 0) {
-        // Algorithm finished — mowing complete, return to base
-        SerialDebug.printf("[CTRL] Mowing complete, returning to base\r\n");
-        robot_state = ROBOT_STATE_RETURNING_TO_BASE;
-        go_to_base();
+    std::vector<double> next = AlgorithmNextPoint();
+    if (next.size() < 2) {
+        SerialDebug.printf("[CTRL] Algorithm returned invalid point\r\n");
         return;
     }
-    motion_command_t cmd = { MOVING, next.x, next.y };
-    dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
-    if (result != DDS_SUCCESS) {
-        SerialDebug.printf("[CTRL] Failed to send command: %d\r\n", result);
-    }
-    else {
-        SerialDebug.printf("[CTRL] Moving to next point: %f, %f\r\n", next.x, next.y);
-    }
+    
+    double next_x = next.at(0);
+    double next_y = next.at(1);
+
+    AlgorithmMotionSetTargetPoint(next_x, next_y);
 }
 
 static void stop_motors() {
@@ -71,6 +71,75 @@ static void motion_stop() {
     }
 }
 
+// -------------------------------------------------------- STATE MACHINE ---------------------------------------------------------------
+
+static void start_mowing() {
+    if (robot_state != ROBOT_STATE_IDLE && robot_state != ROBOT_STATE_CHARGING) {
+        SerialDebug.printf("[CTRL] Cannot start mowing from state: %d\r\n", robot_state);
+        return;
+    }
+    
+    SerialDebug.printf("[CTRL] Starting mowing\r\n");
+    robot_state = ROBOT_STATE_MOWING;
+    
+    // Start from base exit point if defined
+    if (BASE_EXIT_LON != 0 || BASE_EXIT_LAT != 0) {
+        motion_command_t cmd = { MOVING, 0, 0, BASE_EXIT_LON, BASE_EXIT_LAT };
+        dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
+        if (result != DDS_SUCCESS) {
+            SerialDebug.printf("[CTRL] Failed to send command: %d\r\n", result);
+        }
+    } else {
+        go_to_next_algorithm_point();
+    }
+}
+
+static void pause_mowing() {
+    if (robot_state != ROBOT_STATE_MOWING) {
+        SerialDebug.printf("[CTRL] Cannot pause from state: %d\r\n", robot_state);
+        return;
+    }
+    
+    SerialDebug.printf("[CTRL] Pausing mowing\r\n");
+    stop_motors();
+    motion_stop();
+    robot_state = ROBOT_STATE_PAUSED;
+}
+
+static void resume_mowing() {
+    if (robot_state != ROBOT_STATE_PAUSED) {
+        SerialDebug.printf("[CTRL] Cannot resume from state: %d\r\n", robot_state);
+        return;
+    }
+    
+    SerialDebug.printf("[CTRL] Resuming mowing\r\n");
+    robot_state = ROBOT_STATE_MOWING;
+    go_to_next_algorithm_point();
+}
+
+static void return_to_base() {
+    if (robot_state == ROBOT_STATE_RETURNING_TO_BASE) {
+        return; // Already returning
+    }
+    
+    SerialDebug.printf("[CTRL] Returning to base\r\n");
+    stop_motors();
+    robot_state = ROBOT_STATE_RETURNING_TO_BASE;
+    go_to_base();
+}
+
+static void handle_charging_complete() {
+    SerialDebug.printf("[CTRL] Charging complete, leaving charging station\r\n");
+    robot_state = ROBOT_STATE_LEAVING_CHARGING_STATION;
+    go_to_base_exit();
+}
+
+static void handle_docking_complete() {
+    SerialDebug.printf("[CTRL] Docked at charging station, starting charge\r\n");
+    robot_state = ROBOT_STATE_CHARGING;
+    // In a real system, you'd monitor battery level and call handle_charging_complete() when done
+}
+
 // -------------------------------------------------------- EVENT HANDLERS ---------------------------------------------------------------
 
 static void handle_motion_done() {
@@ -82,7 +151,7 @@ static void handle_motion_done() {
         case ROBOT_STATE_RETURNING_TO_BASE:
             SerialDebug.printf("[CTRL] Reached base, entering charging station\r\n");
             robot_state = ROBOT_STATE_ENTERING_CHARGING_STATION;
-            // TODO: trigger docking sequence here
+            handle_docking_complete();
             break;
 
         case ROBOT_STATE_LEAVING_CHARGING_STATION:
@@ -101,7 +170,11 @@ static void handle_obstacle() {
 
     SerialDebug.printf("[CTRL] Obstacle hit — skipping line\r\n");
     stop_motors();
-    AlgorithmAbort(false);           // skip current line only
+    algorithm_command_t cmd = { CMD_ALGO_ABORT, false };
+    dds_result_t result = DDS_PUBLISH("/algorithm/command", cmd);
+    if (result != DDS_SUCCESS) {
+        SerialDebug.printf("[CTRL] Failed to send algorithm command: %d\r\n", result);
+    }
     go_to_next_algorithm_point();    // continue from next point
 }
 
@@ -109,71 +182,25 @@ static void handle_rain() {
     if (robot_state != ROBOT_STATE_MOWING) return;
 
     SerialDebug.printf("[CTRL] Rain detected — returning to base\r\n");
-    stop_motors();
-    robot_state = ROBOT_STATE_RETURNING_TO_BASE;
-    go_to_base();
+    return_to_base();
 }
 
 static void handle_low_battery() {
     if (robot_state != ROBOT_STATE_MOWING) return;
 
     SerialDebug.printf("[CTRL] Low battery — returning to base\r\n");
-    stop_motors();
-    robot_state = ROBOT_STATE_RETURNING_TO_BASE;
-    go_to_base();
+    return_to_base();
 }
 
-static void handle_command(controller_command_t* cmd) {
-    switch (cmd->command) {
-        case CMD_START_MOWING:
-            if (robot_state != ROBOT_STATE_IDLE) break;
-            SerialDebug.printf("[CTRL] Starting mowing\r\n");
-            robot_state = ROBOT_STATE_MOWING;
-            go_to_next_algorithm_point();
-            break;
-
-        case CMD_PAUSE:
-            if (robot_state != ROBOT_STATE_MOWING) break;
-            SerialDebug.printf("[CTRL] Paused\r\n");
-            stop_motors();
-            robot_state = ROBOT_STATE_PAUSED;
-            break;
-
-        case CMD_RESUME:
-            if (robot_state != ROBOT_STATE_PAUSED) break;
-            SerialDebug.printf("[CTRL] Resuming\r\n");
-            robot_state = ROBOT_STATE_MOWING;
-            go_to_next_algorithm_point();
-            break;
-
-        case CMD_RETURN_TO_BASE:
-            SerialDebug.printf("[CTRL] Manual return to base\r\n");
-            stop_motors();
-            robot_state = ROBOT_STATE_RETURNING_TO_BASE;
-            go_to_base();
-            break;
-
-        case CMD_START_RECORDING:
-            break;
-
-        case CMD_CAPTURE_POINT:
-            break;
-
-        case CMD_END_RECORDING:
-            break;
-
-        case CMD_ABORT:
-            break;
-
-        default:
-            SerialDebug.printf("[CTRL] Unknown command: %d\r\n", cmd->command);
-            break;
+static void handle_battery_charged() {
+    if (robot_state == ROBOT_STATE_CHARGING) {
+        handle_charging_complete();
     }
 }
 
 // -------------------------------------------------------- DDS CALLBACKS ---------------------------------------------------------------
 
-static void controller_topic_callback(dds_callback_context_t* context) {
+static void controller_signal_callback(dds_callback_context_t* context) {
     controller_signal_t* signal = (controller_signal_t*)context->message_data.data;
 
     switch (signal->signal) {
@@ -189,6 +216,9 @@ static void controller_topic_callback(dds_callback_context_t* context) {
         case SIGNAL_OBSTACLE:
             handle_obstacle();
             break;
+        case SIGNAL_BATTERY_CHARGED:
+            handle_battery_charged();
+            break;
         default:
             SerialDebug.printf("[CTRL] Unknown signal: %d\r\n", signal->signal);
     }
@@ -196,9 +226,9 @@ static void controller_topic_callback(dds_callback_context_t* context) {
 
 // -------------------------------------------------------- TASK ---------------------------------------------------------------
 
-
 static dds_thread_context_t thread_context;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
+
 void controller_task(void* parameter) {
     thread_context.task = xTaskGetCurrentTaskHandle();
     thread_context.queue = xQueueCreate(5, sizeof(dds_callback_context_t));
@@ -214,14 +244,20 @@ void controller_task(void* parameter) {
     // ------- THREAD SETUP CODE START -------
 
     dds_result_t result;
-    result = DDS_SUBSCRIBE("/controller/signal", controller_topic_callback, &thread_context);
+    result = DDS_SUBSCRIBE("/controller/signal", controller_signal_callback, &thread_context);
     if (result != DDS_SUCCESS) {
-        Serial.printf("Topic subscribe failed: %s\n", DDS_RESULT_TO_STRING(result));
+        SerialDebug.printf("Topic subscribe failed: %s\n", DDS_RESULT_TO_STRING(result));
     }
 
     // ------- THREAD SETUP CODE END -------
 
     vTaskDelay(500);
+    
+    // Auto-start mowing if outlines are loaded? Or wait for condition?
+    // For now, we'll start mowing automatically after a short delay
+    // You can change this behavior based on your needs
+    vTaskDelay(2000); // Wait for system to stabilize
+    start_mowing();
     
     while(1) {
         // Wait for any notification (message or timer)
@@ -237,12 +273,10 @@ void controller_task(void* parameter) {
             DDS_TAKE_MUTEX(&thread_context);
 
             // ------- THREAD LOOP CODE START -------
-
-            if (robot_state == ROBOT_STATE_IDLE) {
-                controller_command_t cmd = { CMD_START_MOWING };
-                handle_command(&cmd);
-            }
-
+            
+            // You can add periodic checks here if needed
+            // For example: check battery level periodically
+            
             // ------- THREAD LOOP CODE END -------
 
             DDS_PROCESS_THREAD_MESSAGES(&thread_context);

@@ -1,25 +1,27 @@
 #include "motor_task.h"
 
+static dds_thread_context_t thread_context;
+
 // Create the stepper motor objects
 ContinuousStepper<StepperDriver> motorA;
 ContinuousStepper<StepperDriver> motorB;
 
-static float MOTOR_METERS_PER_STEP = 2 * PI * WHEEL_RADIUS / MOTOR_STEPS_PER_REV;
+static double MOTOR_METERS_PER_STEP = 2 * PI * WHEEL_RADIUS / MOTOR_STEPS_PER_REV;
 
-float odom_x = 0;
-float odom_y = 0;
-float odom_theta = 0;
-float odom_linear_velocity  = 0;
-float odom_angular_velocity = 0;
+double odom_x = 0;
+double odom_y = 0;
+double odom_theta = 0;
+double odom_linear_velocity  = 0;
+double odom_angular_velocity = 0;
 
 // Simulation
-static float sim_left_speed = 0;
-static float sim_right_speed = 0;
-static float sim_linear_velocity  = 0;
-static float sim_angular_velocity = 0;
-static float sim_pos_x     = 0;
-static float sim_pos_y     = 0;
-static float sim_pos_theta = 0;
+static double sim_left_speed = 0;
+static double sim_right_speed = 0;
+static double sim_linear_velocity  = 0;
+static double sim_angular_velocity = 0;
+static double sim_pos_x     = 0;
+static double sim_pos_y     = 0;
+static double sim_pos_theta = 0;
 
 bool init_motors() {
   if (SIMULATION_ENABLED) return true;
@@ -45,6 +47,8 @@ static void motor_stop() {
 
   motorA.stop();
   motorB.stop();
+
+  xQueueReset(thread_context.queue); // Clear any pending motor commands to prevent them from executing after a stop command
 }
 
 static void motor_main_on() {
@@ -59,7 +63,7 @@ static void motor_main_off() {
   digitalWrite(MOTOR_MAIN, LOW);
 }
 
-static void motor_move(float leftSpeed, float rightSpeed) {
+static void motor_move(double leftSpeed, double rightSpeed) {
   if (SIMULATION_ENABLED) {
     sim_left_speed = leftSpeed;
     sim_right_speed = rightSpeed;
@@ -70,22 +74,22 @@ static void motor_move(float leftSpeed, float rightSpeed) {
   motorB.spin(rightSpeed);
 }
 
-static void motor_move_vel(float linear_vel, float angular_vel) {
+static void motor_move_vel(double linear_vel, double angular_vel) {
     // Clamp velocities to safe limits
-    linear_vel = fminf(fmaxf(linear_vel, -MAX_LINEAR_VEL), MAX_LINEAR_VEL);
-    angular_vel = fminf(fmaxf(angular_vel, -MAX_ANGULAR_VEL), MAX_ANGULAR_VEL);
+    linear_vel = fmin(fmax(linear_vel, -MAX_LINEAR_VEL), MAX_LINEAR_VEL);
+    angular_vel = fmin(fmax(angular_vel, -MAX_ANGULAR_VEL), MAX_ANGULAR_VEL);
     
     // Differential drive kinematics
     // Convert linear and angular velocities to wheel speeds
-    float left_speed = linear_vel - (angular_vel * WHEEL_BASE / 2.0f);
-    float right_speed = linear_vel + (angular_vel * WHEEL_BASE / 2.0f);
+    double left_speed = linear_vel - (angular_vel * WHEEL_BASE / 2.0);
+    double right_speed = linear_vel + (angular_vel * WHEEL_BASE / 2.0);
     
     // Convert to wheel rotational speed (rad/s) if needed by your motors
-    float left_rotational_speed = left_speed / WHEEL_RADIUS;
-    float right_rotational_speed = right_speed / WHEEL_RADIUS;
+    double left_rotational_speed = left_speed / WHEEL_RADIUS;
+    double right_rotational_speed = right_speed / WHEEL_RADIUS;
 
-    float left_rotational_speed_steps = left_rotational_speed * MOTOR_STEPS_PER_REV;
-    float right_rotational_speed_steps = right_rotational_speed * MOTOR_STEPS_PER_REV;
+    double left_rotational_speed_steps = left_rotational_speed * MOTOR_STEPS_PER_REV;
+    double right_rotational_speed_steps = right_rotational_speed * MOTOR_STEPS_PER_REV;
     
     if (SIMULATION_ENABLED) {
         sim_left_speed = left_speed;
@@ -117,7 +121,6 @@ static void motor_topic_callback(dds_callback_context_t* context) {
 
 static int divide_frequency = 100;
 static int divide_counter = 0;
-static dds_thread_context_t thread_context;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
 void motor_task(void* parameter) {
     thread_context.task = xTaskGetCurrentTaskHandle();
@@ -169,7 +172,7 @@ void motor_task(void* parameter) {
             }
 
             if (divide_counter == 0) {
-              float leftSpeed, rightSpeed;
+              double leftSpeed, rightSpeed;
 
               if (SIMULATION_ENABLED) {
                   leftSpeed  = sim_left_speed;
@@ -180,12 +183,12 @@ void motor_task(void* parameter) {
               }
 
               // Odometry update
-              float dt = (1.0f / MOTOR_UPDATE_FREQUENCY) * divide_frequency;
-              float leftDist  = leftSpeed  * dt;
-              float rightDist = rightSpeed * dt;
-              float linear      = (leftDist + rightDist) / 2.0f;
-              float deltaTheta  = (rightDist - leftDist) / WHEEL_BASE;
-
+              double dt = (1.0 / MOTOR_UPDATE_FREQUENCY) * divide_frequency;
+              double leftDist  = leftSpeed  * dt;
+              double rightDist = rightSpeed * dt;
+              double linear      = (leftDist + rightDist) / 2.0;
+              double deltaTheta  = (rightDist - leftDist) / WHEEL_BASE;
+              
               // Update odometry / simulate data for gps and imu
               odom_x     += linear * cos(odom_theta);
               odom_y     += linear * sin(odom_theta);
@@ -213,18 +216,18 @@ void motor_task(void* parameter) {
                 data = {
                     sim_pos_x,
                     sim_pos_y,
-                    sim_pos_theta,
-                    sim_linear_velocity,
-                    sim_angular_velocity,
+                    (float) sim_pos_theta,
+                    (float) sim_linear_velocity,
+                    (float) sim_angular_velocity,
                 };
               }
               else {
                 data = {
                     odom_x,
                     odom_y,
-                    odom_theta,
-                    (leftSpeed + rightSpeed) / 2.0f,
-                    (rightSpeed - leftSpeed) / WHEEL_BASE,
+                    (float) odom_theta,
+                    (float) ((leftSpeed + rightSpeed) / 2.0),
+                    (float) (rightSpeed - leftSpeed) / WHEEL_BASE,
                 };
               }
 

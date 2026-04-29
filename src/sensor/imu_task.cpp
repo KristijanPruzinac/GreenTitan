@@ -1,13 +1,13 @@
 #include "imu_task.h"
 
 //Calibration
-static float gyro_x_offset = 0;
-static float gyro_y_offset = 0;
-static float gyro_z_offset = 0;
+static double gyro_x_offset = 0;
+static double gyro_y_offset = 0;
+static double gyro_z_offset = 0;
 
-static float acc_x_offset = 0;
-static float acc_y_offset = 0;
-static float acc_z_offset = 0;
+static double acc_x_offset = 0;
+static double acc_y_offset = 0;
+static double acc_z_offset = 0;
 
 static bool calibration_completed = false;
 
@@ -36,13 +36,13 @@ void imu_calibrate(){
   if (SIMULATION_ENABLED) return;
 
   //Init temp values
-  float gyro_x = 0;
-  float gyro_y = 0;
-  float gyro_z = 0;
+  double gyro_x = 0;
+  double gyro_y = 0;
+  double gyro_z = 0;
 
-  float acc_x = 0;
-  float acc_y = 0;
-  float acc_z = 0;
+  double acc_x = 0;
+  double acc_y = 0;
+  double acc_z = 0;
 
   //Read calibration data for 2s
   int sample_size = 40;
@@ -128,7 +128,7 @@ void imu_task(void* parameter) {
             // ------- THREAD LOOP CODE START -------
 
             if (imu_read()){
-              float gz;
+              double gz;
               if (IMU_INVERT){
                 gz = -(imu_gyro.gyro.z - gyro_z_offset);
               }

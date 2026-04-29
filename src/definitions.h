@@ -25,8 +25,8 @@ struct NAV_POSLLH {
 };
 
 typedef struct {
-    float latitude;
-    float longitude;
+    double latitude;
+    double longitude;
     float altitude;
     float accuracy;
 } gps_data_t;
@@ -124,8 +124,8 @@ typedef struct {
 } motor_data_t;
 
 typedef struct {
-    float x;
-    float y;
+    double x;
+    double y;
     float theta;
     float linear_vel;
     float angular_vel;
@@ -133,8 +133,8 @@ typedef struct {
 
 // Fused pose from ROS2 EKF
 typedef struct {
-    float x;
-    float y;
+    double x;
+    double y;
     float yaw;
     float vx;
     float omega;
@@ -143,14 +143,15 @@ typedef struct {
 enum motion_mode {
     WAITING,
     MOVING,
+    MOVING_REVERSE,
 };
 
 typedef struct {
     int mode;
-    float start_x;
-    float start_y;
-    float end_x;
-    float end_y;
+    double start_x;
+    double start_y;
+    double end_x;
+    double end_y;
 } motion_command_t;
 
 enum robot_state {
@@ -164,28 +165,13 @@ enum robot_state {
     ROBOT_STATE_RECORDING_OUTLINE,
 };
 
-enum controller_command {
-    CMD_START_MOWING,
-    CMD_PAUSE,
-    CMD_RESUME,
-    CMD_RETURN_TO_BASE,
-    CMD_START_RECORDING,
-    CMD_CAPTURE_POINT,
-    CMD_END_RECORDING,
-    CMD_ABORT,
-};
-
-typedef struct {
-    int command;
-} controller_command_t;
-
 enum controller_signal {
     SIGNAL_MOTION_DONE,
     SIGNAL_LOW_BATTERY,
     SIGNAL_RAIN,
     SIGNAL_OBSTACLE,
-    SIGNAL_MOTOR_MAIN_ON,
-    SIGNAL_MOTOR_MAIN_OFF,
+    SIGNAL_MAIN_CHARGING_START,
+    SIGNAL_BATTERY_CHARGED
 };
 
 typedef struct {
@@ -193,8 +179,58 @@ typedef struct {
 } controller_signal_t;
 
 typedef struct {
-    float x;
-    float y;
+    double x;
+    double y;
 } point_t;
+
+enum algorithm_command {
+    CMD_ALGO_START_MOWING,        // Start full mowing algorithm
+    CMD_ALGO_PAUSE,               // Pause algorithm
+    CMD_ALGO_RESUME,              // Resume algorithm
+    CMD_ALGO_ABORT,               // Abort current operation (full or line only)
+    CMD_ALGO_START_RECORDING,     // Start recording outline
+    CMD_ALGO_CAPTURE_BASE,        // Capture charging station location
+    CMD_ALGO_CAPTURE_BASE_EXIT,   // Capture base exit point
+    CMD_ALGO_NEW_OUTLINE,         // Start new outline
+    CMD_ALGO_CAPTURE_POINT,       // Capture current position as point
+    CMD_ALGO_REMOVE_OUTLINE,      // Remove last outline
+    CMD_ALGO_REMOVE_POINT,        // Remove last point
+    CMD_ALGO_END_RECORDING,       // Finish recording and generate paths
+    CMD_ALGO_CLEAR_ALL,           // Clear all outlines
+    CMD_ALGO_GET_PATH_STRING,     // Request path string (for saving)
+    CMD_ALGO_LOAD_PATH_STRING,    // Load path from string
+};
+
+typedef struct {
+    int command;
+    bool full_abort;              // Used with CMD_ALGO_ABORT (true = full abort, false = skip line)
+    double lon;                   // Used with manual point capture
+    double lat;                   // Used with manual point capture
+    String* path_data;            // Used with CMD_ALGO_LOAD_PATH_STRING
+} algorithm_command_t;
+
+typedef struct {
+    int signal;
+    String* path_data;            // Used with SIGNAL_ALGO_PATH_STRING
+} algorithm_signal_t;
+
+// -------------------------------------------------------- DDS SIGNALS ---------------------------------------------------------------
+
+enum algorithm_signal {
+    SIGNAL_ALGO_PATH_READY,       // Path generation complete
+    SIGNAL_ALGO_PATH_FAILED,      // Path generation failed
+    SIGNAL_ALGO_MOWING_COMPLETE,  // All mowing finished
+    SIGNAL_ALGO_POINT_ADDED,      // Point successfully added
+    SIGNAL_ALGO_OUTLINE_ADDED,    // New outline created
+    SIGNAL_ALGO_RECORDING_ENDED,  // Recording finished
+    SIGNAL_ALGO_PATH_STRING,      // Response with path string data
+};
+
+typedef struct {
+    int outline_index;
+    int point_index;
+    double x;
+    double y;
+} intersection_point_t;
 
 #endif

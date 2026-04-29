@@ -1,6 +1,8 @@
 #include "motion_task.h"
 #include "PID.h"
 
+static dds_thread_context_t thread_context;
+
 static PIDController heading_pid;
 
 // PID tuning parameters (adjust these)
@@ -61,18 +63,32 @@ static float PIDController_Update(PIDController *pid, float setpoint, float meas
     return pid->out;
 }
 
-static float x;
-static float y;
+static double x;
+static double y;
 static float yaw;
 static float linear_vel;
 static float rotation_vel;
 
-static float start_x = 0;
-static float start_y = 0;
-static float end_x = 3;
-static float end_y = 3;
+static double start_x = 0;
+static double start_y = 0;
+static double end_x = 3;
+static double end_y = 3;
 
 static int mode = MOVING;
+
+static void motion_start(double p_start_x, double p_start_y, double p_end_x, double p_end_y) {
+    mode    = MOVING;
+    start_x = p_start_x;
+    start_y = p_start_y;
+    end_x   = p_end_x;
+    end_y   = p_end_y;
+}
+
+static void motion_stop() {
+    mode = WAITING;
+
+    xQueueReset(thread_context.queue); // Clear any pending motion commands to prevent them from executing after a stop command
+}
 
 static void pose_updated_callback(dds_callback_context_t* context) {
     fused_pose_data_t* data = (fused_pose_data_t*)context->message_data.data;
@@ -86,11 +102,11 @@ static void pose_updated_callback(dds_callback_context_t* context) {
     if (mode == MOVING) {
         // Calculate desired heading (line following with correction)
         float line_angle = AngleBetweenPoints(start_x, start_y, end_x, end_y);
-        float distance_from_line = DistanceFromLine(x, y, start_x, start_y, end_x, end_y);
+        double distance_from_line = DistanceFromLine(x, y, start_x, start_y, end_x, end_y);
         
         // Calculate correction angle based on distance from line
         float correction = sign_of(distance_from_line)
-                        * fminf(HALF_PI, fabsf(distance_from_line) / MOTION_MAX_CORRECTION_DIST * HALF_PI);
+                        * fmin(HALF_PI, fabs(distance_from_line) / MOTION_MAX_CORRECTION_DIST * HALF_PI);
         
         // Target heading = line angle + correction to return to line
         float target_yaw = normalize_angle(line_angle + correction);
@@ -102,7 +118,7 @@ static void pose_updated_callback(dds_callback_context_t* context) {
         float rotation_cmd = PIDController_Update(&heading_pid, heading_error, 0.0f);
         
         // Calculate distance to goal for speed control
-        float distance_to_goal = DistanceBetweenPoints(x, y, end_x, end_y);
+        double distance_to_goal = DistanceBetweenPoints(x, y, end_x, end_y);
         
         // Calculate heading error magnitude
         float heading_error_abs = fabsf(heading_error);
@@ -159,18 +175,6 @@ static void pose_updated_callback(dds_callback_context_t* context) {
     }
 }
 
-static void motion_start(float p_start_x, float p_start_y, float p_end_x, float p_end_y) {
-    mode    = MOVING;
-    start_x = p_start_x;
-    start_y = p_start_y;
-    end_x   = p_end_x;
-    end_y   = p_end_y;
-}
-
-static void motion_stop() {
-    mode = WAITING;
-}
-
 static void motion_command_callback(dds_callback_context_t* context) {
     motion_command_t* data = (motion_command_t*)context->message_data.data;
     
@@ -184,7 +188,6 @@ static void motion_command_callback(dds_callback_context_t* context) {
     }
 }
 
-static dds_thread_context_t thread_context;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
 void motion_task(void* parameter) {
     thread_context.task = xTaskGetCurrentTaskHandle();

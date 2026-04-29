@@ -271,8 +271,8 @@ void fused_pose_callback(const void* msgin) {
         (const nav_msgs__msg__Odometry*)msgin;
 
     // Extract x, y
-    float x = (float)msg->pose.pose.position.x;
-    float y = (float)msg->pose.pose.position.y;
+    double x = (double)msg->pose.pose.position.x;
+    double y = (double)msg->pose.pose.position.y;
 
     // Quaternion → yaw (2D, so only z/w matter)
     float qz = (float)msg->pose.pose.orientation.z;
