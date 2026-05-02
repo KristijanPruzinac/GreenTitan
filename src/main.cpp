@@ -24,6 +24,7 @@
 bool ENABLE_MOTORS = true;
 bool ENABLE_IMU = true;
 bool ENABLE_GPS = true;
+bool ENABLE_BLUETOOTH = true;
 
 bool ENABLE_MOTION = true;
 
@@ -39,6 +40,21 @@ double BASE_EXIT_LAT = 33.76391;
 
 int GPS_ACC_THRESHOLD = 30; //TODO: Revert to 18
 int GPS_STABILITY_CHECK_DURATION_SECONDS = 15; // 5 minutes TODO: Revert to 5 minutes
+
+float MOTION_ACC_FACTOR = 1.0;
+
+int MOWER_OVERLAP = 15;
+int MAX_DEVIATION = 50;
+
+float BATTERY_LEVEL_MIN = 16;
+float BATTERY_LEVEL_MAX = 18;
+
+bool CONFIG_PATH = false;
+bool CONFIG_BATTERY = false;
+bool CONFIG_MOTORS = false;
+bool CONFIG_GYRO = false;
+bool CONFIG_RAIN_SENSOR = false;
+bool CONFIG_DATUM = false;
 
 bool IMU_INVERT = false;
 
@@ -57,10 +73,17 @@ bool IMU_INVERT = false;
 //Controller
 #include "controller/controller_task.h"
 
+// Configuration
+#include "configuration/configuration.h"
+
+// Bluetooth
+#include "bluetooth/bluetooth_task.h"
+
 // Simulation
 #include "simulation/sim_task.h"
 
 // -------------------------------------------------------- Micro-ROS ------------------------------------------------------------------
+rcl_publisher_t datum_publisher;
 rcl_publisher_t odom_publisher;
 rcl_publisher_t imu_publisher;
 rcl_publisher_t gps_publisher;
@@ -79,6 +102,9 @@ rcl_node_t node;
 void fused_pose_callback(const void* msgin);
 
 unsigned long time_offset = 0;
+static bool pending_datum_publish = false;
+static int datum_publish_count = 0;
+static bool datum_published = false;
 
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){}}
@@ -121,6 +147,12 @@ void init_micro_ros(){
     // create node
     RCCHECK(rclc_node_init_default(&node, "micro_ros_platformio_node", "", &support));
 
+    // Datum publisher
+    RCCHECK(rclc_publisher_init_default(
+        &datum_publisher, &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, NavSatFix),
+        "esp/datum"));
+
     // Odometry publisher
     RCCHECK(rclc_publisher_init_default(
         &odom_publisher, &node,
@@ -147,7 +179,7 @@ void init_micro_ros(){
     ));
 
     // create executor
-    RCCHECK(rclc_executor_init(&executor, &support.context, 6, &allocator));
+    RCCHECK(rclc_executor_init(&executor, &support.context, 7, &allocator));
 
     RCCHECK(rclc_executor_add_subscription(
         &executor,
@@ -161,6 +193,28 @@ void init_micro_ros(){
     if (!success) {
         error();
     }
+}
+
+void publish_datum() {
+    if (!CONFIG_DATUM) return;
+
+    sensor_msgs__msg__NavSatFix datum_msg = {};
+    datum_msg.latitude  = BASE_LAT;
+    datum_msg.longitude = BASE_LON;
+    datum_msg.altitude  = 0.0;
+    datum_msg.status.status  = 0;
+    datum_msg.status.service = 1;
+
+    RCSOFTCHECK(rcl_publish(&datum_publisher, &datum_msg, NULL));
+    SerialDebug.printf("Datum published: lat=%.7f lon=%.7f\r\n", BASE_LAT, BASE_LON);
+}
+
+void datum_set_callback(dds_callback_context_t* context) {
+    datum_data_t* data = (datum_data_t*)context->message_data.data;
+    BASE_LAT = data->latitude;
+    BASE_LON = data->longitude;
+    pending_datum_publish = true;
+    datum_publish_count = 0;
 }
 
 void odom_topic_callback(dds_callback_context_t* context) {
@@ -200,7 +254,9 @@ void odom_topic_callback(dds_callback_context_t* context) {
     odom_msg.child_frame_id.data = (char*)"base_link";
     odom_msg.child_frame_id.size = strlen("base_link");
 
-    RCSOFTCHECK(rcl_publish(&odom_publisher, &odom_msg, NULL));
+    if (datum_published) {
+        RCSOFTCHECK(rcl_publish(&odom_publisher, &odom_msg, NULL));
+    }
 }
 
 void imu_topic_callback(dds_callback_context_t* context) {
@@ -234,7 +290,9 @@ void imu_topic_callback(dds_callback_context_t* context) {
     imu_msg.header.frame_id.data = (char*)"imu_link";
     imu_msg.header.frame_id.size = strlen("imu_link");
 
-    RCSOFTCHECK(rcl_publish(&imu_publisher, &imu_msg, NULL));
+    if (datum_published) {
+        RCSOFTCHECK(rcl_publish(&imu_publisher, &imu_msg, NULL));
+    }
 }
 
 void gps_topic_callback(dds_callback_context_t* context) {
@@ -263,7 +321,9 @@ void gps_topic_callback(dds_callback_context_t* context) {
     gps_msg.header.frame_id.data = (char*)"gps_link";
     gps_msg.header.frame_id.size = strlen("gps_link");
 
-    RCSOFTCHECK(rcl_publish(&gps_publisher, &gps_msg, NULL));
+    if (datum_published) {
+        RCSOFTCHECK(rcl_publish(&gps_publisher, &gps_msg, NULL));
+    }
 }
 
 void fused_pose_callback(const void* msgin) {
@@ -273,6 +333,8 @@ void fused_pose_callback(const void* msgin) {
     // Extract x, y
     double x = (double)msg->pose.pose.position.x;
     double y = (double)msg->pose.pose.position.y;
+
+    SerialDebug.printf("Fused pose received: x=%.2f, y=%.2f\r\n", x, y);
 
     // Quaternion → yaw (2D, so only z/w matter)
     float qz = (float)msg->pose.pose.orientation.z;
@@ -344,28 +406,62 @@ void init_freertos() {
             0
         );
     }
+
+    if (ENABLE_BLUETOOTH) {
+        xTaskCreatePinnedToCore(
+            bluetooth_task,
+            "BluetoothTask",
+            8192,
+            NULL,
+            1,
+            NULL,
+            0
+        );
+    }
 }
 
 void init_peripherals() {
     if (ENABLE_IMU) {
         if (!init_imu()) {
+            SerialDebug.println("[INIT] IMU failed, disabling");
             ENABLE_IMU = false;
             return;
         }
+        SerialDebug.println("[INIT] IMU OK");
     }
 
     if (ENABLE_GPS) {
         if (!init_gps()) {
+            SerialDebug.println("[INIT] GPS failed, disabling");
             ENABLE_GPS = false;
             return;
         }
+        SerialDebug.println("[INIT] GPS OK");
     }
 
     if (ENABLE_MOTORS) {
         if (!init_motors()) {
+            SerialDebug.println("[INIT] Motors failed, disabling");
             ENABLE_MOTORS = false;
             return;
         }
+        SerialDebug.println("[INIT] Motors OK");
+    }
+
+    if (ENABLE_BLUETOOTH) {
+        if (!InitBluetooth()) {
+            SerialDebug.println("[INIT] Bluetooth failed, disabling");
+            ENABLE_BLUETOOTH = false;
+            return;
+        }
+        SerialDebug.println("[INIT] Bluetooth OK");
+    }
+
+    FileResult configResult = InitConfiguration();
+    if (configResult != SUCCESS) {
+        SerialDebug.printf("[INIT] Preferences init failed (code %d)\r\n", configResult);
+    } else {
+        SerialDebug.println("[INIT] Preferences OK");
     }
 }
 
@@ -374,52 +470,68 @@ void main_task(void* parameter);
 void setup() {
     SerialDebug.begin(DEBUG_BAUDRATE, SERIAL_8N1, DEBUG_RX_PIN, DEBUG_TX_PIN);
     SerialDebug.setTimeout(COMMUNICATION_TIMEOUT);
+    SerialDebug.println("[BOOT] Starting...");
 
     dds_init();
+    SerialDebug.println("[BOOT] DDS initialized");
 
     Serial.begin(SERIAL_BAUDRATE);
 
+    SerialDebug.println("[BOOT] Connecting to micro-ROS agent...");
     set_microros_serial_transports(Serial);
     init_micro_ros();
+    SerialDebug.println("[BOOT] micro-ROS ready");
 
-    init_peripherals(); //TODO: Make init functions check if peripherals are actually connected
+    SerialDebug.println("[BOOT] Press 'p' within 1 second to clear saved datum...");
+    unsigned long wait_start = millis();
+    while (millis() - wait_start < 1000) {
+        if (SerialDebug.available()) {
+            char c = SerialDebug.read();
+            if (c == 'p') {
+                Preferences p;
+                p.begin("config", false);
+                p.putBool("CFG_DATUM", false);
+                p.putDouble("BASE_LON", 0.0);
+                p.putDouble("BASE_LAT", 0.0);
+                p.end();
+                SerialDebug.println("[BOOT] Datum cleared");
+                break;
+            }
+        }
+        delay(10);
+    }
+
+    SerialDebug.println("[BOOT] Initializing peripherals...");
+    init_peripherals();
+
+    SerialDebug.println("[BOOT] Loading configuration...");
+    FileResult configResult = LoadConfiguration();
+    if (configResult != SUCCESS) {
+        SerialDebug.printf("[BOOT] No configuration found (code %d), saving defaults\r\n", configResult);
+        configResult = SaveConfiguration();
+        if (configResult != SUCCESS) {
+            SerialDebug.printf("[BOOT] Failed to save configuration (code %d)\r\n", configResult);
+        }
+    } else {
+        SerialDebug.println("[BOOT] Configuration loaded");
+        SerialDebug.printf("[BOOT] Datum=%d, Path=%d, Battery=%d\r\n", CONFIG_DATUM, CONFIG_PATH, CONFIG_BATTERY);
+    }
+
+    if (CONFIG_DATUM) {
+        SerialDebug.printf("[BOOT] Datum will publish after tasks start: lat=%.7f lon=%.7f\r\n", BASE_LAT, BASE_LON);
+        pending_datum_publish = true;
+    }
+
+    SerialDebug.println("[BOOT] Starting FreeRTOS tasks...");
     init_freertos();
 
-    /*
-    if (SIMULATION_ENABLED){
-        xTaskCreatePinnedToCore(
-            sim_task,
-            "SimTask",
-            4096,
-            NULL,
-            1,
-            NULL,
-            0
-        );
-    }
-    */
+    xTaskCreatePinnedToCore(controller_task, "ControllerTask", 4096, NULL, 1, NULL, 0);
+    SerialDebug.println("[BOOT] Controller task started");
 
-    // Start controller task
-    xTaskCreatePinnedToCore(
-        controller_task,
-        "ControllerTask",
-        4096,
-        NULL,
-        1,
-        NULL,
-        0
-    );
+    xTaskCreatePinnedToCore(main_task, "MainTask", 4096, NULL, 1, NULL, 0);
+    SerialDebug.println("[BOOT] Main task started");
 
-    // Start main task
-    xTaskCreatePinnedToCore(
-        main_task,
-        "MainTask",
-        4096,
-        NULL,
-        1,
-        NULL,
-        0
-    );
+    SerialDebug.println("[BOOT] Boot complete");
 }
 
 void loop() { vTaskDelay(portMAX_DELAY); }
@@ -454,6 +566,10 @@ void main_task(void* parameter) {
     // ------- THREAD SETUP CODE START -------
 
     dds_result_t result;
+    result = DDS_SUBSCRIBE("/datum/set", datum_set_callback, &thread_context);
+    if (result != DDS_SUCCESS) {
+        SerialDebug.printf("Topic subscribe failed: %s\r\n", DDS_RESULT_TO_STRING(result));
+    }
     result = DDS_SUBSCRIBE("/odom", odom_topic_callback, &thread_context);
     if (result != DDS_SUCCESS) {
         SerialDebug.printf("Topic subscribe failed: %s\r\n", DDS_RESULT_TO_STRING(result));
@@ -485,6 +601,22 @@ void main_task(void* parameter) {
             DDS_TAKE_MUTEX(&thread_context);
 
             // ------- THREAD LOOP CODE START -------
+
+            if (pending_datum_publish) {
+                static unsigned long last_datum_publish = 0;
+                unsigned long now = millis();
+                if (now - last_datum_publish > 1000) {
+                    publish_datum();
+                    last_datum_publish = now;
+                    datum_publish_count++;
+                    if (datum_publish_count >= 1) {
+                        pending_datum_publish = false;
+                        datum_publish_count = 0;
+                        datum_published = true;
+                        SerialDebug.println("[MAIN] Datum publish complete");
+                    }
+                }
+            }
 
             RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
 

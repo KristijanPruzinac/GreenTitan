@@ -10,6 +10,8 @@
 
 #include <vector>
 
+extern bool CONFIG_DATUM;
+
 extern HardwareSerial SerialDebug;
 
 void controller_task(void* parameter);

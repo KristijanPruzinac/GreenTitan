@@ -233,4 +233,9 @@ typedef struct {
     double y;
 } intersection_point_t;
 
+typedef struct {
+    double latitude;
+    double longitude;
+} datum_data_t;
+
 #endif

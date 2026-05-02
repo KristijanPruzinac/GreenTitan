@@ -4,64 +4,31 @@
 #include "Arduino.h"
 #include "../definitions.h"
 #include "../functions.h"
-
 #include "esp_dds.h"
 #include "esp_timer.h"
-
 #include <AceSorting.h>
 #include <vector>
 #include <math.h>
 
 extern HardwareSerial SerialDebug;
 
-// -------------------------------------------------------- CONFIGURATION ---------------------------------------------------------------
-
-extern int MOWER_OVERLAP;
-extern int MAX_DEVIATION;
+// All position globals are double — conversion to long long happens internally
 extern double BASE_LON;
 extern double BASE_LAT;
 extern double BASE_EXIT_LON;
 extern double BASE_EXIT_LAT;
 
-// -------------------------------------------------------- CORE FUNCTIONS ---------------------------------------------------------------
+// Tuning parameters
+extern int MOWER_OVERLAP;
+extern int MAX_DEVIATION;
 
-static double GetLon();
-static double GetLat();
-
-// Path generation
-void ClearOutlines();
-void FindTerrainBounds();
-void ClearInterference();
-bool FindOutlineIntersections();
-bool GeneratePaths();
-bool GenerateGcode();
-
-// Navigation helpers
-int ShortestOutlinePath(int outline_index, int current_point, int target_point);
-int OutlineTraverseInc(int outline_index, int current_point, int amount);
-int OutlineTraverseDec(int outline_index, int current_point, int amount);
-
-// Main algorithm function - returns next point (0,0 when done)
 std::vector<double> AlgorithmNextPoint();
+void AlgorithmMotionSetTargetPoint(double tLon, double tLat);
 void AlgorithmAbort(bool full_abort);
-
-// Recording functions
-void AlgorithmCaptureStart();
-void AlgorithmCaptureBasePoint();
-void AlgorithmCaptureBaseExitPoint();
-void AlgorithmCaptureNewOutline();
-void AlgorithmCaptureNewPoint();
-void AlgorithmCaptureSetNewPoint(double lon, double lat);
-bool AlgorithmCaptureRemoveOutline();
-bool AlgorithmCaptureRemovePoint();
-bool AlgorithmCaptureEnd();
-
-// Path persistence
 String AlgorithmGetPathString();
-bool AlgorithmPopulatePathFromString(String& readData);
+bool   AlgorithmPopulatePathFromString(String& readData);
 
-// -------------------------------------------------------- TASK FUNCTION ---------------------------------------------------------------
-
+// --- FreeRTOS task entry point ---
 void algorithm_task(void* parameter);
 
-#endif
+#endif // ALGORITHM_H

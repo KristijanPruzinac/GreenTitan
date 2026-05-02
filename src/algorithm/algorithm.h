@@ -4,31 +4,47 @@
 #include "Arduino.h"
 #include "../definitions.h"
 #include "../functions.h"
+
 #include "esp_dds.h"
 #include "esp_timer.h"
+
 #include <AceSorting.h>
 #include <vector>
 #include <math.h>
 
 extern HardwareSerial SerialDebug;
 
-// All position globals are double — conversion to long long happens internally
-extern double BASE_LON;
-extern double BASE_LAT;
-extern double BASE_EXIT_LON;
-extern double BASE_EXIT_LAT;
-
-// Tuning parameters
 extern int MOWER_OVERLAP;
 extern int MAX_DEVIATION;
+extern long long BASE_LON;
+extern long long BASE_LAT;
+extern long long BASE_EXIT_LON;
+extern long long BASE_EXIT_LAT;
 
+void ClearOutlines();
+void FindTerrainBounds();
+void ClearInterference();
+bool FindOutlineIntersections();
+bool GeneratePaths();
+bool GenerateGcode();
+int ShortestOutlinePath(int outline_index, int current_point, int target_point);
+int OutlineTraverseInc(int outline_index, int current_point, int amount);
+int OutlineTraverseDec(int outline_index, int current_point, int amount);
 std::vector<double> AlgorithmNextPoint();
-void AlgorithmMotionSetTargetPoint(double tLon, double tLat);
 void AlgorithmAbort(bool full_abort);
+
+void AlgorithmCaptureStart();
+void AlgorithmCaptureBasePoint();
+void AlgorithmCaptureBaseExitPoint();
+void AlgorithmCaptureNewOutline();
+void AlgorithmCaptureNewPoint();
+void AlgorithmCaptureSetNewPoint(long long lon, long long lat);
+bool AlgorithmCaptureRemoveOutline();
+bool AlgorithmCaptureRemovePoint();
+bool AlgorithmCaptureEnd();
+
+void AlgorithmMotionSetTargetPoint(double tLon, double tLat);
 String AlgorithmGetPathString();
-bool   AlgorithmPopulatePathFromString(String& readData);
+bool AlgorithmPopulatePathFromString(String& readData);
 
-// --- FreeRTOS task entry point ---
-void algorithm_task(void* parameter);
-
-#endif // ALGORITHM_H
+#endif

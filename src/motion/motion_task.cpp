@@ -71,10 +71,10 @@ static float rotation_vel;
 
 static double start_x = 0;
 static double start_y = 0;
-static double end_x = 3;
-static double end_y = 3;
+static double end_x = 0;
+static double end_y = 0;
 
-static int mode = MOVING;
+static int mode = WAITING; // WAITING, MOVING, MOVING_REVERSE
 
 static void motion_start(double p_start_x, double p_start_y, double p_end_x, double p_end_y) {
     mode    = MOVING;
@@ -86,6 +86,12 @@ static void motion_start(double p_start_x, double p_start_y, double p_end_x, dou
 
 static void motion_stop() {
     mode = WAITING;
+
+    motor_data_t stop = { MOTOR_STOP, 0.0f, 0.0f };
+    dds_result_t result = DDS_PUBLISH("/motor", stop);
+    if (result != DDS_SUCCESS) {
+        SerialDebug.printf("Failed to send motor command: %d\r\n", result);
+    }
 
     xQueueReset(thread_context.queue); // Clear any pending motion commands to prevent them from executing after a stop command
 }
@@ -157,20 +163,21 @@ static void pose_updated_callback(dds_callback_context_t* context) {
                 SerialDebug.printf("Controller signal topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
             }
         }
-        
-        // Create and publish motor command
-        motor_data_t msg;
-        msg.instruction = MOTOR_MOVE;
-        msg.linear_vel = linear_cmd;
-        msg.angular_vel = rotation_cmd;
-        
-        dds_result_t result = DDS_PUBLISH("/motor", msg);
-        if (result != DDS_SUCCESS) {
-            SerialDebug.printf("Motor Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
+        else {
+            // Create and publish motor command
+            motor_data_t msg;
+            msg.instruction = MOTOR_MOVE;
+            msg.linear_vel = linear_cmd;
+            msg.angular_vel = rotation_cmd;
+            
+            dds_result_t result = DDS_PUBLISH("/motor", msg);
+            if (result != DDS_SUCCESS) {
+                SerialDebug.printf("Motor Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
+            }
         }
         
         // Debug output (optional - can comment out for performance)
-        SerialDebug.printf("%f %f\r\n", linear_cmd, rotation_cmd);
+        //SerialDebug.printf("%f %f\r\n", linear_cmd, rotation_cmd);
         //SerialDebug.printf("Target=%.2f, Yaw=%.2f, Err=%.2f, Rot=%.2f, Lin=%.2f, Dist=%.2f\r\n", target_yaw, yaw, heading_error, rotation_cmd, linear_cmd, distance_to_goal);
     }
 }
@@ -183,7 +190,7 @@ static void motion_command_callback(dds_callback_context_t* context) {
         motion_stop();
     }
     else if (data->mode == MOVING) {
-        SerialDebug.printf("Motion command: MOVING\r\n");
+        SerialDebug.printf("Motion command: MOVING to (%.2f, %.2f)\r\n", data->end_x, data->end_y);
         motion_start(data->start_x, data->start_y, data->end_x, data->end_y);
     }
 }

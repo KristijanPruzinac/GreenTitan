@@ -11,19 +11,11 @@ extern bool algorithmAbortFull;
 // -------------------------------------------------------- HELPERS ---------------------------------------------------------------
 
 static void go_to_base() {
-    motion_command_t cmd = { MOVING, 0, 0, BASE_LON, BASE_LAT };
-    dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
-    if (result != DDS_SUCCESS) {
-        SerialDebug.printf("[CTRL] Failed to send command: %d\r\n", result);
-    }
+
 }
 
 static void go_to_base_exit() {
-    motion_command_t cmd = { MOVING, 0, 0, BASE_EXIT_LON, BASE_EXIT_LAT };
-    dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
-    if (result != DDS_SUCCESS) {
-        SerialDebug.printf("[CTRL] Failed to send command: %d\r\n", result);
-    }
+    
 }
 
 static void go_to_next_algorithm_point() {
@@ -170,11 +162,7 @@ static void handle_obstacle() {
 
     SerialDebug.printf("[CTRL] Obstacle hit — skipping line\r\n");
     stop_motors();
-    algorithm_command_t cmd = { CMD_ALGO_ABORT, false };
-    dds_result_t result = DDS_PUBLISH("/algorithm/command", cmd);
-    if (result != DDS_SUCCESS) {
-        SerialDebug.printf("[CTRL] Failed to send algorithm command: %d\r\n", result);
-    }
+    AlgorithmAbort(false);
     go_to_next_algorithm_point();    // continue from next point
 }
 
@@ -219,6 +207,9 @@ static void controller_signal_callback(dds_callback_context_t* context) {
         case SIGNAL_BATTERY_CHARGED:
             handle_battery_charged();
             break;
+        case SIGNAL_MAIN_CHARGING_START:
+            SerialDebug.printf("[CTRL] Main charging started signal received\r\n");
+            break;
         default:
             SerialDebug.printf("[CTRL] Unknown signal: %d\r\n", signal->signal);
     }
@@ -251,13 +242,27 @@ void controller_task(void* parameter) {
 
     // ------- THREAD SETUP CODE END -------
 
-    vTaskDelay(500);
-    
-    // Auto-start mowing if outlines are loaded? Or wait for condition?
-    // For now, we'll start mowing automatically after a short delay
-    // You can change this behavior based on your needs
-    vTaskDelay(2000); // Wait for system to stabilize
-    start_mowing();
+    vTaskDelay(2000);
+
+    robot_state = ROBOT_STATE_IDLE;
+
+    if (!CONFIG_DATUM) {
+        SerialDebug.printf("[CTRL] Datum not set. Waiting for Bluetooth setup.\r\n");
+        while (!CONFIG_DATUM) {
+            vTaskDelay(500);
+        }
+    }
+
+    SerialDebug.printf("[CTRL] Datum confirmed, ready.\r\n");
+    // start_mowing();
+
+    if (SIMULATION_ENABLED){
+        motion_command_t cmd = { MOVING, 0.0, 0.0, 3.0, 3.0 };
+        dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
+        if (result != DDS_SUCCESS) {
+            SerialDebug.printf("[CTRL] Failed to send motion command: %d\r\n", result);
+        }
+    }
     
     while(1) {
         // Wait for any notification (message or timer)
@@ -273,9 +278,6 @@ void controller_task(void* parameter) {
             DDS_TAKE_MUTEX(&thread_context);
 
             // ------- THREAD LOOP CODE START -------
-            
-            // You can add periodic checks here if needed
-            // For example: check battery level periodically
             
             // ------- THREAD LOOP CODE END -------
 
