@@ -23,8 +23,8 @@ FileResult SaveConfiguration() {
     prefs.putInt   ("MAX_DEVIATION", MAX_DEVIATION);
     prefs.putDouble("BASE_LON",      BASE_LON);
     prefs.putDouble("BASE_LAT",      BASE_LAT);
-    prefs.putDouble("BASE_EXIT_LON", BASE_EXIT_LON);
-    prefs.putDouble("BASE_EXIT_LAT", BASE_EXIT_LAT);
+    prefs.putLong64("BASE_EXIT_X_CM", BASE_EXIT_X_CM);
+    prefs.putLong64("BASE_EXIT_Y_CM", BASE_EXIT_Y_CM);
     prefs.putInt   ("GPS_ACC_THR",   GPS_ACC_THRESHOLD);
     prefs.putInt   ("GPS_STAB_DUR",  GPS_STABILITY_CHECK_DURATION_SECONDS);
     prefs.putFloat ("BAT_LVL_MIN",   BATTERY_LEVEL_MIN);
@@ -64,8 +64,8 @@ FileResult LoadConfiguration() {
     MAX_DEVIATION                    = prefs.getInt   ("MAX_DEVIATION", MAX_DEVIATION);
     BASE_LON                         = prefs.getDouble("BASE_LON",      BASE_LON);
     BASE_LAT                         = prefs.getDouble("BASE_LAT",      BASE_LAT);
-    BASE_EXIT_LON                    = prefs.getDouble("BASE_EXIT_LON", BASE_EXIT_LON);
-    BASE_EXIT_LAT                    = prefs.getDouble("BASE_EXIT_LAT", BASE_EXIT_LAT);
+    BASE_EXIT_X_CM                   = prefs.getLong64("BASE_EXIT_X_CM", BASE_EXIT_X_CM);
+    BASE_EXIT_Y_CM                   = prefs.getLong64("BASE_EXIT_Y_CM", BASE_EXIT_Y_CM);
     GPS_ACC_THRESHOLD                = prefs.getInt   ("GPS_ACC_THR",   GPS_ACC_THRESHOLD);
     GPS_STABILITY_CHECK_DURATION_SECONDS = prefs.getInt("GPS_STAB_DUR", GPS_STABILITY_CHECK_DURATION_SECONDS);
     BATTERY_LEVEL_MIN                = prefs.getFloat ("BAT_LVL_MIN",   BATTERY_LEVEL_MIN);

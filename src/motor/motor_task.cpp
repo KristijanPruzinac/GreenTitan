@@ -119,6 +119,17 @@ static void motor_topic_callback(dds_callback_context_t* context) {
   }
 }
 
+static void sim_pose_set_callback(dds_callback_context_t* context) {
+    if (!SIMULATION_ENABLED) return;
+    sim_pose_set_t* data = (sim_pose_set_t*)context->message_data.data;
+    sim_pos_x = data->x;
+    sim_pos_y = data->y;
+    sim_pos_theta = data->theta;
+    odom_x = data->x;
+    odom_y = data->y;
+    odom_theta = data->theta;
+}
+
 static int divide_frequency = 100;
 static int divide_counter = 0;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
@@ -140,6 +151,11 @@ void motor_task(void* parameter) {
     result = DDS_SUBSCRIBE("/motor", motor_topic_callback, &thread_context);
     if (result != DDS_SUCCESS) {
         SerialDebug.printf("Topic subscribe failed: %s\r\n", DDS_RESULT_TO_STRING(result));
+    }
+
+    result = DDS_SUBSCRIBE("/sim/pose_set", sim_pose_set_callback, &thread_context);
+    if (result != DDS_SUCCESS) {
+        SerialDebug.printf("Sim pose set subscribe failed: %s\r\n", DDS_RESULT_TO_STRING(result));
     }
 
     // ------- THREAD SETUP CODE END -------

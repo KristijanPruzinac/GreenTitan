@@ -31,8 +31,8 @@ extern int MOWER_OVERLAP;
 extern int MAX_DEVIATION;
 extern double BASE_LON;
 extern double BASE_LAT;
-extern double BASE_EXIT_LON;
-extern double BASE_EXIT_LAT;
+extern int64_t BASE_EXIT_X_CM;
+extern int64_t BASE_EXIT_Y_CM;
 
 extern int GPS_ACC_THRESHOLD;
 extern int GPS_STABILITY_CHECK_DURATION_SECONDS;

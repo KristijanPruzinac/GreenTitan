@@ -18,19 +18,6 @@ static void go_to_base_exit() {
     
 }
 
-static void go_to_next_algorithm_point() {
-    std::vector<double> next = AlgorithmNextPoint();
-    if (next.size() < 2) {
-        SerialDebug.printf("[CTRL] Algorithm returned invalid point\r\n");
-        return;
-    }
-    
-    double next_x = next.at(0);
-    double next_y = next.at(1);
-
-    AlgorithmMotionSetTargetPoint(next_x, next_y);
-}
-
 static void stop_motors() {
     motor_data_t stop = { MOTOR_STOP, 0.0f, 0.0f };
     dds_result_t result = DDS_PUBLISH("/motor", stop);
@@ -63,6 +50,22 @@ static void motion_stop() {
     }
 }
 
+static void go_to_next_algorithm_point() {
+    std::vector<double> next = AlgorithmNextPoint();
+    if (next.size() < 2) {
+        SerialDebug.printf("[CTRL] Mowing complete, returning to IDLE\r\n");
+        stop_motors();
+        motor_main_off();
+        robot_state = ROBOT_STATE_IDLE;
+        return;
+    }
+
+    double next_x = next.at(0);
+    double next_y = next.at(1);
+
+    AlgorithmMotionSetTargetPoint(next_x, next_y);
+}
+
 // -------------------------------------------------------- STATE MACHINE ---------------------------------------------------------------
 
 static void start_mowing() {
@@ -70,20 +73,11 @@ static void start_mowing() {
         SerialDebug.printf("[CTRL] Cannot start mowing from state: %d\r\n", robot_state);
         return;
     }
-    
+
     SerialDebug.printf("[CTRL] Starting mowing\r\n");
     robot_state = ROBOT_STATE_MOWING;
-    
-    // Start from base exit point if defined
-    if (BASE_EXIT_LON != 0 || BASE_EXIT_LAT != 0) {
-        motion_command_t cmd = { MOVING, 0, 0, BASE_EXIT_LON, BASE_EXIT_LAT };
-        dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
-        if (result != DDS_SUCCESS) {
-            SerialDebug.printf("[CTRL] Failed to send command: %d\r\n", result);
-        }
-    } else {
-        go_to_next_algorithm_point();
-    }
+
+    go_to_next_algorithm_point();
 }
 
 static void pause_mowing() {
@@ -210,6 +204,9 @@ static void controller_signal_callback(dds_callback_context_t* context) {
         case SIGNAL_MAIN_CHARGING_START:
             SerialDebug.printf("[CTRL] Main charging started signal received\r\n");
             break;
+        case SIGNAL_START_MOWING:
+            start_mowing();
+            break;
         default:
             SerialDebug.printf("[CTRL] Unknown signal: %d\r\n", signal->signal);
     }
@@ -252,17 +249,15 @@ void controller_task(void* parameter) {
             vTaskDelay(500);
         }
     }
+    SerialDebug.printf("[CTRL] Datum confirmed.\r\n");
 
-    SerialDebug.printf("[CTRL] Datum confirmed, ready.\r\n");
-    // start_mowing();
-
-    if (SIMULATION_ENABLED){
-        motion_command_t cmd = { MOVING, 0.0, 0.0, 3.0, 3.0 };
-        dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
-        if (result != DDS_SUCCESS) {
-            SerialDebug.printf("[CTRL] Failed to send motion command: %d\r\n", result);
+    if (!CONFIG_PATH) {
+        SerialDebug.printf("[CTRL] Path not set. Waiting for path setup.\r\n");
+        while (!CONFIG_PATH) {
+            vTaskDelay(500);
         }
     }
+    SerialDebug.printf("[CTRL] Path confirmed, ready for MOWER/START.\r\n");
     
     while(1) {
         // Wait for any notification (message or timer)

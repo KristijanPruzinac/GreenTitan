@@ -35,8 +35,8 @@ bool SETUP_COMPLETED = true;
 
 double BASE_LON = -56.72328;
 double BASE_LAT = 33.76391;
-double BASE_EXIT_LON = -56.72328;
-double BASE_EXIT_LAT = 33.76391;
+int64_t BASE_EXIT_X_CM = 0;
+int64_t BASE_EXIT_Y_CM = 0;
 
 int GPS_ACC_THRESHOLD = 30; //TODO: Revert to 18
 int GPS_STABILITY_CHECK_DURATION_SECONDS = 15; // 5 minutes TODO: Revert to 5 minutes
@@ -334,7 +334,7 @@ void fused_pose_callback(const void* msgin) {
     double x = (double)msg->pose.pose.position.x;
     double y = (double)msg->pose.pose.position.y;
 
-    SerialDebug.printf("Fused pose received: x=%.2f, y=%.2f\r\n", x, y);
+    //SerialDebug.printf("Fused pose received: x=%.2f, y=%.2f\r\n", x, y);
 
     // Quaternion → yaw (2D, so only z/w matter)
     float qz = (float)msg->pose.pose.orientation.z;
@@ -465,6 +465,51 @@ void init_peripherals() {
     }
 }
 
+static void init_test_path() {
+    SerialDebug.println("[TEST] Installing hardcoded test path");
+
+    // Datum (arbitrary - host EKF not running for this test)
+    BASE_LAT = 45.5;
+    BASE_LON = 18.0;
+
+    // Base exit point in datum-relative cm
+    BASE_EXIT_X_CM = 30;
+    BASE_EXIT_Y_CM = 30;
+
+    MOWER_OVERLAP = 15;
+
+    AlgorithmCaptureStart();
+
+    // Outline 0: outer perimeter (2m x 2m). Point 0 is the base.
+    AlgorithmCaptureNewOutline();
+    AlgorithmCaptureSetNewPoint(0,   0);     // base / charging station
+    AlgorithmCaptureSetNewPoint(200, 0);
+    AlgorithmCaptureSetNewPoint(200, 200);
+    AlgorithmCaptureSetNewPoint(0,   200);
+
+    AlgorithmCaptureNewOutline();
+    AlgorithmCaptureSetNewPoint(130, 100);
+    AlgorithmCaptureSetNewPoint(121, 121);
+    AlgorithmCaptureSetNewPoint(100, 130);
+    AlgorithmCaptureSetNewPoint(79,  121);
+    AlgorithmCaptureSetNewPoint(70,  100);
+    AlgorithmCaptureSetNewPoint(79,  79);
+    AlgorithmCaptureSetNewPoint(100, 70);
+    AlgorithmCaptureSetNewPoint(121, 79);
+
+    if (AlgorithmCaptureEnd()) {
+        SerialDebug.println("[TEST] Path generated successfully");
+        CONFIG_PATH = true;
+    } else {
+        SerialDebug.println("[TEST] Path generation FAILED");
+        CONFIG_PATH = false;
+    }
+
+    CONFIG_DATUM = true;
+    pending_datum_publish = true;
+    datum_publish_count = 0; 
+}
+
 // -------------------------------------------------------- PROGRAM START ---------------------------------------------------------------
 void main_task(void* parameter);
 void setup() {
@@ -482,9 +527,9 @@ void setup() {
     init_micro_ros();
     SerialDebug.println("[BOOT] micro-ROS ready");
 
-    SerialDebug.println("[BOOT] Press 'p' within 1 second to clear saved datum...");
+    SerialDebug.println("[BOOT] Press 'p' within 1.5 seconds to clear saved datum...");
     unsigned long wait_start = millis();
-    while (millis() - wait_start < 1000) {
+    while (millis() - wait_start < 1500) {
         if (SerialDebug.available()) {
             char c = SerialDebug.read();
             if (c == 'p') {
@@ -521,6 +566,9 @@ void setup() {
         SerialDebug.printf("[BOOT] Datum will publish after tasks start: lat=%.7f lon=%.7f\r\n", BASE_LAT, BASE_LON);
         pending_datum_publish = true;
     }
+
+    // TEST: install hardcoded path (overrides any saved config)
+    init_test_path();
 
     SerialDebug.println("[BOOT] Starting FreeRTOS tasks...");
     init_freertos();
@@ -615,6 +663,16 @@ void main_task(void* parameter) {
                         datum_published = true;
                         SerialDebug.println("[MAIN] Datum publish complete");
                     }
+                }
+            }
+
+            // Serial debug commands
+            if (SerialDebug.available()) {
+                char c = SerialDebug.read();
+                if (c == 's') {
+                    SerialDebug.println("[DEBUG] Triggering MOWER/START via serial");
+                    controller_signal_t signal = { SIGNAL_START_MOWING };
+                    DDS_PUBLISH("/controller/signal", signal);
                 }
             }
 

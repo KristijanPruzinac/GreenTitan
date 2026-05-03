@@ -16,10 +16,12 @@ extern HardwareSerial SerialDebug;
 
 extern int MOWER_OVERLAP;
 extern int MAX_DEVIATION;
-extern long long BASE_LON;
-extern long long BASE_LAT;
-extern long long BASE_EXIT_LON;
-extern long long BASE_EXIT_LAT;
+extern double BASE_LON;
+extern double BASE_LAT;
+extern int64_t BASE_EXIT_X_CM;
+extern int64_t BASE_EXIT_Y_CM;
+
+extern bool algorithmDone;
 
 void ClearOutlines();
 void FindTerrainBounds();
@@ -32,10 +34,11 @@ int OutlineTraverseInc(int outline_index, int current_point, int amount);
 int OutlineTraverseDec(int outline_index, int current_point, int amount);
 std::vector<double> AlgorithmNextPoint();
 void AlgorithmAbort(bool full_abort);
+void AlgorithmSetCurrentPosition(long long x_cm, long long y_cm);
+void AlgorithmReset();
 
 void AlgorithmCaptureStart();
-void AlgorithmCaptureBasePoint();
-void AlgorithmCaptureBaseExitPoint();
+void AlgorithmCaptureBaseExitPoint(int64_t x_cm, int64_t y_cm);
 void AlgorithmCaptureNewOutline();
 void AlgorithmCaptureNewPoint();
 void AlgorithmCaptureSetNewPoint(long long lon, long long lat);

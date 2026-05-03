@@ -5,10 +5,6 @@ static long long current_lon = 0;
 static long long current_lat = 0;
 static long long current_yaw = 0;
 
-static constexpr double GPS_SCALE = 1e7;
-static inline long long gpsToLL(double v)   { return (long long)(v * GPS_SCALE); }
-static inline double    llToGPS(long long v) { return (double)v / GPS_SCALE; }
-
 //Prev
 static long long prevPointLon = 0;
 static long long prevPointLat = 0;
@@ -19,6 +15,8 @@ static long long prevPointLatActual = 0;
 //Target
 static long long targetPointLon = 0;
 static long long targetPointLat = 0;
+
+bool algorithmDone = false;
 
 static long long GetLon(){
   return current_lon;
@@ -44,16 +42,14 @@ static void MotorMainOff() {
     }
 }
 
-void AlgorithmMotionSetTargetPoint(double tLon, double tLat) {
-  if (prevPointLonActual == 0 || prevPointLatActual == 0) {
-    prevPointLonActual = current_lon;
-    prevPointLatActual = current_lat;
-
-    SerialDebug.printf("[ALGO] MotionSetTargetPoint: No previous point, using current position\r\n");
-  }
-
-  motion_command_t cmd = { MOVING, llToGPS(prevPointLonActual), llToGPS(prevPointLatActual),
-                            tLon, tLat };
+void AlgorithmMotionSetTargetPoint(double target_x_m, double target_y_m) {
+  motion_command_t cmd = {
+    MOVING,
+    (double)prevPointLonActual / 100.0,
+    (double)prevPointLatActual / 100.0,
+    target_x_m,
+    target_y_m
+  };
   dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
   if (result != DDS_SUCCESS) {
       SerialDebug.printf("[ALGO] Failed to send motion command: %d\r\n", result);
@@ -366,6 +362,10 @@ int OutlineTraverseDec(int outline_index, int current_point, int amount){
 }
 
 std::vector<double> AlgorithmNextPoint(){
+  if (algorithmDone) {
+    return std::vector<double>();  // signals end-of-mow to controller
+  }
+
   long long NextX = 0;
   long long NextY = 0;
 
@@ -616,9 +616,11 @@ std::vector<double> AlgorithmNextPoint(){
       NextY = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(1);
     }
     else if (algorithmMode == "SEEK"){
-      //If reached charging station exit point
-      if (algorithmCurrentPoint == 0){
+      //If reached charging station exit point (only meaningful when returning to base)
+      if (algorithmTarget == "BASE" && algorithmCurrentPoint == 0){
         MainChargingStart();
+        algorithmDone = true;
+        return std::vector<double>();  // bail immediately
       }
       
       //Find shortest path to the charging station exit point
@@ -641,7 +643,8 @@ std::vector<double> AlgorithmNextPoint(){
   prevPointLat = targetPointLat;
   
   std::vector<double> returnList;
-  returnList.push_back(llToGPS(NextX)); returnList.push_back(llToGPS(NextY));
+  returnList.push_back((double)NextX / 100.0);
+  returnList.push_back((double)NextY / 100.0);
   return returnList;
 }
 
@@ -705,20 +708,43 @@ void AlgorithmAbort(bool full_abort){
   }
 }
 
+void AlgorithmSetCurrentPosition(long long x_cm, long long y_cm) {
+  current_lon = x_cm;
+  current_lat = y_cm;
+}
+
+void AlgorithmReset() {
+  algorithmTarget = "FORWARD";
+  algorithmMode = "OUTLINE";
+  algorithmAbortFull = false;
+  algorithmDone = false;
+
+  algorithmCurrentOutline = 0;
+  algorithmCurrentPoint = 0;
+
+  algorithmInfillIndex = 0;
+  algorithmInfillPoint = 0;
+  algorithmInfillDirection = 0;
+
+  prevPointLon = 0;
+  prevPointLat = 0;
+  prevPointLonActual = 0;
+  prevPointLatActual = 0;
+  targetPointLon = 0;
+  targetPointLat = 0;
+}
+
 void AlgorithmCaptureStart(){
+  AlgorithmReset();
   outlines.clear();
 }
 
 void AlgorithmCaptureNewOutline(){
   outlines.push_back( std::vector<std::vector<long long>>());
 }
-void AlgorithmCaptureBasePoint(){
-  BASE_LON = GetLon();
-  BASE_LAT = GetLat();
-}
-void AlgorithmCaptureBaseExitPoint(){
-  BASE_EXIT_LON = GetLon();
-  BASE_EXIT_LAT = GetLat();
+void AlgorithmCaptureBaseExitPoint(int64_t x_cm, int64_t y_cm){
+  BASE_EXIT_X_CM = x_cm;
+  BASE_EXIT_Y_CM = y_cm;
 }
 void AlgorithmCaptureNewPoint(){
   outlines.back().push_back( std::vector<long long>());
@@ -772,6 +798,7 @@ String AlgorithmGetPathString(){
 }
 
 bool AlgorithmPopulatePathFromString(String& readData){
+  AlgorithmReset();
   outlines.clear();
 
   int newlineIndex = 0;

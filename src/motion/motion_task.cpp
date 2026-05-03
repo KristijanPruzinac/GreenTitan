@@ -76,6 +76,11 @@ static double end_y = 0;
 
 static int mode = WAITING; // WAITING, MOVING, MOVING_REVERSE
 
+static bool     teleport_active   = false;
+static uint32_t teleport_deadline = 0;
+static double   teleport_target_x = 0;
+static double   teleport_target_y = 0;
+
 static void motion_start(double p_start_x, double p_start_y, double p_end_x, double p_end_y) {
     mode    = MOVING;
     start_x = p_start_x;
@@ -191,6 +196,16 @@ static void motion_command_callback(dds_callback_context_t* context) {
     }
     else if (data->mode == MOVING) {
         SerialDebug.printf("Motion command: MOVING to (%.2f, %.2f)\r\n", data->end_x, data->end_y);
+
+        if (MOTION_TELEPORT_MODE) {
+            teleport_active   = true;
+            teleport_deadline = millis() + MOTION_TELEPORT_DELAY_MS;
+            teleport_target_x = data->end_x;
+            teleport_target_y = data->end_y;
+            mode = WAITING;  // ensure pose_updated_callback doesn't run line-follow logic
+            return;
+        }
+
         motion_start(data->start_x, data->start_y, data->end_x, data->end_y);
     }
 }
@@ -247,6 +262,35 @@ void motion_task(void* parameter) {
             DDS_TAKE_MUTEX(&thread_context);
 
             // ------- THREAD LOOP CODE START -------
+
+            if (teleport_active && (int32_t)(millis() - teleport_deadline) >= 0) {
+                teleport_active = false;
+                SerialDebug.printf("[MOTION] Teleport done at (%.2f, %.2f)\r\n", teleport_target_x, teleport_target_y);
+
+                // Inject simulated pose into motor_task so /odom and sim GPS reflect the teleport
+                sim_pose_set_t sim_pose = { teleport_target_x, teleport_target_y, 0.0f };
+                DDS_PUBLISH("/sim/pose_set", sim_pose);
+
+                // Publish synthetic pose at target so the algorithm sees the robot move
+                fused_pose_data_t fake = {
+                    teleport_target_x,
+                    teleport_target_y,
+                    0.0f,   // yaw (algorithm doesn't read this)
+                    0.0f,   // vx
+                    0.0f    // omega
+                };
+                dds_result_t pose_result = DDS_PUBLISH("/fused_pose", fake);
+                if (pose_result != DDS_SUCCESS) {
+                    SerialDebug.printf("[MOTION] Synthetic pose publish failed: %s\r\n", DDS_RESULT_TO_STRING(pose_result));
+                }
+
+                // Then signal motion complete so controller asks for next point
+                controller_signal_t signal = { SIGNAL_MOTION_DONE };
+                dds_result_t sig_result = DDS_PUBLISH("/controller/signal", signal);
+                if (sig_result != DDS_SUCCESS) {
+                    SerialDebug.printf("[MOTION] Signal publish failed: %s\r\n", DDS_RESULT_TO_STRING(sig_result));
+                }
+            }
 
             // ------- THREAD LOOP CODE END -------
 

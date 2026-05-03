@@ -2,6 +2,8 @@
 #define DEFINES_H
 
 #define SIMULATION_ENABLED true
+#define MOTION_TELEPORT_MODE      true
+#define MOTION_TELEPORT_DELAY_MS  1000
 
 //DEBUG
 #define DEBUG_RX_PIN 13
@@ -163,6 +165,7 @@ enum robot_state {
     ROBOT_STATE_CHARGING,
     ROBOT_STATE_LEAVING_CHARGING_STATION,
     ROBOT_STATE_RECORDING_OUTLINE,
+    ROBOT_STATE_MANUAL,
 };
 
 enum controller_signal {
@@ -171,7 +174,10 @@ enum controller_signal {
     SIGNAL_RAIN,
     SIGNAL_OBSTACLE,
     SIGNAL_MAIN_CHARGING_START,
-    SIGNAL_BATTERY_CHARGED
+    SIGNAL_BATTERY_CHARGED,
+    SIGNAL_START_MOWING,
+    SIGNAL_MANUAL_ON,
+    SIGNAL_MANUAL_OFF,
 };
 
 typedef struct {
@@ -237,5 +243,11 @@ typedef struct {
     double latitude;
     double longitude;
 } datum_data_t;
+
+typedef struct {
+    double x;
+    double y;
+    float theta;
+} sim_pose_set_t;
 
 #endif

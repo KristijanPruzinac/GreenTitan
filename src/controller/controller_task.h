@@ -11,6 +11,7 @@
 #include <vector>
 
 extern bool CONFIG_DATUM;
+extern bool CONFIG_PATH;
 
 extern HardwareSerial SerialDebug;
 

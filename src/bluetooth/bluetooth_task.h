@@ -12,6 +12,8 @@
  
 #include "BluetoothSerial.h"
 
+#include "../algorithm/algorithm.h"
+
 extern HardwareSerial SerialDebug;
 
 bool InitBluetooth();
