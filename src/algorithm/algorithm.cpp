@@ -641,6 +641,9 @@ std::vector<double> AlgorithmNextPoint(){
   
   prevPointLon = targetPointLon;
   prevPointLat = targetPointLat;
+
+  targetPointLon = NextX;
+  targetPointLat = NextY;
   
   std::vector<double> returnList;
   returnList.push_back((double)NextX / 100.0);
@@ -822,4 +825,24 @@ bool AlgorithmPopulatePathFromString(String& readData){
     }
 
     return AlgorithmCaptureEnd();
+}
+
+void AlgorithmSeedStartPosition() {
+    // Seed prevPoint and targetPoint to current pose so the first segment's
+    // start = robot's actual position. Subsequent segments will use the
+    // intended (planned) previous target.
+    prevPointLon = current_lon;
+    prevPointLat = current_lat;
+    targetPointLon = current_lon;
+    targetPointLat = current_lat;
+
+    prevPointLonActual = current_lon;
+    prevPointLatActual = current_lat;
+}
+
+const std::vector<std::vector<std::vector<long long>>>& AlgorithmGetExtOutlines() {
+    return extOutlines;
+}
+const std::vector<std::vector<std::vector<long long>>>& AlgorithmGetIntersectionPaths() {
+    return intersectionPaths;
 }

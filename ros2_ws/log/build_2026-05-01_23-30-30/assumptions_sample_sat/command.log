@@ -1,0 +1,1 @@
+Invoking command in '/home/kristijan/ros2_ws/build/assumptions_sample_sat': /usr/bin/cmake /home/kristijan/ros2_ws/Fields2Cover/build/_deps/ortools-src/examples/assumptions_sample_sat -DCMAKE_INSTALL_PREFIX=/home/kristijan/ros2_ws/install/assumptions_sample_sat

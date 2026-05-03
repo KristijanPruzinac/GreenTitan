@@ -2,7 +2,7 @@
 #define DEFINES_H
 
 #define SIMULATION_ENABLED true
-#define MOTION_TELEPORT_MODE      true
+#define MOTION_TELEPORT_MODE      false
 #define MOTION_TELEPORT_DELAY_MS  1000
 
 //DEBUG
@@ -64,8 +64,6 @@ typedef struct {
 #define MILLIS_PER_SECOND 1000
 
 //Motion
-#define MOTION_ACCEPTED_DIST_TO_POINT 3
-#define MOTION_ACCEPTED_ROTATION_TO_POINT 10
 #define MOTION_MAX_CORRECTION_DIST 0.6f  // 0.6 meters drift = full 90° correction
 
 #define MOTION_FORWARD_SPEED_NORMAL  0.5f
@@ -73,9 +71,10 @@ typedef struct {
 #define MOTION_GOAL_SLOW_DOWN_DISTANCE    0.5f
 
 // Speed scaling based on heading error
-#define MOTION_HEADING_ERROR_FULL_SPEED 0.1f   // rad - full speed below this
-#define MOTION_HEADING_ERROR_MIN_SPEED  0.5f   // rad - minimum speed above this
-#define MOTION_MIN_SPEED_SCALE          0.2f   // Minimum speed factor (30%)
+#define MOTION_HEADING_ERROR_FULL_SPEED   0.1f   // ~6° - full speed below
+#define MOTION_HEADING_ERROR_MIN_SPEED    0.26f  // ~15° - 50% speed here
+#define MOTION_MIN_SPEED_SCALE            0.5f
+#define MOTION_HEADING_ERROR_ROTATE_ONLY  0.52f  // ~30° - rotate only above
 
 //DAC
 #define DAC_MAX_VALUE 4096

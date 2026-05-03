@@ -81,12 +81,15 @@ static uint32_t teleport_deadline = 0;
 static double   teleport_target_x = 0;
 static double   teleport_target_y = 0;
 
+static bool rotate_only_active = false;
+
 static void motion_start(double p_start_x, double p_start_y, double p_end_x, double p_end_y) {
     mode    = MOVING;
     start_x = p_start_x;
     start_y = p_start_y;
     end_x   = p_end_x;
     end_y   = p_end_y;
+    rotate_only_active = false;
 }
 
 static void motion_stop() {
@@ -111,36 +114,48 @@ static void pose_updated_callback(dds_callback_context_t* context) {
     rotation_vel = data->omega;
     
     if (mode == MOVING) {
-        // Calculate desired heading (line following with correction)
         float line_angle = AngleBetweenPoints(start_x, start_y, end_x, end_y);
         double distance_from_line = DistanceFromLine(x, y, start_x, start_y, end_x, end_y);
-        
-        // Calculate correction angle based on distance from line
-        float correction = sign_of(distance_from_line)
+
+        // Heading error against pure line direction, used to drive rotate-only state
+        float raw_heading_error = angle_diff(yaw, line_angle);
+        float raw_heading_error_abs = fabsf(raw_heading_error);
+
+        // Update rotate-only state with hysteresis (do this BEFORE computing correction)
+        if (rotate_only_active) {
+            if (raw_heading_error_abs < MOTION_HEADING_ERROR_FULL_SPEED) {
+                rotate_only_active = false;
+            }
+        } else if (raw_heading_error_abs >= MOTION_HEADING_ERROR_ROTATE_ONLY) {
+            rotate_only_active = true;
+        }
+
+        // Correction: zero if rotate-only, else lateral pull
+        float correction;
+        if (rotate_only_active) {
+            correction = 0.0f;
+        } else {
+            correction = sign_of(distance_from_line)
                         * fmin(HALF_PI, fabs(distance_from_line) / MOTION_MAX_CORRECTION_DIST * HALF_PI);
-        
-        // Target heading = line angle + correction to return to line
+        }
+
         float target_yaw = normalize_angle(line_angle + correction);
-        
-        // Calculate heading error (PID setpoint = target_yaw, measurement = current yaw)
+
         float heading_error = angle_diff(yaw, target_yaw);
-        
-        // Update PID to get rotation command
         float rotation_cmd = PIDController_Update(&heading_pid, heading_error, 0.0f);
-        
-        // Calculate distance to goal for speed control
+
         double distance_to_goal = DistanceBetweenPoints(x, y, end_x, end_y);
-        
-        // Calculate heading error magnitude
         float heading_error_abs = fabsf(heading_error);
 
+        // Speed scale: rotate-only forces zero, otherwise gradual ramp on heading_error
         float speed_scale;
-        if (heading_error_abs <= MOTION_HEADING_ERROR_FULL_SPEED) {
+        if (rotate_only_active) {
+            speed_scale = 0.0f;
+        } else if (heading_error_abs <= MOTION_HEADING_ERROR_FULL_SPEED) {
             speed_scale = 1.0f;
         } else if (heading_error_abs >= MOTION_HEADING_ERROR_MIN_SPEED) {
             speed_scale = MOTION_MIN_SPEED_SCALE;
         } else {
-            // Linear interpolation between full speed and min speed
             float t = (heading_error_abs - MOTION_HEADING_ERROR_FULL_SPEED) / 
                     (MOTION_HEADING_ERROR_MIN_SPEED - MOTION_HEADING_ERROR_FULL_SPEED);
             speed_scale = 1.0f - t * (1.0f - MOTION_MIN_SPEED_SCALE);
@@ -152,7 +167,6 @@ static void pose_updated_callback(dds_callback_context_t* context) {
             base_speed = MOTION_FORWARD_SPEED_SLOW;
         }
 
-        // Apply both scalings
         float linear_cmd = base_speed * speed_scale;
         
         // Check if goal reached

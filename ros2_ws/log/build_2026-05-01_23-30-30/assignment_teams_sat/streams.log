@@ -1,0 +1,23 @@
+[0.023s] Invoking command in '/home/kristijan/ros2_ws/build/assignment_teams_sat': /usr/bin/cmake /home/kristijan/ros2_ws/Fields2Cover/build/_deps/ortools-src/examples/assignment_teams_sat -DCMAKE_INSTALL_PREFIX=/home/kristijan/ros2_ws/install/assignment_teams_sat
+[0.303s] -- The CXX compiler identification is GNU 13.3.0
+[0.303s] -- Detecting CXX compiler ABI info
+[0.303s] -- Detecting CXX compiler ABI info - done
+[0.303s] -- Check for working CXX compiler: /usr/bin/c++ - skipped
+[0.303s] -- Detecting CXX compile features
+[0.303s] -- Detecting CXX compile features - done
+[0.304s] -- assignment_teams_sat version: 1.0
+[0.305s] -- Build type: Release
+[0.309s] [31mCMake Error at CMakeLists.txt:69 (find_package):
+[0.309s]   Could not find a package configuration file provided by "ortools" with any
+[0.309s] -- Configuring incomplete, errors occurred!
+[0.310s]   of the following names:
+[0.310s] 
+[0.310s]     ortoolsConfig.cmake
+[0.310s]     ortools-config.cmake
+[0.310s] 
+[0.310s]   Add the installation prefix of "ortools" to CMAKE_PREFIX_PATH or set
+[0.310s]   "ortools_DIR" to a directory containing one of the above files.  If
+[0.310s]   "ortools" provides a separate development package or SDK, be sure it has
+[0.310s]   been installed.
+[0.310s] 
+[0.311s] [0m

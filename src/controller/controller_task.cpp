@@ -76,7 +76,7 @@ static void start_mowing() {
 
     SerialDebug.printf("[CTRL] Starting mowing\r\n");
     robot_state = ROBOT_STATE_MOWING;
-
+    AlgorithmSeedStartPosition();
     go_to_next_algorithm_point();
 }
 

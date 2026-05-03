@@ -12,6 +12,7 @@
 #include <sensor_msgs/msg/imu.h>
 #include <sensor_msgs/msg/nav_sat_fix.h>
 #include <geometry_msgs/msg/quaternion.h>
+#include <std_msgs/msg/float64_multi_array.h>
 
 #include "esp_dds.h"
 #include "esp_timer.h"
@@ -79,15 +80,20 @@ bool IMU_INVERT = false;
 // Bluetooth
 #include "bluetooth/bluetooth_task.h"
 
+// Visualization
+#include "visualization/path_markers.h"
+
 // Simulation
 #include "simulation/sim_task.h"
 
 // -------------------------------------------------------- Micro-ROS ------------------------------------------------------------------
-rcl_publisher_t datum_publisher;
 rcl_publisher_t odom_publisher;
 rcl_publisher_t imu_publisher;
 rcl_publisher_t gps_publisher;
 rcl_subscription_t fused_pose_subscriber;
+
+rcl_publisher_t datum_publisher;
+rcl_publisher_t path_data_publisher;
 
 nav_msgs__msg__Odometry odom_msg;
 sensor_msgs__msg__Imu imu_msg;
@@ -102,9 +108,12 @@ rcl_node_t node;
 void fused_pose_callback(const void* msgin);
 
 unsigned long time_offset = 0;
+
 static bool pending_datum_publish = false;
 static int datum_publish_count = 0;
 static bool datum_published = false;
+
+bool pending_path_publish = false;
 
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){}}
@@ -175,11 +184,15 @@ void init_micro_ros(){
         &fused_pose_subscriber,
         &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
-        "/odometry/filtered/global"
-    ));
+        "/odometry/filtered/global"));
+
+    RCCHECK(rclc_publisher_init_default(
+        &path_data_publisher, &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float64MultiArray),
+        "algo/path_data"));
 
     // create executor
-    RCCHECK(rclc_executor_init(&executor, &support.context, 7, &allocator));
+    RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
 
     RCCHECK(rclc_executor_add_subscription(
         &executor,
@@ -375,7 +388,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             imu_task,
             "IMUTask",
-            4096,
+            2048,
             NULL,
             1,
             NULL,
@@ -387,7 +400,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             gps_task,
             "GPSTask",
-            4096,
+            2048,
             NULL,
             1,
             NULL,
@@ -411,7 +424,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             bluetooth_task,
             "BluetoothTask",
-            8192,
+            4096,
             NULL,
             1,
             NULL,
@@ -508,6 +521,10 @@ static void init_test_path() {
     CONFIG_DATUM = true;
     pending_datum_publish = true;
     datum_publish_count = 0; 
+
+    if (CONFIG_PATH) {
+        pending_path_publish = true;
+    }
 }
 
 // -------------------------------------------------------- PROGRAM START ---------------------------------------------------------------
@@ -560,6 +577,10 @@ void setup() {
     } else {
         SerialDebug.println("[BOOT] Configuration loaded");
         SerialDebug.printf("[BOOT] Datum=%d, Path=%d, Battery=%d\r\n", CONFIG_DATUM, CONFIG_PATH, CONFIG_BATTERY);
+
+        if (CONFIG_PATH) {
+            pending_path_publish = true;
+        }
     }
 
     if (CONFIG_DATUM) {
@@ -636,19 +657,16 @@ void main_task(void* parameter) {
     vTaskDelay(500);
     
     while(1) {
-        // Wait for any notification (message or timer)
         uint32_t notification_value;
         xTaskNotifyWait(0x00, 0xFF, &notification_value, portMAX_DELAY);
-        
-        if (notification_value & DDS_NOTIFY_BIT) { // DDS message notification
+
+        if (notification_value & DDS_NOTIFY_BIT) {
             DDS_TAKE_MUTEX(&thread_context);
             DDS_PROCESS_THREAD_MESSAGES(&thread_context);
             DDS_GIVE_MUTEX(&thread_context);
         }
-        if (notification_value & THREAD_NOTIFY_BIT) { // Timer tick notification
+        if (notification_value & THREAD_NOTIFY_BIT) {
             DDS_TAKE_MUTEX(&thread_context);
-
-            // ------- THREAD LOOP CODE START -------
 
             if (pending_datum_publish) {
                 static unsigned long last_datum_publish = 0;
@@ -666,7 +684,11 @@ void main_task(void* parameter) {
                 }
             }
 
-            // Serial debug commands
+            if (pending_path_publish) {
+                publish_path_markers(&path_data_publisher);
+                pending_path_publish = false;
+            }
+
             if (SerialDebug.available()) {
                 char c = SerialDebug.read();
                 if (c == 's') {
@@ -677,8 +699,6 @@ void main_task(void* parameter) {
             }
 
             RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
-
-            // ------- THREAD LOOP CODE END -------
 
             DDS_PROCESS_THREAD_MESSAGES(&thread_context);
             DDS_GIVE_MUTEX(&thread_context);

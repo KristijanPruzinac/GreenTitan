@@ -155,6 +155,7 @@ static void handle_message(String MessageGroup, String ActionGroup, String DataG
                 if (AlgorithmCaptureEnd()) {
                     CONFIG_PATH = true;
                     SaveConfiguration();
+                    pending_path_publish = true;
                     bt_send("MOWER/CAPTURE/END/OK");
                 } else {
                     bt_send("MOWER/CAPTURE/END/FAIL");

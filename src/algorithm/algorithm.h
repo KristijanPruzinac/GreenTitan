@@ -47,7 +47,12 @@ bool AlgorithmCaptureRemovePoint();
 bool AlgorithmCaptureEnd();
 
 void AlgorithmMotionSetTargetPoint(double tLon, double tLat);
+void AlgorithmSeedStartPosition();
+
 String AlgorithmGetPathString();
 bool AlgorithmPopulatePathFromString(String& readData);
+
+const std::vector<std::vector<std::vector<long long>>>& AlgorithmGetExtOutlines();
+const std::vector<std::vector<std::vector<long long>>>& AlgorithmGetIntersectionPaths();
 
 #endif

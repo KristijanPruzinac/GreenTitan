@@ -16,6 +16,8 @@
 
 extern HardwareSerial SerialDebug;
 
+extern bool pending_path_publish;
+
 bool InitBluetooth();
 String BluetoothRead();
 void BluetoothWrite(String message);
