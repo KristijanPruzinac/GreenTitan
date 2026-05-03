@@ -27,15 +27,15 @@ static void calc_checksum(unsigned char* CK) {
 
 static void gps_read() {
   if (SIMULATION_ENABLED) {
-    const float METERS_PER_LAT = 111111.0f;
-    const double BASE_LAT = 55.0f; // Random latitude
-    const double BASE_LON = 32.0f; // Random longitude
+    const double METERS_PER_LAT = 111111.0;
+    const double BASE_LAT = 45.5; // Random latitude
+    const double BASE_LON = 18.0; // Random longitude
 
     gps_data_t gpsData = {
-        BASE_LAT + (odom_y / METERS_PER_LAT) + gaussian_noise(0.0000001f),  // ~3cm
-        BASE_LON + (odom_x / (METERS_PER_LAT * cosf(BASE_LAT * M_PI / 180.0f))) + gaussian_noise(0.0000001f),  // ~3cm
-        0.0f,
-        0.014f + gaussian_noise(0.005f),
+        BASE_LAT + (odom_y / METERS_PER_LAT) + gaussian_noise(0.0000001),  // ~3cm
+        BASE_LON + (odom_x / (METERS_PER_LAT * cosf(BASE_LAT * M_PI / 180.0))) + gaussian_noise(0.0000001),  // ~3cm
+        0.0,
+        0.014 + gaussian_noise(0.005),
     };
     dds_result_t result = DDS_PUBLISH("/gps", gpsData);
     if (result != DDS_SUCCESS) {

@@ -1,0 +1,4 @@
+source;share/robot_package/hook/pythonpath.dsv
+source;share/robot_package/hook/pythonpath.sh
+source;share/robot_package/hook/ament_prefix_path.dsv
+source;share/robot_package/hook/ament_prefix_path.sh

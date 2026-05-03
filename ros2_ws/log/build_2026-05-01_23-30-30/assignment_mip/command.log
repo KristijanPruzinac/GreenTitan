@@ -1,0 +1,1 @@
+Invoking command in '/home/kristijan/ros2_ws/build/assignment_mip': /usr/bin/cmake /home/kristijan/ros2_ws/Fields2Cover/build/_deps/ortools-src/examples/assignment_mip -DCMAKE_INSTALL_PREFIX=/home/kristijan/ros2_ws/install/assignment_mip

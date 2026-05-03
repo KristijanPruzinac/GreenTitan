@@ -16,8 +16,8 @@ extern HardwareSerial SerialDebug;
 
 extern bool IMU_INVERT;
 
-extern float odom_linear_velocity;
-extern float odom_angular_velocity;
+extern double odom_linear_velocity;
+extern double odom_angular_velocity;
 
 bool init_imu();
 void imu_calibrate();

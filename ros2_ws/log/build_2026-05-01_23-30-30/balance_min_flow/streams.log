@@ -1,0 +1,23 @@
+[0.033s] Invoking command in '/home/kristijan/ros2_ws/build/balance_min_flow': /usr/bin/cmake /home/kristijan/ros2_ws/Fields2Cover/build/_deps/ortools-src/examples/balance_min_flow -DCMAKE_INSTALL_PREFIX=/home/kristijan/ros2_ws/install/balance_min_flow
+[0.303s] -- The CXX compiler identification is GNU 13.3.0
+[0.303s] -- Detecting CXX compiler ABI info
+[0.313s] -- Detecting CXX compiler ABI info - done
+[0.319s] -- Check for working CXX compiler: /usr/bin/c++ - skipped
+[0.319s] -- Detecting CXX compile features
+[0.319s] -- Detecting CXX compile features - done
+[0.319s] -- balance_min_flow version: 1.0
+[0.320s] -- Build type: Release
+[0.329s] [31mCMake Error at CMakeLists.txt:69 (find_package):
+[0.329s]   Could not find a package configuration file provided by "ortools" with any
+[0.329s]   of the following names:
+[0.329s] 
+[0.329s]     ortoolsConfig.cmake
+[0.329s]     ortools-config.cmake
+[0.329s] 
+[0.330s]   Add the installation prefix of "ortools" to CMAKE_PREFIX_PATH or set
+[0.330s]   "ortools_DIR" to a directory containing one of the above files.  If
+[0.330s]   "ortools" provides a separate development package or SDK, be sure it has
+[0.330s]   been installed.
+[0.330s] 
+[0.330s] [0m
+[0.330s] -- Configuring incomplete, errors occurred!

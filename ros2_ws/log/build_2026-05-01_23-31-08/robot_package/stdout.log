@@ -1,0 +1,41 @@
+running egg_info
+creating ../../build/robot_package/robot_package.egg-info
+writing ../../build/robot_package/robot_package.egg-info/PKG-INFO
+writing dependency_links to ../../build/robot_package/robot_package.egg-info/dependency_links.txt
+writing entry points to ../../build/robot_package/robot_package.egg-info/entry_points.txt
+writing requirements to ../../build/robot_package/robot_package.egg-info/requires.txt
+writing top-level names to ../../build/robot_package/robot_package.egg-info/top_level.txt
+writing manifest file '../../build/robot_package/robot_package.egg-info/SOURCES.txt'
+reading manifest file '../../build/robot_package/robot_package.egg-info/SOURCES.txt'
+writing manifest file '../../build/robot_package/robot_package.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/kristijan/ros2_ws/build/robot_package/build
+creating /home/kristijan/ros2_ws/build/robot_package/build/lib
+creating /home/kristijan/ros2_ws/build/robot_package/build/lib/robot_package
+copying robot_package/datum_relay.py -> /home/kristijan/ros2_ws/build/robot_package/build/lib/robot_package
+copying robot_package/__init__.py -> /home/kristijan/ros2_ws/build/robot_package/build/lib/robot_package
+running install
+running install_lib
+creating /home/kristijan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package
+copying /home/kristijan/ros2_ws/build/robot_package/build/lib/robot_package/datum_relay.py -> /home/kristijan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package
+copying /home/kristijan/ros2_ws/build/robot_package/build/lib/robot_package/__init__.py -> /home/kristijan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package
+byte-compiling /home/kristijan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package/datum_relay.py to datum_relay.cpython-312.pyc
+byte-compiling /home/kristijan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package/__init__.py to __init__.cpython-312.pyc
+running install_data
+creating /home/kristijan/ros2_ws/install/robot_package/share/ament_index
+creating /home/kristijan/ros2_ws/install/robot_package/share/ament_index/resource_index
+creating /home/kristijan/ros2_ws/install/robot_package/share/ament_index/resource_index/packages
+copying resource/robot_package -> /home/kristijan/ros2_ws/install/robot_package/share/ament_index/resource_index/packages
+copying package.xml -> /home/kristijan/ros2_ws/install/robot_package/share/robot_package
+creating /home/kristijan/ros2_ws/install/robot_package/share/robot_package/launch
+copying launch/robot.launch.xml -> /home/kristijan/ros2_ws/install/robot_package/share/robot_package/launch
+creating /home/kristijan/ros2_ws/install/robot_package/share/robot_package/config
+copying config/ekf_global.yaml -> /home/kristijan/ros2_ws/install/robot_package/share/robot_package/config
+copying config/navsat.yaml -> /home/kristijan/ros2_ws/install/robot_package/share/robot_package/config
+copying config/ekf_local.yaml -> /home/kristijan/ros2_ws/install/robot_package/share/robot_package/config
+running install_egg_info
+Copying ../../build/robot_package/robot_package.egg-info to /home/kristijan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package-0.0.0-py3.12.egg-info
+running install_scripts
+Installing datum_relay script to /home/kristijan/ros2_ws/install/robot_package/lib/robot_package
+writing list of installed files to '/home/kristijan/ros2_ws/build/robot_package/install.log'

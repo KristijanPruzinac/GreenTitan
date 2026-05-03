@@ -15,14 +15,13 @@ void toggle_status_led();
 void warning();
 void error();
 
-float AngleBetweenPoints(float start_x, float start_y, float end_x, float end_y);
-float DistanceFromLine(float x, float y,
-                       float start_x, float start_y,
-                       float end_x,   float end_y);
-float DistanceBetweenPoints(float x1, float y1, float x2, float y2);
-bool has_passed_goal(float x, float y, float start_x, float start_y, float end_x, float end_y);
+float AngleBetweenPoints(double start_x, double start_y, double end_x, double end_y);
+double DistanceFromLine(double x, double y,
+                        double start_x, double start_y,
+                        double end_x,   double end_y);
+double DistanceBetweenPoints(double x1, double y1, double x2, double y2);
+bool has_passed_goal(double x, double y, double start_x, double start_y, double end_x, double end_y);
 float normalize_angle(float radians);
 float angle_diff(float current, float target);
-int sign_of(float value);
-
+int sign_of(double value);
 #endif

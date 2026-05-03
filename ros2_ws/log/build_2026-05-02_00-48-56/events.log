@@ -1,0 +1,183 @@
+[0.000000] (-) TimerEvent: {}
+[0.000458] (-) JobUnselected: {'identifier': 'assignment_groups_mip'}
+[0.000538] (-) JobUnselected: {'identifier': 'assignment_groups_sat'}
+[0.000561] (-) JobUnselected: {'identifier': 'assignment_linear_sum_assignment'}
+[0.000579] (-) JobUnselected: {'identifier': 'assignment_min_flow'}
+[0.000595] (-) JobUnselected: {'identifier': 'assignment_mip'}
+[0.000610] (-) JobUnselected: {'identifier': 'assignment_sat'}
+[0.000625] (-) JobUnselected: {'identifier': 'assignment_task_sizes_mip'}
+[0.000639] (-) JobUnselected: {'identifier': 'assignment_task_sizes_sat'}
+[0.000653] (-) JobUnselected: {'identifier': 'assignment_teams_mip'}
+[0.000667] (-) JobUnselected: {'identifier': 'assignment_teams_sat'}
+[0.000681] (-) JobUnselected: {'identifier': 'assumptions_sample_sat'}
+[0.000695] (-) JobUnselected: {'identifier': 'balance_min_flow'}
+[0.000708] (-) JobUnselected: {'identifier': 'basic_example'}
+[0.000722] (-) JobUnselected: {'identifier': 'bfs_directed'}
+[0.000735] (-) JobUnselected: {'identifier': 'bfs_one_to_all'}
+[0.000749] (-) JobUnselected: {'identifier': 'bfs_undirected'}
+[0.000763] (-) JobUnselected: {'identifier': 'bin_packing_mip'}
+[0.000777] (-) JobUnselected: {'identifier': 'binpacking_2d_sat'}
+[0.000790] (-) JobUnselected: {'identifier': 'binpacking_problem_sat'}
+[0.000808] (-) JobUnselected: {'identifier': 'bool_or_sample_sat'}
+[0.000822] (-) JobUnselected: {'identifier': 'channeling_sample_sat'}
+[0.000836] (-) JobUnselected: {'identifier': 'clone_model_sample_sat'}
+[0.000849] (-) JobUnselected: {'identifier': 'constraint_programming_cp'}
+[0.000863] (-) JobUnselected: {'identifier': 'costas_array_sat'}
+[0.000876] (-) JobUnselected: {'identifier': 'course_scheduling'}
+[0.000889] (-) JobUnselected: {'identifier': 'course_scheduling_run'}
+[0.000903] (-) JobUnselected: {'identifier': 'cp_is_fun_cp'}
+[0.000917] (-) JobUnselected: {'identifier': 'cp_is_fun_sat'}
+[0.000930] (-) JobUnselected: {'identifier': 'cp_sat_example'}
+[0.000944] (-) JobUnselected: {'identifier': 'cryptarithm_sat'}
+[0.000957] (-) JobUnselected: {'identifier': 'cvrp_disjoint_tw'}
+[0.000971] (-) JobUnselected: {'identifier': 'cvrptw'}
+[0.000984] (-) JobUnselected: {'identifier': 'cvrptw_soft_capacity'}
+[0.000998] (-) JobUnselected: {'identifier': 'cvrptw_with_breaks'}
+[0.001011] (-) JobUnselected: {'identifier': 'cvrptw_with_precedences'}
+[0.001025] (-) JobUnselected: {'identifier': 'cvrptw_with_refueling'}
+[0.001038] (-) JobUnselected: {'identifier': 'cvrptw_with_resources'}
+[0.001051] (-) JobUnselected: {'identifier': 'cvrptw_with_stop_times_and_resources'}
+[0.001065] (-) JobUnselected: {'identifier': 'cvrptw_with_time_dependent_costs'}
+[0.001079] (-) JobUnselected: {'identifier': 'dag_shortest_path_one_to_all'}
+[0.001092] (-) JobUnselected: {'identifier': 'dag_shortest_path_sequential'}
+[0.001106] (-) JobUnselected: {'identifier': 'dag_simple_shortest_path'}
+[0.001119] (-) JobUnselected: {'identifier': 'dijkstra_all_pairs_shortest_paths'}
+[0.001132] (-) JobUnselected: {'identifier': 'dijkstra_directed'}
+[0.001146] (-) JobUnselected: {'identifier': 'dijkstra_one_to_all'}
+[0.001159] (-) JobUnselected: {'identifier': 'dijkstra_sequential'}
+[0.001172] (-) JobUnselected: {'identifier': 'dijkstra_undirected'}
+[0.001186] (-) JobUnselected: {'identifier': 'dimacs_assignment'}
+[0.001199] (-) JobUnselected: {'identifier': 'dobble_ls'}
+[0.001212] (-) JobUnselected: {'identifier': 'earliness_tardiness_cost_sample_sat'}
+[0.001225] (-) JobUnselected: {'identifier': 'flow_api'}
+[0.001239] (-) JobUnselected: {'identifier': 'frequency_assignment_problem'}
+[0.001252] (-) JobUnselected: {'identifier': 'golomb_sat'}
+[0.001265] (-) JobUnselected: {'identifier': 'integer_programming'}
+[0.001278] (-) JobUnselected: {'identifier': 'integer_programming_example'}
+[0.001292] (-) JobUnselected: {'identifier': 'interval_sample_sat'}
+[0.001305] (-) JobUnselected: {'identifier': 'jobshop_sat'}
+[0.001319] (-) JobUnselected: {'identifier': 'json-populate'}
+[0.001333] (-) JobUnselected: {'identifier': 'knapsack'}
+[0.001366] (-) JobUnselected: {'identifier': 'knapsack_2d_sat'}
+[0.001391] (-) JobUnselected: {'identifier': 'linear_assignment_api'}
+[0.001399] (-) JobUnselected: {'identifier': 'linear_programming'}
+[0.001418] (-) JobUnselected: {'identifier': 'linear_programming_example'}
+[0.001424] (-) JobUnselected: {'identifier': 'linear_solver_protocol_buffers'}
+[0.001430] (-) JobUnselected: {'identifier': 'literal_sample_sat'}
+[0.001436] (-) JobUnselected: {'identifier': 'magic_sequence_sat'}
+[0.001442] (-) JobUnselected: {'identifier': 'magic_square_sat'}
+[0.001448] (-) JobUnselected: {'identifier': 'matplot-populate'}
+[0.001455] (-) JobUnselected: {'identifier': 'matplot-src'}
+[0.001461] (-) JobUnselected: {'identifier': 'max_flow'}
+[0.001467] (-) JobUnselected: {'identifier': 'min_cost_flow'}
+[0.001473] (-) JobUnselected: {'identifier': 'minimal_jobshop_cp'}
+[0.001479] (-) JobUnselected: {'identifier': 'minimal_jobshop_sat'}
+[0.001485] (-) JobUnselected: {'identifier': 'mip_var_array'}
+[0.001491] (-) JobUnselected: {'identifier': 'mps_driver'}
+[0.001498] (-) JobUnselected: {'identifier': 'multi_knapsack_sat'}
+[0.001504] (-) JobUnselected: {'identifier': 'multiple_knapsack_mip'}
+[0.001514] (-) JobUnselected: {'identifier': 'multiple_knapsack_sat'}
+[0.001520] (-) JobUnselected: {'identifier': 'network_routing_sat'}
+[0.001527] (-) JobUnselected: {'identifier': 'nlohmann_json'}
+[0.001533] (-) JobUnselected: {'identifier': 'no_overlap_sample_sat'}
+[0.001539] (-) JobUnselected: {'identifier': 'non_linear_sat'}
+[0.001546] (-) JobUnselected: {'identifier': 'nqueens'}
+[0.001552] (-) JobUnselected: {'identifier': 'nqueens_cp'}
+[0.001558] (-) JobUnselected: {'identifier': 'nqueens_sat'}
+[0.001564] (-) JobUnselected: {'identifier': 'nurses_cp'}
+[0.001570] (-) JobUnselected: {'identifier': 'nurses_sat'}
+[0.001576] (-) JobUnselected: {'identifier': 'optional_interval_sample_sat'}
+[0.001582] (-) JobUnselected: {'identifier': 'ortools-populate'}
+[0.001588] (-) JobUnselected: {'identifier': 'pdlp_solve'}
+[0.001594] (-) JobUnselected: {'identifier': 'pdptw'}
+[0.001600] (-) JobUnselected: {'identifier': 'qap_sat'}
+[0.001606] (-) JobUnselected: {'identifier': 'rabbits_and_pheasants_cp'}
+[0.001612] (-) JobUnselected: {'identifier': 'rabbits_and_pheasants_sat'}
+[0.001618] (-) JobUnselected: {'identifier': 'random_tsp'}
+[0.001624] (-) JobUnselected: {'identifier': 'ranking_sample_sat'}
+[0.001630] (-) JobUnselected: {'identifier': 'reified_sample_sat'}
+[0.001637] (-) JobUnselected: {'identifier': 'schedule_requests_sat'}
+[0.001646] (-) JobUnselected: {'identifier': 'search_for_all_solutions_sample_sat'}
+[0.001656] (-) JobUnselected: {'identifier': 'shift_minimization_sat'}
+[0.001663] (-) JobUnselected: {'identifier': 'simple_cp_program'}
+[0.001669] (-) JobUnselected: {'identifier': 'simple_glop_program'}
+[0.001676] (-) JobUnselected: {'identifier': 'simple_knapsack_program'}
+[0.001682] (-) JobUnselected: {'identifier': 'simple_lp_program'}
+[0.001688] (-) JobUnselected: {'identifier': 'simple_ls_program'}
+[0.001694] (-) JobUnselected: {'identifier': 'simple_max_flow_program'}
+[0.001700] (-) JobUnselected: {'identifier': 'simple_min_cost_flow_program'}
+[0.001707] (-) JobUnselected: {'identifier': 'simple_mip_program'}
+[0.001713] (-) JobUnselected: {'identifier': 'simple_pdlp_program'}
+[0.001719] (-) JobUnselected: {'identifier': 'simple_routing_program'}
+[0.001725] (-) JobUnselected: {'identifier': 'simple_sat_program'}
+[0.001731] (-) JobUnselected: {'identifier': 'slitherlink_sat'}
+[0.001737] (-) JobUnselected: {'identifier': 'solution_hinting_sample_sat'}
+[0.001744] (-) JobUnselected: {'identifier': 'solve_and_print_intermediate_solutions_sample_sat'}
+[0.001750] (-) JobUnselected: {'identifier': 'solve_with_time_limit_sample_sat'}
+[0.001756] (-) JobUnselected: {'identifier': 'sports_scheduling_sat'}
+[0.001763] (-) JobUnselected: {'identifier': 'steering_functions'}
+[0.001769] (-) JobUnselected: {'identifier': 'steering_functions-populate'}
+[0.001775] (-) JobUnselected: {'identifier': 'step_function_sample_sat'}
+[0.001782] (-) JobUnselected: {'identifier': 'stigler_diet'}
+[0.001788] (-) JobUnselected: {'identifier': 'stop_after_n_solutions_sample_sat'}
+[0.001808] (-) JobUnselected: {'identifier': 'strawberry_fields_with_column_generation'}
+[0.001815] (-) JobUnselected: {'identifier': 'tsp'}
+[0.001821] (-) JobUnselected: {'identifier': 'tsp_circuit_board'}
+[0.001827] (-) JobUnselected: {'identifier': 'tsp_cities'}
+[0.001833] (-) JobUnselected: {'identifier': 'tsp_cities_routes'}
+[0.001839] (-) JobUnselected: {'identifier': 'tsp_distance_matrix'}
+[0.001844] (-) JobUnselected: {'identifier': 'uncapacitated_facility_location'}
+[0.001850] (-) JobUnselected: {'identifier': 'variable_intervals_sat'}
+[0.001856] (-) JobUnselected: {'identifier': 'vector_bin_packing_solver'}
+[0.001862] (-) JobUnselected: {'identifier': 'vrp'}
+[0.001868] (-) JobUnselected: {'identifier': 'vrp_breaks'}
+[0.001874] (-) JobUnselected: {'identifier': 'vrp_capacity'}
+[0.001880] (-) JobUnselected: {'identifier': 'vrp_drop_nodes'}
+[0.001886] (-) JobUnselected: {'identifier': 'vrp_global_span'}
+[0.001892] (-) JobUnselected: {'identifier': 'vrp_initial_routes'}
+[0.001898] (-) JobUnselected: {'identifier': 'vrp_pickup_delivery'}
+[0.001904] (-) JobUnselected: {'identifier': 'vrp_pickup_delivery_fifo'}
+[0.001910] (-) JobUnselected: {'identifier': 'vrp_pickup_delivery_lifo'}
+[0.001916] (-) JobUnselected: {'identifier': 'vrp_resources'}
+[0.001922] (-) JobUnselected: {'identifier': 'vrp_routes'}
+[0.001928] (-) JobUnselected: {'identifier': 'vrp_solution_callback'}
+[0.001934] (-) JobUnselected: {'identifier': 'vrp_starts_ends'}
+[0.001940] (-) JobUnselected: {'identifier': 'vrp_time_windows'}
+[0.001947] (-) JobUnselected: {'identifier': 'vrp_with_time_limit'}
+[0.001953] (-) JobUnselected: {'identifier': 'vrptw_store_solution_data'}
+[0.001959] (-) JobUnselected: {'identifier': 'weighted_tardiness_sat'}
+[0.001965] (-) JobUnselected: {'identifier': 'xpress_use'}
+[0.001973] (robot_package) JobQueued: {'identifier': 'robot_package', 'dependencies': OrderedDict()}
+[0.001983] (robot_package) JobStarted: {'identifier': 'robot_package'}
+[0.099841] (-) TimerEvent: {}
+[0.200149] (-) TimerEvent: {}
+[0.300393] (-) TimerEvent: {}
+[0.400614] (-) TimerEvent: {}
+[0.500918] (-) TimerEvent: {}
+[0.513971] (robot_package) Command: {'cmd': ['/usr/bin/python3', '-W', 'ignore:setup.py install is deprecated', '-W', 'ignore:easy_install command is deprecated', 'setup.py', 'egg_info', '--egg-base', '../../build/robot_package', 'build', '--build-base', '/home/kristijan/ros2_ws/build/robot_package/build', 'install', '--record', '/home/kristijan/ros2_ws/build/robot_package/install.log', '--single-version-externally-managed', 'install_data'], 'cwd': '/home/kristijan/ros2_ws/src/robot_package', 'env': {'GJS_DEBUG_TOPICS': 'JS ERROR;JS LOG', 'LESSOPEN': '| /usr/bin/lesspipe %s', 'LANGUAGE': 'en_US', 'USER': 'kristijan', 'XDG_SEAT': 'seat0', 'XDG_SESSION_TYPE': 'x11', 'SHLVL': '1', 'LD_LIBRARY_PATH': '/opt/ros/jazzy/opt/rviz_ogre_vendor/lib:/opt/ros/jazzy/lib/x86_64-linux-gnu:/opt/ros/jazzy/opt/gz_math_vendor/lib:/opt/ros/jazzy/opt/gz_utils_vendor/lib:/opt/ros/jazzy/opt/gz_cmake_vendor/lib:/opt/ros/jazzy/lib', 'HOME': '/home/kristijan', 'OLDPWD': '/home/kristijan/ros2_ws', 'DESKTOP_SESSION': 'cinnamon', 'NVM_BIN': '/home/kristijan/.nvm/versions/node/v25.3.0/bin', 'NVM_INC': '/home/kristijan/.nvm/versions/node/v25.3.0/include/node', 'GIO_LAUNCHED_DESKTOP_FILE': '/usr/share/applications/cinnamon.desktop', 'ROS_PYTHON_VERSION': '3', 'GTK_MODULES': 'gail:atk-bridge', 'XDG_SEAT_PATH': '/org/freedesktop/DisplayManager/Seat0', 'LC_MONETARY': 'hr_HR.UTF-8', 'CINNAMON_VERSION': '6.4.8', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/1000/bus', 'COLORTERM': 'truecolor', 'TERMINATOR_DBUS_NAME': 'net.tenshu.Terminator21a9d5db22c73a993ff0b42f64b396873', 'LIBVIRT_DEFAULT_URI': 'qemu:///system', 'GIO_LAUNCHED_DESKTOP_FILE_PID': '4151', 'NVM_DIR': '/home/kristijan/.nvm', 'COLCON_PREFIX_PATH': '/home/kristijan/ros2_ws/install', 'ROS_DISTRO': 'jazzy', 'LOGNAME': 'kristijan', '_': '/usr/bin/colcon', 'ROS_VERSION': '2', 'XDG_SESSION_CLASS': 'user', 'TERM': 'xterm-256color', 'XDG_SESSION_ID': 'c4', 'GNOME_DESKTOP_SESSION_ID': 'this-is-deprecated', 'PATH': '/opt/ros/jazzy/bin:/home/kristijan/.nvm/versions/node/v25.3.0/bin:/home/kristijan/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/kristijan/.local/bin:/home/kristijan/android-studio/bin:/home/kristijan/.local/bin:/home/kristijan/.pub-cache/bin', 'SESSION_MANAGER': 'local/kristijan-HP-250-15-6-inch-G9-Notebook-PC:@/tmp/.ICE-unix/3839,unix/kristijan-HP-250-15-6-inch-G9-Notebook-PC:/tmp/.ICE-unix/3839', 'GDM_LANG': 'en_US', 'GTK3_MODULES': 'xapp-gtk3-module', 'XDG_SESSION_PATH': '/org/freedesktop/DisplayManager/Session1', 'LC_ADDRESS': 'hr_HR.UTF-8', 'XDG_RUNTIME_DIR': '/run/user/1000', 'DISPLAY': ':0', 'TERMINATOR_DBUS_PATH': '/net/tenshu/Terminator2', 'LANG': 'en_US.UTF-8', 'XDG_CURRENT_DESKTOP': 'X-Cinnamon', 'LC_TELEPHONE': 'hr_HR.UTF-8', 'XDG_SESSION_DESKTOP': 'cinnamon', 'XAUTHORITY': '/home/kristijan/.Xauthority', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=00:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.avif=01;35:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:*~=00;90:*#=00;90:*.bak=00;90:*.crdownload=00;90:*.dpkg-dist=00;90:*.dpkg-new=00;90:*.dpkg-old=00;90:*.dpkg-tmp=00;90:*.old=00;90:*.orig=00;90:*.part=00;90:*.rej=00;90:*.rpmnew=00;90:*.rpmorig=00;90:*.rpmsave=00;90:*.swp=00;90:*.tmp=00;90:*.ucf-dist=00;90:*.ucf-new=00;90:*.ucf-old=00;90:', 'XDG_GREETER_DATA_DIR': '/var/lib/lightdm-data/kristijan', 'AMENT_PREFIX_PATH': '/home/kristijan/ros2_ws/install/robot_package:/home/kristijan/ros2_ws/install/robot_coverage:/opt/ros/jazzy', 'SHELL': '/bin/bash', 'LC_NAME': 'hr_HR.UTF-8', 'TERMINATOR_UUID': 'urn:uuid:6e2393e5-f3e1-407d-9c57-1619ce4c5597', 'QT_ACCESSIBILITY': '1', 'GDMSESSION': 'cinnamon', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'LC_MEASUREMENT': 'hr_HR.UTF-8', 'GPG_AGENT_INFO': '/run/user/1000/gnupg/S.gpg-agent:0:1', 'GJS_DEBUG_OUTPUT': 'stderr', 'LC_IDENTIFICATION': 'hr_HR.UTF-8', 'ROS_AUTOMATIC_DISCOVERY_RANGE': 'SUBNET', 'XDG_VTNR': '7', 'PWD': '/home/kristijan/ros2_ws/build/robot_package', 'XDG_CONFIG_DIRS': '/etc/xdg/xdg-cinnamon:/etc/xdg', 'NVM_CD_FLAGS': '', 'XDG_DATA_DIRS': '/usr/share/cinnamon:/usr/share/gnome:/home/kristijan/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share:/usr/local/share:/usr/share', 'PYTHONPATH': '/home/kristijan/ros2_ws/build/robot_package/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kristijan/ros2_ws/install/robot_package/lib/python3.12/site-packages:/home/kristijan/ros2_ws/install/robot_package/lib/python3.12/site-packages:/home/kristijan/ros2_ws/install/robot_coverage/lib/python3.12/site-packages:/opt/ros/jazzy/lib/python3.12/site-packages', 'LC_NUMERIC': 'hr_HR.UTF-8', 'LC_PAPER': 'hr_HR.UTF-8', 'COLCON': '1', 'VTE_VERSION': '7600', 'CMAKE_PREFIX_PATH': '/opt/ros/jazzy/opt/gz_math_vendor:/opt/ros/jazzy/opt/gz_utils_vendor:/opt/ros/jazzy/opt/gz_cmake_vendor'}, 'shell': False}
+[0.601110] (-) TimerEvent: {}
+[0.679441] (robot_package) StdoutLine: {'line': b'running egg_info\n'}
+[0.690072] (robot_package) StdoutLine: {'line': b'writing ../../build/robot_package/robot_package.egg-info/PKG-INFO\n'}
+[0.690383] (robot_package) StdoutLine: {'line': b'writing dependency_links to ../../build/robot_package/robot_package.egg-info/dependency_links.txt\n'}
+[0.690436] (robot_package) StdoutLine: {'line': b'writing entry points to ../../build/robot_package/robot_package.egg-info/entry_points.txt\n'}
+[0.690474] (robot_package) StdoutLine: {'line': b'writing requirements to ../../build/robot_package/robot_package.egg-info/requires.txt\n'}
+[0.690509] (robot_package) StdoutLine: {'line': b'writing top-level names to ../../build/robot_package/robot_package.egg-info/top_level.txt\n'}
+[0.701274] (-) TimerEvent: {}
+[0.712484] (robot_package) StdoutLine: {'line': b"reading manifest file '../../build/robot_package/robot_package.egg-info/SOURCES.txt'\n"}
+[0.712960] (robot_package) StdoutLine: {'line': b"writing manifest file '../../build/robot_package/robot_package.egg-info/SOURCES.txt'\n"}
+[0.713039] (robot_package) StdoutLine: {'line': b'running build\n'}
+[0.713079] (robot_package) StdoutLine: {'line': b'running build_py\n'}
+[0.713225] (robot_package) StdoutLine: {'line': b'running install\n'}
+[0.717049] (robot_package) StdoutLine: {'line': b'running install_lib\n'}
+[0.728179] (robot_package) StdoutLine: {'line': b'running install_data\n'}
+[0.728285] (robot_package) StdoutLine: {'line': b'copying config/navsat.yaml -> /home/kristijan/ros2_ws/install/robot_package/share/robot_package/config\n'}
+[0.728480] (robot_package) StdoutLine: {'line': b'running install_egg_info\n'}
+[0.739769] (robot_package) StdoutLine: {'line': b"removing '/home/kristijan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package-0.0.0-py3.12.egg-info' (and everything under it)\n"}
+[0.740027] (robot_package) StdoutLine: {'line': b'Copying ../../build/robot_package/robot_package.egg-info to /home/kristijan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package-0.0.0-py3.12.egg-info\n'}
+[0.740217] (robot_package) StdoutLine: {'line': b'running install_scripts\n'}
+[0.801496] (-) TimerEvent: {}
+[0.825642] (robot_package) StdoutLine: {'line': b'Installing datum_relay script to /home/kristijan/ros2_ws/install/robot_package/lib/robot_package\n'}
+[0.825972] (robot_package) StdoutLine: {'line': b"writing list of installed files to '/home/kristijan/ros2_ws/build/robot_package/install.log'\n"}
+[0.847240] (robot_package) CommandEnded: {'returncode': 0}
+[0.855814] (robot_package) JobEnded: {'identifier': 'robot_package', 'rc': 0}
+[0.856267] (-) EventReactorShutdown: {}

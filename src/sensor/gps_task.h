@@ -17,8 +17,8 @@ extern HardwareSerial SerialDebug;
 
 extern bool ENABLE_GPS;
 
-extern float odom_x;
-extern float odom_y;
+extern double odom_x;
+extern double odom_y;
 
 bool init_gps();
 void gps_task(void* parameter);

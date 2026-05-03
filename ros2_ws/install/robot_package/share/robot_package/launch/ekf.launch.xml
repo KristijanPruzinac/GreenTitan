@@ -1,0 +1,23 @@
+<launch>
+  <arg name="datum_lat" default="0.0"/>
+  <arg name="datum_lon" default="0.0"/>
+
+  <node pkg="robot_localization" exec="ekf_node"
+        name="ekf_local" output="screen">
+    <param from="$(find-pkg-share robot_package)/config/ekf_local.yaml"/>
+    <remap from="/odometry/filtered" to="/odometry/filtered/local"/>
+  </node>
+
+  <node pkg="robot_localization" exec="navsat_transform_node"
+        name="navsat_transform" output="screen">
+    <param from="$(find-pkg-share robot_package)/config/navsat.yaml"/>
+    <param name="datum" value="[$(var datum_lat), $(var datum_lon), 0.0]"/>
+    <remap from="/odometry/filtered" to="/odometry/filtered/local"/>
+  </node>
+
+  <node pkg="robot_localization" exec="ekf_node"
+        name="ekf_global" output="screen">
+    <param from="$(find-pkg-share robot_package)/config/ekf_global.yaml"/>
+    <remap from="/odometry/filtered" to="/odometry/filtered/global"/>
+  </node>
+</launch>

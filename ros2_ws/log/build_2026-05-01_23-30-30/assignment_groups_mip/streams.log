@@ -1,0 +1,23 @@
+[0.032s] Invoking command in '/home/kristijan/ros2_ws/build/assignment_groups_mip': /usr/bin/cmake /home/kristijan/ros2_ws/Fields2Cover/build/_deps/ortools-src/examples/assignment_groups_mip -DCMAKE_INSTALL_PREFIX=/home/kristijan/ros2_ws/install/assignment_groups_mip
+[0.137s] -- The CXX compiler identification is GNU 13.3.0
+[0.146s] -- Detecting CXX compiler ABI info
+[0.285s] -- Detecting CXX compiler ABI info - done
+[0.303s] -- Check for working CXX compiler: /usr/bin/c++ - skipped
+[0.303s] -- Detecting CXX compile features
+[0.303s] -- Detecting CXX compile features - done
+[0.303s] -- assignment_groups_mip version: 1.0
+[0.303s] -- Build type: Release
+[0.324s] [31mCMake Error at CMakeLists.txt:69 (find_package):
+[0.324s]   Could not find a package configuration file provided by "ortools" with any
+[0.324s]   of the following names:
+[0.324s] 
+[0.324s]     ortoolsConfig.cmake
+[0.325s]     ortools-config.cmake
+[0.325s] 
+[0.325s]   Add the installation prefix of "ortools" to CMAKE_PREFIX_PATH or set
+[0.325s]   "ortools_DIR" to a directory containing one of the above files.  If
+[0.325s]   "ortools" provides a separate development package or SDK, be sure it has
+[0.325s]   been installed.
+[0.325s] 
+[0.325s] [0m
+[0.325s] -- Configuring incomplete, errors occurred!
