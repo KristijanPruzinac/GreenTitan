@@ -691,9 +691,19 @@ void main_task(void* parameter) {
 
             if (SerialDebug.available()) {
                 char c = SerialDebug.read();
-                if (c == 's') {
+                if (c == 'p') {
                     SerialDebug.println("[DEBUG] Triggering MOWER/START via serial");
                     controller_signal_t signal = { SIGNAL_START_MOWING };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'o') {
+                    SerialDebug.println("[DEBUG] Triggering obstacle avoidance via serial");
+                    controller_signal_t signal = { SIGNAL_OBSTACLE };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'b') {
+                    SerialDebug.println("[DEBUG] Triggering rain sensor via serial");
+                    controller_signal_t signal = { SIGNAL_RAIN };
                     DDS_PUBLISH("/controller/signal", signal);
                 }
             }

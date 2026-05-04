@@ -8,10 +8,10 @@ static PIDController heading_pid;
 // PID tuning parameters (adjust these)
 #define PID_KP      0.8f    // Proportional gain
 #define PID_KI      0.01f    // Integral gain
-#define PID_KD      1.5f    // Derivative gain
+#define PID_KD      3.0f    // Derivative gain
 #define PID_TAU     0.1f   // Derivative low-pass filter time constant
-#define PID_LIM_MIN -2.6f    // Min rotation speed (rad/s)
-#define PID_LIM_MAX 2.6f   // Max rotation speed (rad/s)
+#define PID_LIM_MIN -3.2f    // Min rotation speed (rad/s)
+#define PID_LIM_MAX 3.2f   // Max rotation speed (rad/s)
 #define PID_LIM_MIN_INT -0.01f // Min integrator windup
 #define PID_LIM_MAX_INT 0.01f // Max integrator windup
 #define SAMPLE_TIME_S 0.1f   // Sample time (seconds)
@@ -123,7 +123,7 @@ static void pose_updated_callback(dds_callback_context_t* context) {
 
         // Update rotate-only state with hysteresis (do this BEFORE computing correction)
         if (rotate_only_active) {
-            if (raw_heading_error_abs < MOTION_HEADING_ERROR_FULL_SPEED) {
+            if (raw_heading_error_abs < MOTION_HEADING_ERROR_FULL_SPEED / 2) {
                 rotate_only_active = false;
             }
         } else if (raw_heading_error_abs >= MOTION_HEADING_ERROR_ROTATE_ONLY) {
@@ -134,9 +134,14 @@ static void pose_updated_callback(dds_callback_context_t* context) {
         float correction;
         if (rotate_only_active) {
             correction = 0.0f;
+
+            // Reset PID state during rotate-only so transition to forward is clean
+            heading_pid.integrator = 0.0f;
+            heading_pid.differentiator = 0.0f;
+            heading_pid.prevMeasurement = yaw;
+            heading_pid.prevError = 0.0f;
         } else {
-            correction = sign_of(distance_from_line)
-                        * fmin(HALF_PI, fabs(distance_from_line) / MOTION_MAX_CORRECTION_DIST * HALF_PI);
+            correction = correction = sign_of(distance_from_line) * atan(fabs(distance_from_line) / MOTION_CORRECTION_GAIN);
         }
 
         float target_yaw = normalize_angle(line_angle + correction);
@@ -164,7 +169,8 @@ static void pose_updated_callback(dds_callback_context_t* context) {
         // Base speed based on distance to goal
         float base_speed = MOTION_FORWARD_SPEED_NORMAL;
         if (distance_to_goal < MOTION_GOAL_SLOW_DOWN_DISTANCE) {
-            base_speed = MOTION_FORWARD_SPEED_SLOW;
+            base_speed = MOTION_FORWARD_SPEED_NORMAL * (distance_to_goal / MOTION_GOAL_SLOW_DOWN_DISTANCE);
+            if (base_speed < 0.1f) base_speed = 0.1f;  // floor
         }
 
         float linear_cmd = base_speed * speed_scale;

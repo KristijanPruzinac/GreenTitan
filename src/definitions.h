@@ -64,11 +64,10 @@ typedef struct {
 #define MILLIS_PER_SECOND 1000
 
 //Motion
-#define MOTION_MAX_CORRECTION_DIST 0.6f  // 0.6 meters drift = full 90° correction
+#define MOTION_CORRECTION_GAIN 0.3f
 
 #define MOTION_FORWARD_SPEED_NORMAL  0.5f
-#define MOTION_FORWARD_SPEED_SLOW    0.25f
-#define MOTION_GOAL_SLOW_DOWN_DISTANCE    0.5f
+#define MOTION_GOAL_SLOW_DOWN_DISTANCE    0.15f
 
 // Speed scaling based on heading error
 #define MOTION_HEADING_ERROR_FULL_SPEED   0.1f   // ~6° - full speed below

@@ -9,9 +9,6 @@ static long long current_yaw = 0;
 static long long prevPointLon = 0;
 static long long prevPointLat = 0;
 
-static long long prevPointLonActual = 0;
-static long long prevPointLatActual = 0;
-
 //Target
 static long long targetPointLon = 0;
 static long long targetPointLat = 0;
@@ -45,8 +42,8 @@ static void MotorMainOff() {
 void AlgorithmMotionSetTargetPoint(double target_x_m, double target_y_m) {
   motion_command_t cmd = {
     MOVING,
-    (double)prevPointLonActual / 100.0,
-    (double)prevPointLatActual / 100.0,
+    (double)prevPointLon / 100.0,
+    (double)prevPointLat / 100.0,
     target_x_m,
     target_y_m
   };
@@ -368,9 +365,6 @@ std::vector<double> AlgorithmNextPoint(){
 
   long long NextX = 0;
   long long NextY = 0;
-
-  prevPointLonActual = prevPointLon;
-  prevPointLatActual = prevPointLat;
   
   if (algorithmTarget == "FORWARD"){
     if (algorithmMode == "INFILL"){
@@ -731,8 +725,6 @@ void AlgorithmReset() {
 
   prevPointLon = 0;
   prevPointLat = 0;
-  prevPointLonActual = 0;
-  prevPointLatActual = 0;
   targetPointLon = 0;
   targetPointLat = 0;
 }
@@ -835,9 +827,6 @@ void AlgorithmSeedStartPosition() {
     prevPointLat = current_lat;
     targetPointLon = current_lon;
     targetPointLat = current_lat;
-
-    prevPointLonActual = current_lon;
-    prevPointLatActual = current_lat;
 }
 
 const std::vector<std::vector<std::vector<long long>>>& AlgorithmGetExtOutlines() {
