@@ -14,9 +14,6 @@ static int64_t current_x_cm = 0;
 static int64_t current_y_cm = 0;
 static bool fused_pose_received = false;
 
-// Manual mode — when true, BT motor commands are honored
-static bool manual_mode = false;
-
 // Declared in main.cpp
 extern void publish_datum();
 extern bool CONFIG_DATUM;
@@ -56,7 +53,7 @@ static void handle_message(String MessageGroup, String ActionGroup, String DataG
         else if (ActionGroup == "CAPTURE") {
             if (DataGroup == "BASE") {
                 // Allow re-pairing only before initial pairing or while in manual mode
-                if (CONFIG_DATUM && !manual_mode) {
+                if (CONFIG_DATUM && !MANUAL_MODE_ACTIVE) {
                     bt_send("GPS/CAPTURE/BASE/FAIL/BUSY");
                     return;
                 }
@@ -95,24 +92,20 @@ static void handle_message(String MessageGroup, String ActionGroup, String DataG
         }
         else if (ActionGroup == "MANUAL") {
             if (DataGroup == "ON") {
-                manual_mode = true;
                 controller_signal_t signal = { SIGNAL_MANUAL_ON };
                 DDS_PUBLISH("/controller/signal", signal);
-                bt_send("MOWER/MANUAL/ON/OK");
+                vTaskDelay(pdMS_TO_TICKS(50));  // give controller a moment to process
+                bt_send(MANUAL_MODE_ACTIVE ? "MOWER/MANUAL/ON/OK" : "MOWER/MANUAL/ON/FAIL/NOT_IDLE");
             }
             else if (DataGroup == "OFF") {
-                manual_mode = false;
                 controller_signal_t signal = { SIGNAL_MANUAL_OFF };
                 DDS_PUBLISH("/controller/signal", signal);
-                // Stop motors on exit from manual mode
-                motor_data_t stop = { MOTOR_STOP, 0.0f, 0.0f };
-                DDS_PUBLISH("/motor", stop);
-                bt_send("MOWER/MANUAL/OFF/OK");
+                vTaskDelay(pdMS_TO_TICKS(50));
+                bt_send(!MANUAL_MODE_ACTIVE ? "MOWER/MANUAL/OFF/OK" : "MOWER/MANUAL/OFF/FAIL");
             }
         }
         else if (ActionGroup == "MOVE") {
-            // Format: MOWER/MOVE/<lin>,<ang>  e.g. MOWER/MOVE/0.3,0.0
-            if (!manual_mode) {
+            if (!MANUAL_MODE_ACTIVE) {
                 bt_send("MOWER/MOVE/FAIL/NOT_MANUAL");
                 return;
             }
@@ -125,6 +118,8 @@ static void handle_message(String MessageGroup, String ActionGroup, String DataG
             float ang = DataGroup.substring(comma + 1).toFloat();
             motor_data_t cmd = { MOTOR_MOVE, lin, ang };
             dds_result_t result = DDS_PUBLISH("/motor", cmd);
+            LAST_MANUAL_MOVE_MS = millis();
+            MANUAL_MOTORS_STOPPED = false;
             bt_send(result == DDS_SUCCESS ? "MOWER/MOVE/OK" : "MOWER/MOVE/FAIL");
         }
         else if (ActionGroup == "CAPTURE") {
@@ -231,6 +226,14 @@ void bluetooth_task(void* pvParameters) {
         }
         if (notification_value & THREAD_NOTIFY_BIT) {
             DDS_TAKE_MUTEX(&thread_context);
+            // Manual mode watchdog
+            if (MANUAL_MODE_ACTIVE && !MANUAL_MOTORS_STOPPED) {
+                if ((int32_t)(millis() - LAST_MANUAL_MOVE_MS) > MANUAL_WATCHDOG_MS) {
+                    motor_data_t stop = { MOTOR_STOP, 0.0f, 0.0f };
+                    DDS_PUBLISH("/motor", stop);
+                    MANUAL_MOTORS_STOPPED = true;
+                }
+            }
             parse_bluetooth();
             DDS_GIVE_MUTEX(&thread_context);
         }

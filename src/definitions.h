@@ -110,6 +110,16 @@ typedef struct {
 #define MOTOR_MAX_SPEED 250
 #define MOTOR_ACCELERATION 600
 
+// Manual mode
+#define MANUAL_LINEAR_SPEED   0.3f
+#define MANUAL_ANGULAR_SPEED  0.6f
+#define MANUAL_WATCHDOG_MS    500
+
+// Shared manual-mode state (defined in main.cpp, written only by controller_task)
+extern volatile bool     MANUAL_MODE_ACTIVE;
+extern volatile uint32_t LAST_MANUAL_MOVE_MS;
+extern volatile bool     MANUAL_MOTORS_STOPPED;
+
 enum motor_instruction {
   MOTOR_STOP,
   MOTOR_MAIN_ON,

@@ -138,10 +138,10 @@ static void pose_updated_callback(dds_callback_context_t* context) {
             // Reset PID state during rotate-only so transition to forward is clean
             heading_pid.integrator = 0.0f;
             heading_pid.differentiator = 0.0f;
-            heading_pid.prevMeasurement = yaw;
+            heading_pid.prevMeasurement = 0.0f;
             heading_pid.prevError = 0.0f;
         } else {
-            correction = correction = sign_of(distance_from_line) * atan(fabs(distance_from_line) / MOTION_CORRECTION_GAIN);
+            correction = sign_of(distance_from_line) * atan(fabs(distance_from_line) / MOTION_CORRECTION_GAIN);
         }
 
         float target_yaw = normalize_angle(line_angle + correction);

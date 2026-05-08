@@ -66,6 +66,36 @@ static void go_to_next_algorithm_point() {
     AlgorithmMotionSetTargetPoint(next_x, next_y);
 }
 
+static void enter_manual_mode() {
+    if (robot_state != ROBOT_STATE_IDLE) {
+        SerialDebug.printf("[CTRL] Manual ON rejected: must be IDLE (state=%d)\r\n", robot_state);
+        return;
+    }
+
+    SerialDebug.println("[CTRL] Manual mode ON");
+
+    // Defensive: halt motion_task and motors before handing control to manual input
+    motion_stop();
+    stop_motors();
+
+    robot_state = ROBOT_STATE_MANUAL;
+    MANUAL_MODE_ACTIVE = true;
+}
+
+static void exit_manual_mode() {
+    if (robot_state != ROBOT_STATE_MANUAL) {
+        SerialDebug.printf("[CTRL] Manual OFF rejected: not in MANUAL (state=%d)\r\n", robot_state);
+        return;
+    }
+
+    SerialDebug.println("[CTRL] Manual mode OFF");
+    stop_motors();
+    MANUAL_MOTORS_STOPPED = true;
+
+    MANUAL_MODE_ACTIVE = false;
+    robot_state = ROBOT_STATE_IDLE;
+}
+
 // -------------------------------------------------------- STATE MACHINE ---------------------------------------------------------------
 
 static void start_mowing() {
@@ -206,6 +236,12 @@ static void controller_signal_callback(dds_callback_context_t* context) {
             break;
         case SIGNAL_START_MOWING:
             start_mowing();
+            break;
+        case SIGNAL_MANUAL_ON:
+            enter_manual_mode();
+            break;
+        case SIGNAL_MANUAL_OFF:
+            exit_manual_mode();
             break;
         default:
             SerialDebug.printf("[CTRL] Unknown signal: %d\r\n", signal->signal);

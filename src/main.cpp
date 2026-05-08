@@ -59,6 +59,11 @@ bool CONFIG_DATUM = false;
 
 bool IMU_INVERT = false;
 
+
+volatile bool     MANUAL_MODE_ACTIVE    = false;
+volatile uint32_t LAST_MANUAL_MOVE_MS   = 0;
+volatile bool     MANUAL_MOTORS_STOPPED = true;
+
 // -------------------------------------------------------- DEPENDENCIES ---------------------------------------------------------------
 
 // Sensors
@@ -527,6 +532,17 @@ static void init_test_path() {
     }
 }
 
+static void publish_manual_move(float lin, float ang) {
+    if (!MANUAL_MODE_ACTIVE) {
+        SerialDebug.println("[DEBUG] Not in manual mode (press 'm' first)");
+        return;
+    }
+    motor_data_t cmd = { MOTOR_MOVE, lin, ang };
+    DDS_PUBLISH("/motor", cmd);
+    LAST_MANUAL_MOVE_MS = millis();
+    MANUAL_MOTORS_STOPPED = false;
+}
+
 // -------------------------------------------------------- PROGRAM START ---------------------------------------------------------------
 void main_task(void* parameter);
 void setup() {
@@ -601,22 +617,22 @@ void setup() {
     SerialDebug.println("[BOOT] Main task started");
 
     SerialDebug.println("[BOOT] Boot complete");
+
+    SerialDebug.println("");
+    SerialDebug.println("=== GreenTitan Serial Controls ===");
+    SerialDebug.println("  m       toggle manual mode (must be IDLE)");
+    SerialDebug.println("  w/s     forward / backward");
+    SerialDebug.println("  a/d     turn left / right");
+    SerialDebug.println("  space   immediate stop");
+    SerialDebug.println("  ---");
+    SerialDebug.println("  p       start mowing");
+    SerialDebug.println("  o       simulate obstacle");
+    SerialDebug.println("  b       simulate rain");
+    SerialDebug.println("==================================");
+    SerialDebug.println("");
 }
 
 void loop() { vTaskDelay(portMAX_DELAY); }
-
-String Mode = "POWER_ON";
-/*
-POWER_ON
-SETUP
-START
-RUNNING PAUSE
-STOP
-CHARGING
-
-SETUP_TEST
-TEST
-*/
 
 static dds_thread_context_t thread_context;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
@@ -689,6 +705,16 @@ void main_task(void* parameter) {
                 pending_path_publish = false;
             }
 
+            // Manual mode watchdog — auto-stop if no move command in MANUAL_WATCHDOG_MS
+            if (MANUAL_MODE_ACTIVE && !MANUAL_MOTORS_STOPPED) {
+                if ((int32_t)(millis() - LAST_MANUAL_MOVE_MS) > MANUAL_WATCHDOG_MS) {
+                    motor_data_t stop = { MOTOR_STOP, 0.0f, 0.0f };
+                    DDS_PUBLISH("/motor", stop);
+                    MANUAL_MOTORS_STOPPED = true;
+                }
+            }
+
+            // Debug: manual control via serial
             if (SerialDebug.available()) {
                 char c = SerialDebug.read();
                 if (c == 'p') {
@@ -705,6 +731,25 @@ void main_task(void* parameter) {
                     SerialDebug.println("[DEBUG] Triggering rain sensor via serial");
                     controller_signal_t signal = { SIGNAL_RAIN };
                     DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'm') {
+                    int sig = MANUAL_MODE_ACTIVE ? SIGNAL_MANUAL_OFF : SIGNAL_MANUAL_ON;
+                    SerialDebug.printf("[DEBUG] Manual toggle: requesting %s\r\n",
+                                    sig == SIGNAL_MANUAL_ON ? "ON" : "OFF");
+                    controller_signal_t signal = { sig };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'w') publish_manual_move( MANUAL_LINEAR_SPEED,  0.0f);
+                else if (c == 's') publish_manual_move(-MANUAL_LINEAR_SPEED,  0.0f);
+                else if (c == 'a') publish_manual_move( 0.0f,  MANUAL_ANGULAR_SPEED);
+                else if (c == 'd') publish_manual_move( 0.0f, -MANUAL_ANGULAR_SPEED);
+                else if (c == ' ') {
+                    if (MANUAL_MODE_ACTIVE) {
+                        motor_data_t stop = { MOTOR_STOP, 0.0f, 0.0f };
+                        DDS_PUBLISH("/motor", stop);
+                        MANUAL_MOTORS_STOPPED = true;
+                        SerialDebug.println("[DEBUG] Manual stop");
+                    }
                 }
             }
 
