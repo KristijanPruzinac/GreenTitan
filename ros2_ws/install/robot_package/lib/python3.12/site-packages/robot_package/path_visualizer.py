@@ -8,7 +8,7 @@ from geometry_msgs.msg import Point
 class PathVisualizer(Node):
     def __init__(self):
         super().__init__('path_visualizer')
-        self.frame_id = 'odom'
+        self.frame_id = 'map'
         self.outlines_pub = self.create_publisher(MarkerArray, 'algo/markers/outlines', 10)
         self.infill_pub = self.create_publisher(MarkerArray, 'algo/markers/infill', 10)
         self.obstacles_pub = self.create_publisher(MarkerArray, 'algo/markers/obstacles', 10)

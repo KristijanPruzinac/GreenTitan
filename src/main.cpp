@@ -381,7 +381,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             motor_task,
             "MotorTask",
-            4096,
+            3072,
             NULL,
             2,
             NULL,
@@ -417,7 +417,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             motion_task,
             "MotionTask",
-            4096,
+            3072,
             NULL,
             1,
             NULL,
@@ -429,7 +429,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             bluetooth_task,
             "BluetoothTask",
-            4096,
+            3072,
             NULL,
             1,
             NULL,
@@ -613,9 +613,6 @@ void setup() {
     xTaskCreatePinnedToCore(controller_task, "ControllerTask", 4096, NULL, 1, NULL, 0);
     SerialDebug.println("[BOOT] Controller task started");
 
-    xTaskCreatePinnedToCore(main_task, "MainTask", 4096, NULL, 1, NULL, 0);
-    SerialDebug.println("[BOOT] Main task started");
-
     SerialDebug.println("[BOOT] Boot complete");
 
     SerialDebug.println("");
@@ -632,11 +629,9 @@ void setup() {
     SerialDebug.println("");
 }
 
-void loop() { vTaskDelay(portMAX_DELAY); }
-
 static dds_thread_context_t thread_context;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
-void main_task(void* parameter) {
+void loop() {
     thread_context.task = xTaskGetCurrentTaskHandle();
     thread_context.queue = xQueueCreate(30, sizeof(dds_callback_context_t));
     thread_context.sync_mutex = xSemaphoreCreateMutex();

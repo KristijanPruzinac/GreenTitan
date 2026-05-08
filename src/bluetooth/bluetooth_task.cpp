@@ -165,6 +165,9 @@ static void parse_bluetooth() {
         String message = SerialBT.readStringUntil('<');
         if (message.length() == 0) break;
 
+        //TODO: Remove test print
+        SerialDebug.printf("[BT RX] \"%s\" (len=%d)\r\n", message.c_str(), message.length());
+
         // Expect format: MessageGroup/ActionGroup/DataGroup
         String parts[3] = {"", "", ""};
         int part = 0;
