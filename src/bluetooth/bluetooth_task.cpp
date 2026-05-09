@@ -26,6 +26,10 @@ bool InitBluetooth() {
 
 static void bt_send(String msg) {
     SerialBT.print(msg);
+
+    if (PRINT_BT_COMMANDS){
+        SerialDebug.printf("[BT TX] \"%s\"\r\n", msg.c_str());
+    }
 }
 
 static bool capture_preconditions_ok(const String& fail_prefix) {
@@ -123,7 +127,7 @@ static void handle_message(String MessageGroup, String ActionGroup, String DataG
             if (DataGroup == "POINT") {
                 if (!capture_preconditions_ok("MOWER/CAPTURE/POINT")) return;
                 AlgorithmCaptureNewPoint();
-                bt_send("MOWER/CAPTURE/POINT/OK/" + String((int32_t)current_x_cm) + "," + String((int32_t)current_y_cm));
+                bt_send("MOWER/CAPTURE/POINT/OK/" + String(latest_gps.latitude, 7) + "," + String(latest_gps.longitude, 7));
             }
             else if (DataGroup == "OUTLINE") {
                 // Start a new outline (no preconditions — purely structural)
@@ -157,7 +161,9 @@ static void parse_bluetooth() {
         if (message.length() == 0) break;
 
         //TODO: Remove test print
-        SerialDebug.printf("[BT RX] \"%s\" (len=%d)\r\n", message.c_str(), message.length());
+        if (PRINT_BT_COMMANDS){
+            SerialDebug.printf("[BT RX] \"%s\" (len=%d)\r\n", message.c_str(), message.length());
+        }
 
         // Expect format: MessageGroup/ActionGroup/DataGroup
         String parts[3] = {"", "", ""};

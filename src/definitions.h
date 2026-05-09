@@ -3,7 +3,8 @@
 
 #define SIMULATION_ENABLED true
 #define MOTION_TELEPORT_MODE      false
-#define HARDCODED_DATUM_AND_PATH false
+#define HARDCODED_DATUM_AND_PATH true
+#define PRINT_BT_COMMANDS true
 
 #define MOTION_TELEPORT_DELAY_MS  1000
 
