@@ -13,6 +13,9 @@ ekf_global:
     world_frame: map
     set_pose: true
 
+    smooth_lagged_data: true
+    history_length: 0.4
+
     odom0: /odometry/filtered/local
     odom0_config: [true,  true,  false,
                    false, false, true,

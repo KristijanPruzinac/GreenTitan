@@ -247,6 +247,11 @@ void motor_task(void* parameter) {
                 };
               }
 
+              struct timespec ts;
+              clock_gettime(CLOCK_REALTIME, &ts);
+              data.timestamp_sec = ts.tv_sec;
+              data.timestamp_nsec = ts.tv_nsec;
+
               result = DDS_PUBLISH("/odom", data);
               if (result != DDS_SUCCESS) {
                   SerialDebug.printf("Odom Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));

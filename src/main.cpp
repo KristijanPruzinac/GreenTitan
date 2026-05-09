@@ -243,10 +243,8 @@ void datum_set_callback(dds_callback_context_t* context) {
 void odom_topic_callback(dds_callback_context_t* context) {
     odom_data_t* data = (odom_data_t*)context->message_data.data;
 
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    odom_msg.header.stamp.sec = ts.tv_sec;
-    odom_msg.header.stamp.nanosec = ts.tv_nsec;
+    odom_msg.header.stamp.sec = data->timestamp_sec;
+    odom_msg.header.stamp.nanosec = data->timestamp_nsec;
 
     odom_msg.pose.pose.position.x = data->x;
     odom_msg.pose.pose.position.y = data->y;
@@ -265,12 +263,12 @@ void odom_topic_callback(dds_callback_context_t* context) {
     odom_msg.twist.twist.angular.y = 0.0f;
     odom_msg.twist.twist.angular.z = data->angular_vel;
 
-    odom_msg.pose.covariance[0]  = 0.001f;  // x
-    odom_msg.pose.covariance[7]  = 0.001f;  // y
-    odom_msg.pose.covariance[35] = 0.005f;   // yaw
+    odom_msg.pose.covariance[0]  = 0.01f;   // x stddev ≈ 0.1 m
+    odom_msg.pose.covariance[7]  = 0.01f;   // y stddev ≈ 0.1 m
+    odom_msg.pose.covariance[35] = 0.05f;   // yaw stddev ≈ 0.22 rad
 
-    odom_msg.twist.covariance[0] = 0.001f;  // vx
-    odom_msg.twist.covariance[35] = 0.01f;
+    odom_msg.twist.covariance[0] = 0.16f;   // vx stddev ≈ 0.4 m/s
+    odom_msg.twist.covariance[35] = 0.1f;   // yaw stddev ≈ 0.32 rad/s
 
     odom_msg.header.frame_id.data = (char*)"odom";
     odom_msg.header.frame_id.size = strlen("odom");
@@ -285,10 +283,8 @@ void odom_topic_callback(dds_callback_context_t* context) {
 void imu_topic_callback(dds_callback_context_t* context) {
     IMU_data_t* data = (IMU_data_t*)context->message_data.data;
 
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    imu_msg.header.stamp.sec = ts.tv_sec;
-    imu_msg.header.stamp.nanosec = ts.tv_nsec;
+    imu_msg.header.stamp.sec = data->timestamp_sec;
+    imu_msg.header.stamp.nanosec = data->timestamp_nsec;
 
     imu_msg.linear_acceleration.x = data->acc_x;
     imu_msg.linear_acceleration.y = data->acc_y;
@@ -321,10 +317,8 @@ void imu_topic_callback(dds_callback_context_t* context) {
 void gps_topic_callback(dds_callback_context_t* context) {
     gps_data_t* data = (gps_data_t*)context->message_data.data;
 
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    gps_msg.header.stamp.sec = ts.tv_sec;
-    gps_msg.header.stamp.nanosec = ts.tv_nsec;
+    gps_msg.header.stamp.sec = data->timestamp_sec;
+    gps_msg.header.stamp.nanosec = data->timestamp_nsec;
 
     gps_msg.latitude  = data->latitude;
     gps_msg.longitude = data->longitude;

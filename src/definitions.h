@@ -34,6 +34,8 @@ typedef struct {
     double longitude;
     float altitude;
     float accuracy;
+    uint32_t timestamp_sec;
+    uint32_t timestamp_nsec;
 } gps_data_t;
 
 //Motor
@@ -47,13 +49,16 @@ typedef struct {
 #define GYRO_SCL_PIN 22
 
 typedef struct {
-  float acc_x;
-  float acc_y;
-  float acc_z;
+    float acc_x;
+    float acc_y;
+    float acc_z;
 
-  float gyro_x;
-  float gyro_y;
-  float gyro_z;
+    float gyro_x;
+    float gyro_y;
+    float gyro_z;
+
+    uint32_t timestamp_sec;
+    uint32_t timestamp_nsec;
 } IMU_data_t;
 
 //Rain sensor
@@ -157,6 +162,9 @@ typedef struct {
     float theta;
     float linear_vel;
     float angular_vel;
+    
+    uint32_t timestamp_sec;
+    uint32_t timestamp_nsec;
 } odom_data_t;
 
 // Fused pose from ROS2 EKF

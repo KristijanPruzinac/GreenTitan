@@ -35,6 +35,12 @@ static void gps_read() {
         0.0,
         0.014 + gaussian_noise(0.005),
     };
+    
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    gpsData.timestamp_sec = ts.tv_sec;
+    gpsData.timestamp_nsec = ts.tv_nsec;
+
     dds_result_t result = DDS_PUBLISH("/gps", gpsData);
     if (result != DDS_SUCCESS) {
         SerialDebug.printf("GPS Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
@@ -88,6 +94,11 @@ static void gps_read() {
         posllh.height / 1000.0,
         posllh.hAcc / 1000.0,   // horizontal accuracy in meters
     };
+
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    gpsData.timestamp_sec = ts.tv_sec;
+    gpsData.timestamp_nsec = ts.tv_nsec;
 
     dds_result_t result = DDS_PUBLISH("/gps", gpsData);
     if (result != DDS_SUCCESS) {
