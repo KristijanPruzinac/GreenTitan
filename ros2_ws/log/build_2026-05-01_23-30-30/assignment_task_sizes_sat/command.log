@@ -1,1 +1,0 @@
-Invoking command in '/home/kristijan/ros2_ws/build/assignment_task_sizes_sat': /usr/bin/cmake /home/kristijan/ros2_ws/Fields2Cover/build/_deps/ortools-src/examples/assignment_task_sizes_sat -DCMAKE_INSTALL_PREFIX=/home/kristijan/ros2_ws/install/assignment_task_sizes_sat

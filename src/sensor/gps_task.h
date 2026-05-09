@@ -16,6 +16,8 @@
 extern HardwareSerial SerialDebug;
 
 extern bool ENABLE_GPS;
+extern double BASE_LON;
+extern double BASE_LAT;
 
 extern double odom_x;
 extern double odom_y;

@@ -1,2 +1,0 @@
-Invoking command in '/home/kristijan/ros2_ws/build/assignment_min_flow': /usr/bin/cmake /home/kristijan/ros2_ws/Fields2Cover/build/_deps/ortools-src/examples/assignment_min_flow -DCMAKE_INSTALL_PREFIX=/home/kristijan/ros2_ws/install/assignment_min_flow
-Invoked command in '/home/kristijan/ros2_ws/build/assignment_min_flow' returned '1': /usr/bin/cmake /home/kristijan/ros2_ws/Fields2Cover/build/_deps/ortools-src/examples/assignment_min_flow -DCMAKE_INSTALL_PREFIX=/home/kristijan/ros2_ws/install/assignment_min_flow
