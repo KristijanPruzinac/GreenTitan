@@ -1,3 +1,4 @@
+import math
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import NavSatFix
@@ -24,11 +25,23 @@ class DatumRelay(Node):
             self.get_logger().error('SetDatum service not available')
             return
 
+        # HACK: ESP32 firmware smuggles yaw (radians, ENU) through NavSatFix.altitude
+        # because geographic_msgs/GeoPoseStamped isn't in the default micro-ROS message set.
+        yaw = msg.altitude
+
         req = SetDatum.Request()
         req.geo_pose.position.latitude  = msg.latitude
         req.geo_pose.position.longitude = msg.longitude
         req.geo_pose.position.altitude  = 0.0
-        req.geo_pose.orientation.w = 1.0
+        # Yaw → quaternion about Z (ENU): (0, 0, sin(yaw/2), cos(yaw/2))
+        req.geo_pose.orientation.x = 0.0
+        req.geo_pose.orientation.y = 0.0
+        req.geo_pose.orientation.z = math.sin(yaw / 2.0)
+        req.geo_pose.orientation.w = math.cos(yaw / 2.0)
+
+        self.get_logger().info(
+            f'Setting datum: lat={msg.latitude:.7f} lon={msg.longitude:.7f} yaw={yaw:.4f} rad'
+        )
 
         #future = self.client.call_async(req)
         #future.add_done_callback(self.on_response)

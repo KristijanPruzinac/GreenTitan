@@ -1,5 +1,4 @@
 #include "controller_task.h"
-#include "../algorithm/algorithm.h"
 
 static int robot_state = ROBOT_STATE_IDLE;
 
@@ -7,6 +6,15 @@ static int robot_state = ROBOT_STATE_IDLE;
 extern String algorithmTarget;
 extern String algorithmMode;
 extern bool algorithmAbortFull;
+
+// GPS cache (updated by gps_callback)
+static gps_data_t latest_gps_ctrl = {0, 0, 0, 999};
+static bool       gps_valid_ctrl  = false;
+
+// Datum capture state
+static uint32_t datum_capture_start_ms  = 0;
+static double   datum_capture_start_lat = 0;
+static double   datum_capture_start_lon = 0;
 
 // -------------------------------------------------------- HELPERS ---------------------------------------------------------------
 
@@ -96,11 +104,117 @@ static void exit_manual_mode() {
     robot_state = ROBOT_STATE_IDLE;
 }
 
+// -------------------------------------------------------- DATUM CAPTURE ---------------------------------------------------------------
+
+static void finish_datum_capture(int result) {
+    stop_motors();
+    DATUM_CAPTURE_ACTIVE       = false;
+    LAST_DATUM_CAPTURE_RESULT  = result;
+    robot_state                = ROBOT_STATE_IDLE;
+    SerialDebug.printf("[CTRL] Datum capture finished: result=%d\r\n", result);
+}
+
+static void start_datum_capture() {
+    if (robot_state != ROBOT_STATE_IDLE) {
+        SerialDebug.printf("[CTRL] Datum capture rejected: must be IDLE (state=%d)\r\n", robot_state);
+        LAST_DATUM_CAPTURE_RESULT = DATUM_RESULT_FAIL_STATE;
+        return;
+    }
+    if (!gps_valid_ctrl || (latest_gps_ctrl.accuracy * 1000.0f) > (float)GPS_ACC_THRESHOLD) {
+        SerialDebug.printf("[CTRL] Datum capture rejected: GPS accuracy bad (acc=%.4f m)\r\n",
+                           latest_gps_ctrl.accuracy);
+        LAST_DATUM_CAPTURE_RESULT = DATUM_RESULT_FAIL_ACCURACY;
+        return;
+    }
+
+    SerialDebug.printf("[CTRL] Datum capture: starting (initial lat=%.7f lon=%.7f)\r\n",
+                       latest_gps_ctrl.latitude, latest_gps_ctrl.longitude);
+
+    datum_capture_start_lat   = latest_gps_ctrl.latitude;
+    datum_capture_start_lon   = latest_gps_ctrl.longitude;
+    datum_capture_start_ms    = millis();
+    LAST_DATUM_CAPTURE_RESULT = DATUM_RESULT_NONE;
+    DATUM_CAPTURE_ACTIVE      = true;
+    robot_state               = ROBOT_STATE_CAPTURING_DATUM;
+
+    // Drive forward; we publish /motor MOVE directly, motion_task is not involved.
+    motor_data_t cmd = { MOTOR_MOVE, DATUM_CAPTURE_DRIVE_SPEED, 0.0f };
+    dds_result_t result = DDS_PUBLISH("/motor", cmd);
+    if (result != DDS_SUCCESS) {
+        SerialDebug.printf("[CTRL] Failed to start datum drive: %d\r\n", result);
+    }
+}
+
+static void tick_datum_capture() {
+    if (robot_state != ROBOT_STATE_CAPTURING_DATUM) return;
+    if ((int32_t)(millis() - datum_capture_start_ms) < DATUM_CAPTURE_DRIVE_DURATION_MS) return;
+
+    // Drive complete -- stop first, then evaluate.
+    stop_motors();
+
+    if (!gps_valid_ctrl || (latest_gps_ctrl.accuracy * 1000.0f) > (float)GPS_ACC_THRESHOLD) {
+        SerialDebug.printf("[CTRL] Datum capture FAIL: accuracy degraded (acc=%.4f m)\r\n",
+                           latest_gps_ctrl.accuracy);
+        finish_datum_capture(DATUM_RESULT_FAIL_ACCURACY);
+        return;
+    }
+
+    // Convert GPS displacement to local meters in ENU.
+    double dlat     = latest_gps_ctrl.latitude  - datum_capture_start_lat;
+    double dlon     = latest_gps_ctrl.longitude - datum_capture_start_lon;
+    double dy_north = dlat * 111111.0;
+    double dx_east  = dlon * 111111.0 * cos(datum_capture_start_lat * M_PI / 180.0);
+    double displacement = sqrt(dx_east * dx_east + dy_north * dy_north);
+
+    if (displacement < DATUM_CAPTURE_MIN_DISPLACEMENT_M) {
+        SerialDebug.printf("[CTRL] Datum capture FAIL: displacement too small (%.3f m)\r\n", displacement);
+        finish_datum_capture(DATUM_RESULT_FAIL_DISPLACEMENT);
+        return;
+    }
+
+    // Yaw in ENU: 0 = +east, π/2 = +north.
+    float yaw = (float)atan2(dy_north, dx_east);
+
+    // Commit datum.
+    BASE_LAT = datum_capture_start_lat;
+    BASE_LON = datum_capture_start_lon;
+    BASE_YAW = yaw;
+
+    // Fixed-distance base exit point in the heading direction.
+    BASE_EXIT_X_CM = (int64_t)round((double)DATUM_BASE_EXIT_DISTANCE_CM * cos(yaw));
+    BASE_EXIT_Y_CM = (int64_t)round((double)DATUM_BASE_EXIT_DISTANCE_CM * sin(yaw));
+
+    CONFIG_DATUM = true;
+    CONFIG_PATH  = false;   // any prior path is invalid against the new datum
+    SaveConfiguration();
+
+    // Publish into the internal DDS topic; main loop forwards to ROS2 via /esp/datum.
+    datum_data_t datum = { BASE_LAT, BASE_LON, BASE_YAW };
+    dds_result_t pub_result = DDS_PUBLISH("/datum/set", datum);
+    if (pub_result != DDS_SUCCESS) {
+        SerialDebug.printf("[CTRL] Failed to publish datum: %d\r\n", pub_result);
+    }
+
+    SerialDebug.printf("[CTRL] Datum captured: lat=%.7f lon=%.7f yaw=%.4f rad (disp=%.3f m, exit=%lld,%lld cm)\r\n",
+                       BASE_LAT, BASE_LON, BASE_YAW, displacement,
+                       (long long)BASE_EXIT_X_CM, (long long)BASE_EXIT_Y_CM);
+
+    finish_datum_capture(DATUM_RESULT_OK);
+}
+
 // -------------------------------------------------------- STATE MACHINE ---------------------------------------------------------------
 
 static void start_mowing() {
     if (robot_state != ROBOT_STATE_IDLE && robot_state != ROBOT_STATE_CHARGING) {
         SerialDebug.printf("[CTRL] Cannot start mowing from state: %d\r\n", robot_state);
+        return;
+    }
+    if (!CONFIG_DATUM) {
+        SerialDebug.printf("[CTRL] Cannot start mowing: datum not set\r\n");
+        return;
+    }
+    if (!CONFIG_PATH) {
+        SerialDebug.printf("[CTRL] Cannot start mowing: path not set\r\n");
         return;
     }
 
@@ -243,9 +357,18 @@ static void controller_signal_callback(dds_callback_context_t* context) {
         case SIGNAL_MANUAL_OFF:
             exit_manual_mode();
             break;
+        case SIGNAL_START_DATUM_CAPTURE:
+            start_datum_capture();
+            break;
         default:
             SerialDebug.printf("[CTRL] Unknown signal: %d\r\n", signal->signal);
     }
+}
+
+static void gps_callback(dds_callback_context_t* context) {
+    gps_data_t* data = (gps_data_t*)context->message_data.data;
+    latest_gps_ctrl = *data;
+    gps_valid_ctrl  = (data->accuracy > 0 && data->accuracy < 999);
 }
 
 // -------------------------------------------------------- TASK ---------------------------------------------------------------
@@ -273,27 +396,26 @@ void controller_task(void* parameter) {
         SerialDebug.printf("Topic subscribe failed: %s\n", DDS_RESULT_TO_STRING(result));
     }
 
+    result = DDS_SUBSCRIBE("/gps", gps_callback, &thread_context);
+    if (result != DDS_SUCCESS) {
+        SerialDebug.printf("GPS topic subscribe failed: %s\n", DDS_RESULT_TO_STRING(result));
+    }
+
     // ------- THREAD SETUP CODE END -------
 
-    vTaskDelay(2000);
+    vTaskDelay(1500); // Allow some time for system stabilization before starting main loop
 
     robot_state = ROBOT_STATE_IDLE;
 
     if (!CONFIG_DATUM) {
         SerialDebug.printf("[CTRL] Datum not set. Waiting for Bluetooth setup.\r\n");
-        while (!CONFIG_DATUM) {
-            vTaskDelay(500);
-        }
     }
-    SerialDebug.printf("[CTRL] Datum confirmed.\r\n");
-
     if (!CONFIG_PATH) {
         SerialDebug.printf("[CTRL] Path not set. Waiting for path setup.\r\n");
-        while (!CONFIG_PATH) {
-            vTaskDelay(500);
-        }
     }
-    SerialDebug.printf("[CTRL] Path confirmed, ready for MOWER/START.\r\n");
+    if (CONFIG_DATUM && CONFIG_PATH) {
+        SerialDebug.printf("[CTRL] Datum + path confirmed, ready for MOWER/START.\r\n");
+    }
     
     while(1) {
         // Wait for any notification (message or timer)
@@ -309,6 +431,8 @@ void controller_task(void* parameter) {
             DDS_TAKE_MUTEX(&thread_context);
 
             // ------- THREAD LOOP CODE START -------
+
+            tick_datum_capture();
             
             // ------- THREAD LOOP CODE END -------
 

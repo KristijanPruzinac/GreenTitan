@@ -23,6 +23,7 @@ FileResult SaveConfiguration() {
     prefs.putInt   ("MAX_DEVIATION", MAX_DEVIATION);
     prefs.putDouble("BASE_LON",      BASE_LON);
     prefs.putDouble("BASE_LAT",      BASE_LAT);
+    prefs.putFloat ("BASE_YAW",      BASE_YAW);
     prefs.putLong64("BASE_EXIT_X_CM", BASE_EXIT_X_CM);
     prefs.putLong64("BASE_EXIT_Y_CM", BASE_EXIT_Y_CM);
     prefs.putInt   ("GPS_ACC_THR",   GPS_ACC_THRESHOLD);
@@ -64,6 +65,7 @@ FileResult LoadConfiguration() {
     MAX_DEVIATION                    = prefs.getInt   ("MAX_DEVIATION", MAX_DEVIATION);
     BASE_LON                         = prefs.getDouble("BASE_LON",      BASE_LON);
     BASE_LAT                         = prefs.getDouble("BASE_LAT",      BASE_LAT);
+    BASE_YAW                         = prefs.getFloat ("BASE_YAW",      BASE_YAW);
     BASE_EXIT_X_CM                   = prefs.getLong64("BASE_EXIT_X_CM", BASE_EXIT_X_CM);
     BASE_EXIT_Y_CM                   = prefs.getLong64("BASE_EXIT_Y_CM", BASE_EXIT_Y_CM);
     GPS_ACC_THRESHOLD                = prefs.getInt   ("GPS_ACC_THR",   GPS_ACC_THRESHOLD);

@@ -268,6 +268,14 @@ bool GenerateGcode(){
   //Error conditions
   if (outlines.size() < 1){return false;}
   if (outlines.at(0).size() <= 2){return false;}
+
+  // Validate all outlines have at least 3 points
+  for (size_t i = 0; i < outlines.size(); i++) {
+    if (outlines[i].size() < 3) {
+      SerialDebug.println("[ALGO] Error: In GenerateGCode, outline with less than 3 points detected");
+      return false;
+    }
+  }
   
   FindTerrainBounds();
 
@@ -742,6 +750,10 @@ void AlgorithmCaptureBaseExitPoint(int64_t x_cm, int64_t y_cm){
   BASE_EXIT_Y_CM = y_cm;
 }
 void AlgorithmCaptureNewPoint(){
+  if (outlines.empty()) {
+    AlgorithmCaptureNewOutline();
+  }
+
   outlines.back().push_back( std::vector<long long>());
 
   outlines.back().back().push_back(GetLon());

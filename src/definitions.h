@@ -3,6 +3,8 @@
 
 #define SIMULATION_ENABLED true
 #define MOTION_TELEPORT_MODE      false
+#define HARDCODED_DATUM_AND_PATH false
+
 #define MOTION_TELEPORT_DELAY_MS  1000
 
 //DEBUG
@@ -75,6 +77,12 @@ typedef struct {
 #define MOTION_MIN_SPEED_SCALE            0.5f
 #define MOTION_HEADING_ERROR_ROTATE_ONLY  0.52f  // ~30° - rotate only above
 
+//Datum capture
+#define DATUM_CAPTURE_DRIVE_DURATION_MS  3000
+#define DATUM_CAPTURE_DRIVE_SPEED        0.3f
+#define DATUM_CAPTURE_MIN_DISPLACEMENT_M 0.2f
+#define DATUM_BASE_EXIT_DISTANCE_CM      50
+
 //DAC
 #define DAC_MAX_VALUE 4096
 #define DAC_MAX_BITS 12
@@ -119,6 +127,15 @@ typedef struct {
 extern volatile bool     MANUAL_MODE_ACTIVE;
 extern volatile uint32_t LAST_MANUAL_MOVE_MS;
 extern volatile bool     MANUAL_MOTORS_STOPPED;
+
+// Shared manual-mode state (defined in main.cpp, written only by controller_task)
+extern volatile bool     MANUAL_MODE_ACTIVE;
+extern volatile uint32_t LAST_MANUAL_MOVE_MS;
+extern volatile bool     MANUAL_MOTORS_STOPPED;
+
+// Shared datum-capture state (defined in main.cpp, written only by controller_task)
+extern volatile bool     DATUM_CAPTURE_ACTIVE;
+extern volatile int      LAST_DATUM_CAPTURE_RESULT;
 
 enum motor_instruction {
   MOTOR_STOP,
@@ -174,6 +191,7 @@ enum robot_state {
     ROBOT_STATE_LEAVING_CHARGING_STATION,
     ROBOT_STATE_RECORDING_OUTLINE,
     ROBOT_STATE_MANUAL,
+    ROBOT_STATE_CAPTURING_DATUM,
 };
 
 enum controller_signal {
@@ -186,6 +204,7 @@ enum controller_signal {
     SIGNAL_START_MOWING,
     SIGNAL_MANUAL_ON,
     SIGNAL_MANUAL_OFF,
+    SIGNAL_START_DATUM_CAPTURE,
 };
 
 typedef struct {
@@ -250,6 +269,7 @@ typedef struct {
 typedef struct {
     double latitude;
     double longitude;
+    float yaw;        // radians, ENU (0 = east, π/2 = north). Hacked into NavSatFix.altitude on the wire.
 } datum_data_t;
 
 typedef struct {
@@ -257,5 +277,13 @@ typedef struct {
     double y;
     float theta;
 } sim_pose_set_t;
+
+enum datum_capture_result {
+    DATUM_RESULT_NONE = 0,           // no capture completed yet, or already consumed by BT
+    DATUM_RESULT_OK,
+    DATUM_RESULT_FAIL_STATE,         // controller wasn't IDLE
+    DATUM_RESULT_FAIL_ACCURACY,      // GPS accuracy degraded during drive
+    DATUM_RESULT_FAIL_DISPLACEMENT,  // robot didn't move far enough
+};
 
 #endif

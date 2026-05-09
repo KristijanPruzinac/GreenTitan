@@ -31,6 +31,7 @@ extern int MOWER_OVERLAP;
 extern int MAX_DEVIATION;
 extern double BASE_LON;
 extern double BASE_LAT;
+extern float BASE_YAW;
 extern int64_t BASE_EXIT_X_CM;
 extern int64_t BASE_EXIT_Y_CM;
 

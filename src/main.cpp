@@ -34,8 +34,9 @@ HardwareSerial SerialDebug(1);
 
 bool SETUP_COMPLETED = true;
 
-double BASE_LON = -56.72328;
-double BASE_LAT = 33.76391;
+double BASE_LON = 0;
+double BASE_LAT = 0;
+float  BASE_YAW = 0.0f;
 int64_t BASE_EXIT_X_CM = 0;
 int64_t BASE_EXIT_Y_CM = 0;
 
@@ -63,6 +64,9 @@ bool IMU_INVERT = false;
 volatile bool     MANUAL_MODE_ACTIVE    = false;
 volatile uint32_t LAST_MANUAL_MOVE_MS   = 0;
 volatile bool     MANUAL_MOTORS_STOPPED = true;
+
+volatile bool     DATUM_CAPTURE_ACTIVE       = false;
+volatile int      LAST_DATUM_CAPTURE_RESULT  = DATUM_RESULT_NONE;
 
 // -------------------------------------------------------- DEPENDENCIES ---------------------------------------------------------------
 
@@ -219,7 +223,7 @@ void publish_datum() {
     sensor_msgs__msg__NavSatFix datum_msg = {};
     datum_msg.latitude  = BASE_LAT;
     datum_msg.longitude = BASE_LON;
-    datum_msg.altitude  = 0.0;
+    datum_msg.altitude  = (double)BASE_YAW;   // HACK: yaw (radians) smuggled via altitude; datum_relay.py decodes it
     datum_msg.status.status  = 0;
     datum_msg.status.service = 1;
 
@@ -231,6 +235,7 @@ void datum_set_callback(dds_callback_context_t* context) {
     datum_data_t* data = (datum_data_t*)context->message_data.data;
     BASE_LAT = data->latitude;
     BASE_LON = data->longitude;
+    BASE_YAW = data->yaw;
     pending_datum_publish = true;
     datum_publish_count = 0;
 }
@@ -381,7 +386,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             motor_task,
             "MotorTask",
-            3072,
+            2048,
             NULL,
             2,
             NULL,
@@ -489,10 +494,11 @@ static void init_test_path() {
     // Datum (arbitrary - host EKF not running for this test)
     BASE_LAT = 45.5;
     BASE_LON = 18.0;
+    BASE_YAW = 0.0f;
 
-    // Base exit point in datum-relative cm
-    BASE_EXIT_X_CM = 30;
-    BASE_EXIT_Y_CM = 30;
+    // Base exit point: fixed distance in the +x direction (yaw = 0 means east-aligned)
+    BASE_EXIT_X_CM = DATUM_BASE_EXIT_DISTANCE_CM;
+    BASE_EXIT_Y_CM = 0;
 
     MOWER_OVERLAP = 15;
 
@@ -605,7 +611,9 @@ void setup() {
     }
 
     // TEST: install hardcoded path (overrides any saved config)
-    init_test_path();
+    if (HARDCODED_DATUM_AND_PATH) {
+        init_test_path();
+    }
 
     SerialDebug.println("[BOOT] Starting FreeRTOS tasks...");
     init_freertos();
@@ -617,13 +625,20 @@ void setup() {
 
     SerialDebug.println("");
     SerialDebug.println("=== GreenTitan Serial Controls ===");
-    SerialDebug.println("  m       toggle manual mode (must be IDLE)");
+    SerialDebug.println("--- Movement ---");
+    SerialDebug.println("  m       toggle manual mode");
     SerialDebug.println("  w/s     forward / backward");
     SerialDebug.println("  a/d     turn left / right");
     SerialDebug.println("  space   immediate stop");
-    SerialDebug.println("  ---");
-    SerialDebug.println("  p       start mowing");
-    SerialDebug.println("  o       simulate obstacle");
+    SerialDebug.println("--- Path Recording ---");
+    SerialDebug.println("  c       start new path (clears)");
+    SerialDebug.println("  o       start new outline");
+    SerialDebug.println("  p       add point to outline");
+    SerialDebug.println("  e       end path & save");
+    SerialDebug.println("--- Other ---");
+    SerialDebug.println("  g       capture GPS datum");
+    SerialDebug.println("  t       start mowing");
+    SerialDebug.println("  k       simulate obstacle");
     SerialDebug.println("  b       simulate rain");
     SerialDebug.println("==================================");
     SerialDebug.println("");
@@ -695,7 +710,7 @@ void loop() {
                 }
             }
 
-            if (pending_path_publish) {
+            if (pending_path_publish && CONFIG_DATUM && datum_published) {
                 publish_path_markers(&path_data_publisher);
                 pending_path_publish = false;
             }
@@ -712,22 +727,7 @@ void loop() {
             // Debug: manual control via serial
             if (SerialDebug.available()) {
                 char c = SerialDebug.read();
-                if (c == 'p') {
-                    SerialDebug.println("[DEBUG] Triggering MOWER/START via serial");
-                    controller_signal_t signal = { SIGNAL_START_MOWING };
-                    DDS_PUBLISH("/controller/signal", signal);
-                }
-                else if (c == 'o') {
-                    SerialDebug.println("[DEBUG] Triggering obstacle avoidance via serial");
-                    controller_signal_t signal = { SIGNAL_OBSTACLE };
-                    DDS_PUBLISH("/controller/signal", signal);
-                }
-                else if (c == 'b') {
-                    SerialDebug.println("[DEBUG] Triggering rain sensor via serial");
-                    controller_signal_t signal = { SIGNAL_RAIN };
-                    DDS_PUBLISH("/controller/signal", signal);
-                }
-                else if (c == 'm') {
+                if (c == 'm') {
                     int sig = MANUAL_MODE_ACTIVE ? SIGNAL_MANUAL_OFF : SIGNAL_MANUAL_ON;
                     SerialDebug.printf("[DEBUG] Manual toggle: requesting %s\r\n",
                                     sig == SIGNAL_MANUAL_ON ? "ON" : "OFF");
@@ -745,6 +745,58 @@ void loop() {
                         MANUAL_MOTORS_STOPPED = true;
                         SerialDebug.println("[DEBUG] Manual stop");
                     }
+                }
+
+                // Path Recording
+                else if (c == 'c') {  // Clear / start new path capture
+                    AlgorithmCaptureStart();
+                    CONFIG_PATH = false;
+                    SaveConfiguration();
+                    SerialDebug.println("[DEBUG] Path capture started");
+                }
+                else if (c == 'o') {  // New outline
+                    AlgorithmCaptureNewOutline();
+                    SerialDebug.println("[DEBUG] New outline started");
+                }
+                else if (c == 'p') {  // Add point
+                    if (!CONFIG_DATUM) {
+                        SerialDebug.println("[DEBUG] Cannot add point: no datum set");
+                    } else {
+                        AlgorithmCaptureNewPoint();
+                        SerialDebug.println("[DEBUG] Point added");
+                    }
+                }
+                else if (c == 'e') {  // End path capture & save
+                    if (AlgorithmCaptureEnd()) {
+                        CONFIG_PATH = true;
+                        SaveConfiguration();
+                        publish_path_markers(&path_data_publisher);
+                        SerialDebug.println("[DEBUG] Path capture completed and saved");
+                    } else {
+                        SerialDebug.println("[DEBUG] Path capture failed");
+                    }
+                }
+                
+                // Other Controls
+                else if (c == 'g') {  // Capture GPS datum
+                    controller_signal_t signal = { SIGNAL_START_DATUM_CAPTURE };
+                    DDS_PUBLISH("/controller/signal", signal);
+                    SerialDebug.println("[DEBUG] Triggering datum capture");
+                }
+                else if (c == 't') {  // Start mowing (t for staRt)
+                    SerialDebug.println("[DEBUG] Triggering MOWER/START via serial");
+                    controller_signal_t signal = { SIGNAL_START_MOWING };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'k') {  // Obstacle (k for blocK)
+                    SerialDebug.println("[DEBUG] Triggering obstacle avoidance via serial");
+                    controller_signal_t signal = { SIGNAL_OBSTACLE };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'b') {  // Rain
+                    SerialDebug.println("[DEBUG] Triggering rain sensor via serial");
+                    controller_signal_t signal = { SIGNAL_RAIN };
+                    DDS_PUBLISH("/controller/signal", signal);
                 }
             }
 

@@ -52,35 +52,32 @@ static void handle_message(String MessageGroup, String ActionGroup, String DataG
         }
         else if (ActionGroup == "CAPTURE") {
             if (DataGroup == "BASE") {
-                // Allow re-pairing only before initial pairing or while in manual mode
-                if (CONFIG_DATUM && !MANUAL_MODE_ACTIVE) {
+                // BT-side fast-fail. Controller does the IDLE check and reports the final
+                // verdict via LAST_DATUM_CAPTURE_RESULT, which we poll in the periodic tick.
+                if (DATUM_CAPTURE_ACTIVE) {
                     bt_send("GPS/CAPTURE/BASE/FAIL/BUSY");
                     return;
                 }
-                if (!gps_valid || latest_gps.accuracy > GPS_ACC_THRESHOLD) {
+                if (!gps_valid || (latest_gps.accuracy * 1000.0f) > (float)GPS_ACC_THRESHOLD) {
                     bt_send("GPS/CAPTURE/BASE/FAIL/ACCURACY");
                     return;
                 }
-                BASE_LAT = latest_gps.latitude;
-                BASE_LON = latest_gps.longitude;
-                CONFIG_DATUM = true;
-                CONFIG_PATH = false;  // re-pairing invalidates path
-                SaveConfiguration();
-
-                datum_data_t datum = { BASE_LAT, BASE_LON };
-                dds_result_t result = DDS_PUBLISH("/datum/set", datum);
+                controller_signal_t signal = { SIGNAL_START_DATUM_CAPTURE };
+                dds_result_t result = DDS_PUBLISH("/controller/signal", signal);
                 if (result != DDS_SUCCESS) {
-                    SerialDebug.printf("[BT] Failed to publish datum: %d\r\n", result);
                     bt_send("GPS/CAPTURE/BASE/FAIL/PUBLISH");
+                    return;
                 }
-                else {
-                    bt_send("GPS/CAPTURE/BASE/OK");
-                    SerialDebug.printf("Base captured: lat=%.7f lon=%.7f\r\n", BASE_LAT, BASE_LON);
-                }
+                bt_send("GPS/CAPTURE/BASE/STARTED");
+                SerialDebug.printf("[BT] Datum capture kicked off\r\n");
             }
         }
     }
     else if (MessageGroup == "MOWER") {
+        if (DATUM_CAPTURE_ACTIVE) {
+            bt_send("MOWER/" + ActionGroup + "/FAIL/BUSY");
+            return;
+        }
         if (ActionGroup == "START") {
             controller_signal_t signal = { SIGNAL_START_MOWING };
             dds_result_t result = DDS_PUBLISH("/controller/signal", signal);
@@ -123,13 +120,7 @@ static void handle_message(String MessageGroup, String ActionGroup, String DataG
             bt_send(result == DDS_SUCCESS ? "MOWER/MOVE/OK" : "MOWER/MOVE/FAIL");
         }
         else if (ActionGroup == "CAPTURE") {
-            if (DataGroup == "EXIT") {
-                if (!capture_preconditions_ok("MOWER/CAPTURE/EXIT")) return;
-                AlgorithmCaptureBaseExitPoint(current_x_cm, current_y_cm);
-                SaveConfiguration();
-                bt_send("MOWER/CAPTURE/EXIT/OK/" + String((int32_t)current_x_cm) + "," + String((int32_t)current_y_cm));
-            }
-            else if (DataGroup == "POINT") {
+            if (DataGroup == "POINT") {
                 if (!capture_preconditions_ok("MOWER/CAPTURE/POINT")) return;
                 AlgorithmCaptureNewPoint();
                 bt_send("MOWER/CAPTURE/POINT/OK/" + String((int32_t)current_x_cm) + "," + String((int32_t)current_y_cm));
@@ -235,6 +226,27 @@ void bluetooth_task(void* pvParameters) {
                     motor_data_t stop = { MOTOR_STOP, 0.0f, 0.0f };
                     DDS_PUBLISH("/motor", stop);
                     MANUAL_MOTORS_STOPPED = true;
+                }
+            }
+            // Datum-capture completion: consume LAST_DATUM_CAPTURE_RESULT and translate to BT.
+            {
+                int r = LAST_DATUM_CAPTURE_RESULT;
+                if (r != DATUM_RESULT_NONE) {
+                    LAST_DATUM_CAPTURE_RESULT = DATUM_RESULT_NONE;
+                    switch (r) {
+                        case DATUM_RESULT_OK:
+                            bt_send("GPS/CAPTURE/BASE/DONE");
+                            break;
+                        case DATUM_RESULT_FAIL_STATE:
+                            bt_send("GPS/CAPTURE/BASE/FAIL/STATE");
+                            break;
+                        case DATUM_RESULT_FAIL_ACCURACY:
+                            bt_send("GPS/CAPTURE/BASE/FAIL/ACCURACY");
+                            break;
+                        case DATUM_RESULT_FAIL_DISPLACEMENT:
+                            bt_send("GPS/CAPTURE/BASE/FAIL/DISPLACEMENT");
+                            break;
+                    }
                 }
             }
             parse_bluetooth();
