@@ -43,8 +43,14 @@ class DatumRelay(Node):
             f'Setting datum: lat={msg.latitude:.7f} lon={msg.longitude:.7f} yaw={yaw:.4f} rad'
         )
 
-        future = self.client.call_async(req)
-        future.add_done_callback(self.on_response)
+        #future = self.client.call_async(req)
+        #future.add_done_callback(self.on_response)
+
+        ##TODO: REMOVE, USED FOR TESTING
+        self.datum_set = True
+        self.timer.cancel()
+        self.get_logger().info('Datum set successfully')
+        ################################
 
     def on_response(self, future):
         self.datum_set = True
