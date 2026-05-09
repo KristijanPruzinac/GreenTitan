@@ -20,6 +20,9 @@ extern bool ENABLE_GPS;
 extern double odom_x;
 extern double odom_y;
 
+extern double BASE_LAT;
+extern double BASE_LON;
+
 bool init_gps();
 void gps_task(void* parameter);
 

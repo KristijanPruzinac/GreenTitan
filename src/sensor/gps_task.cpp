@@ -28,8 +28,6 @@ static void calc_checksum(unsigned char* CK) {
 static void gps_read() {
   if (SIMULATION_ENABLED) {
     const double METERS_PER_LAT = 111111.0;
-    const double BASE_LAT = 45.5; // Random latitude
-    const double BASE_LON = 18.0; // Random longitude
 
     gps_data_t gpsData = {
         BASE_LAT + (odom_y / METERS_PER_LAT) + gaussian_noise(0.0000001),  // ~3cm
