@@ -7,16 +7,6 @@ static const unsigned char UBX_HEADER[] = { 0xB5, 0x62 };
 
 static NAV_POSLLH posllh;
 
-bool init_gps(){
-  if (SIMULATION_ENABLED) return true;
-
-  SerialGPS.begin(GPS_BAUDRATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
-  SerialGPS.setTimeout(COMMUNICATION_TIMEOUT);
-
-  //TODO: Implement check for GPS initializing properly
-  return true;
-}
-
 static void calc_checksum(unsigned char* CK) {
   memset(CK, 0, 2);
   for (int i = 0; i < (int)sizeof(NAV_POSLLH); i++) {
@@ -45,6 +35,7 @@ static void gps_read() {
     if (result != DDS_SUCCESS) {
         SerialDebug.printf("GPS Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
     }
+
     return;
   }
 
@@ -104,7 +95,35 @@ static void gps_read() {
     if (result != DDS_SUCCESS) {
         SerialDebug.printf("GPS Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
     }
+
+    // TODO: Remove test print
+    SerialDebug.printf("GPS: lat=%.7f lon=%.7f alt=%.2f acc=%.2f\r\n",
+                       gpsData.latitude, gpsData.longitude, gpsData.altitude, gpsData.accuracy);
   }
+}
+
+bool init_gps(){
+  if (SIMULATION_ENABLED) return true;
+
+  SerialGPS.begin(GPS_BAUDRATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
+  SerialGPS.setTimeout(COMMUNICATION_TIMEOUT);
+
+  // Clear so a stale value from before can't fool us
+  memset(&posllh, 0, sizeof(posllh));
+
+  // Let the parser pump for ~1 second
+  unsigned long start = millis();
+  while (millis() - start < 1000) {
+      gps_read();
+
+      if (posllh.hAcc > 0) {
+          return true;
+      }
+
+      delay(10);
+  }
+
+  return false;
 }
 
 static dds_thread_context_t thread_context;

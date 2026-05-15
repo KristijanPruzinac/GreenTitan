@@ -1,10 +1,10 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
-#define SIMULATION_ENABLED true
+#define SIMULATION_ENABLED false
 #define MOTION_TELEPORT_MODE      false
-#define HARDCODED_DATUM_AND_PATH true
-#define PRINT_BT_COMMANDS true
+#define HARDCODED_DATUM_AND_PATH false
+#define PRINT_BT_COMMANDS false
 
 #define MOTION_TELEPORT_DELAY_MS  1000
 
@@ -116,8 +116,8 @@ typedef struct {
 #define MOTOR_A_DIR_PIN 32
 
 #define MOTOR_STEPS_PER_REV 200
-#define WHEEL_RADIUS 0.1f
-#define WHEEL_BASE 0.5f
+#define WHEEL_RADIUS 0.075f
+#define WHEEL_BASE 0.28f
 #define MAX_LINEAR_VEL  0.5f
 #define MAX_ANGULAR_VEL 1.0f
 

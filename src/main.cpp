@@ -550,6 +550,8 @@ void setup() {
     SerialDebug.setTimeout(COMMUNICATION_TIMEOUT);
     SerialDebug.println("[BOOT] Starting...");
 
+    SerialDebug.printf("[BOOT] Reset reason: %d\r\n", esp_reset_reason());
+
     dds_init();
     SerialDebug.println("[BOOT] DDS initialized");
 
