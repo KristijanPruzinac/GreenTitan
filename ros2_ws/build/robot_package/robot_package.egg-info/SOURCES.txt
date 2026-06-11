@@ -8,13 +8,10 @@ setup.py
 ../../build/robot_package/robot_package.egg-info/requires.txt
 ../../build/robot_package/robot_package.egg-info/top_level.txt
 ../../build/robot_package/robot_package.egg-info/zip-safe
-config/ekf_global.yaml
-config/ekf_local.yaml
-config/navsat.yaml
+config/ekf.yaml
 launch/robot.launch.xml
 resource/robot_package
 robot_package/__init__.py
-robot_package/datum_relay.py
 robot_package/path_visualizer.py
 test/test_copyright.py
 test/test_flake8.py

@@ -14,6 +14,7 @@
 #include "esp_timer.h"
 
 extern HardwareSerial SerialDebug;
+extern volatile bool TASKS_STARTED;
 
 extern bool ENABLE_GPS;
 extern double BASE_LON;

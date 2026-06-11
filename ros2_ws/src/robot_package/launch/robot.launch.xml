@@ -1,4 +1,5 @@
 <launch>
+  <!-- Static transforms (IMU and GPS links relative to base_link) -->
   <node pkg="tf2_ros" exec="static_transform_publisher"
         name="base_link_to_imu"
         args="0 0 0 0 0 0 base_link imu_link"/>
@@ -6,24 +7,13 @@
         name="base_link_to_gps"
         args="0 0 0 0 0 0 base_link gps_link"/>
 
+  <!-- Single EKF fusing GPS odometry and IMU -->
   <node pkg="robot_localization" exec="ekf_node"
-        name="ekf_local" output="screen">
-    <param from="$(find-pkg-share robot_package)/config/ekf_local.yaml"/>
-    <remap from="/odometry/filtered" to="/odometry/filtered/local"/>
-  </node>
-
-  <node pkg="robot_package" exec="datum_relay" name="datum_relay" output="screen"/>
-  <node pkg="robot_package" exec="path_visualizer" name="path_visualizer" output="screen"/>
-
-  <node pkg="robot_localization" exec="navsat_transform_node"
-        name="navsat_transform" output="screen">
-    <param from="$(find-pkg-share robot_package)/config/navsat.yaml"/>
-    <remap from="/odometry/filtered" to="/odometry/filtered/local"/>
-  </node>
-
-  <node pkg="robot_localization" exec="ekf_node"
-        name="ekf_global" output="screen">
-    <param from="$(find-pkg-share robot_package)/config/ekf_global.yaml"/>
+        name="ekf" output="screen">
+    <param from="$(find-pkg-share robot_package)/config/ekf.yaml"/>
     <remap from="/odometry/filtered" to="/odometry/filtered/global"/>
   </node>
+
+  <!-- Your custom nodes (path_visualizer) -->
+  <node pkg="robot_package" exec="path_visualizer" name="path_visualizer" output="screen"/>
 </launch>

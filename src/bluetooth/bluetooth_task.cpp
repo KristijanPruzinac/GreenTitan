@@ -84,7 +84,7 @@ static void handle_message(String MessageGroup, String ActionGroup, String DataG
         }
         if (ActionGroup == "START") {
             controller_signal_t signal = { SIGNAL_START_MOWING };
-            dds_result_t result = DDS_PUBLISH("/controller/signal", signal);
+            dds_result_t result = DDS_PUBLISH("/controllemotorr/signal", signal);
             if (result != DDS_SUCCESS) {
                 bt_send("MOWER/START/FAIL");
             } else {
@@ -115,8 +115,8 @@ static void handle_message(String MessageGroup, String ActionGroup, String DataG
                 bt_send("MOWER/MOVE/FAIL/PARSE");
                 return;
             }
-            float lin = DataGroup.substring(0, comma).toFloat();
-            float ang = DataGroup.substring(comma + 1).toFloat();
+            float lin = DataGroup.substring(0, comma).toFloat() / 3.0;
+            float ang = DataGroup.substring(comma + 1).toFloat() / 3.0;
             motor_data_t cmd = { MOTOR_MOVE, lin, ang };
             dds_result_t result = DDS_PUBLISH("/motor", cmd);
             LAST_MANUAL_MOVE_MS = millis();

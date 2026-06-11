@@ -1,0 +1,41 @@
+[0.992s] Invoking command in '/home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/src/robot_package': PYTHONPATH=/home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/robot_package build --build-base /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/build install --record /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/install.log --single-version-externally-managed install_data
+[1.321s] running egg_info
+[1.321s] creating ../../build/robot_package/robot_package.egg-info
+[1.346s] writing ../../build/robot_package/robot_package.egg-info/PKG-INFO
+[1.347s] writing dependency_links to ../../build/robot_package/robot_package.egg-info/dependency_links.txt
+[1.347s] writing entry points to ../../build/robot_package/robot_package.egg-info/entry_points.txt
+[1.347s] writing requirements to ../../build/robot_package/robot_package.egg-info/requires.txt
+[1.348s] writing top-level names to ../../build/robot_package/robot_package.egg-info/top_level.txt
+[1.348s] writing manifest file '../../build/robot_package/robot_package.egg-info/SOURCES.txt'
+[1.407s] reading manifest file '../../build/robot_package/robot_package.egg-info/SOURCES.txt'
+[1.408s] writing manifest file '../../build/robot_package/robot_package.egg-info/SOURCES.txt'
+[1.409s] running build
+[1.409s] running build_py
+[1.410s] creating /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/build
+[1.410s] creating /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/build/lib
+[1.410s] creating /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/build/lib/robot_package
+[1.410s] copying robot_package/path_visualizer.py -> /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/build/lib/robot_package
+[1.410s] copying robot_package/__init__.py -> /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/build/lib/robot_package
+[1.411s] running install
+[1.418s] running install_lib
+[1.440s] creating /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package
+[1.440s] copying /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/build/lib/robot_package/path_visualizer.py -> /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package
+[1.440s] copying /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/build/lib/robot_package/__init__.py -> /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package
+[1.440s] byte-compiling /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package/path_visualizer.py to path_visualizer.cpython-312.pyc
+[1.442s] byte-compiling /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package/__init__.py to __init__.cpython-312.pyc
+[1.443s] running install_data
+[1.443s] creating /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/share/ament_index
+[1.443s] creating /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/share/ament_index/resource_index
+[1.443s] creating /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/share/ament_index/resource_index/packages
+[1.443s] copying resource/robot_package -> /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/share/ament_index/resource_index/packages
+[1.444s] copying package.xml -> /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/share/robot_package
+[1.444s] creating /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/share/robot_package/launch
+[1.444s] copying launch/robot.launch.xml -> /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/share/robot_package/launch
+[1.444s] creating /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/share/robot_package/config
+[1.444s] copying config/ekf.yaml -> /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/share/robot_package/config
+[1.444s] running install_egg_info
+[1.466s] Copying ../../build/robot_package/robot_package.egg-info to /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package-0.0.0-py3.12.egg-info
+[1.467s] running install_scripts
+[1.608s] Installing path_visualizer script to /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/lib/robot_package
+[1.609s] writing list of installed files to '/home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/install.log'
+[1.649s] Invoked command in '/home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/src/robot_package' returned '0': PYTHONPATH=/home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/robot_package build --build-base /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/build install --record /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/install.log --single-version-externally-managed install_data

@@ -32,15 +32,16 @@ bool ENABLE_MOTION = true;
 // -------------------------------------------------------- GLOBALS ---------------------------------------------------------------
 HardwareSerial SerialDebug(1);
 
+volatile bool TASKS_STARTED = false;
+
 bool SETUP_COMPLETED = true;
 
 double BASE_LON = 0;
 double BASE_LAT = 0;
-float  BASE_YAW = 0.0f;
 int64_t BASE_EXIT_X_CM = 0;
 int64_t BASE_EXIT_Y_CM = 0;
 
-int GPS_ACC_THRESHOLD = 30; //TODO: Revert to 18
+int GPS_ACC_THRESHOLD = 3000; //TODO: Revert to 18
 int GPS_STABILITY_CHECK_DURATION_SECONDS = 15; // 5 minutes TODO: Revert to 5 minutes
 
 float MOTION_ACC_FACTOR = 1.0;
@@ -58,7 +59,7 @@ bool CONFIG_GYRO = false;
 bool CONFIG_RAIN_SENSOR = false;
 bool CONFIG_DATUM = false;
 
-bool IMU_INVERT = false;
+bool IMU_INVERT = true;
 
 
 volatile bool     MANUAL_MODE_ACTIVE    = false;
@@ -96,7 +97,6 @@ volatile int      LAST_DATUM_CAPTURE_RESULT  = DATUM_RESULT_NONE;
 #include "simulation/sim_task.h"
 
 // -------------------------------------------------------- Micro-ROS ------------------------------------------------------------------
-rcl_publisher_t odom_publisher;
 rcl_publisher_t imu_publisher;
 rcl_publisher_t gps_publisher;
 rcl_subscription_t fused_pose_subscriber;
@@ -104,9 +104,8 @@ rcl_subscription_t fused_pose_subscriber;
 rcl_publisher_t datum_publisher;
 rcl_publisher_t path_data_publisher;
 
-nav_msgs__msg__Odometry odom_msg;
 sensor_msgs__msg__Imu imu_msg;
-sensor_msgs__msg__NavSatFix gps_msg;
+nav_msgs__msg__Odometry gps_msg;
 nav_msgs__msg__Odometry fused_pose_msg;
 
 rclc_executor_t executor;
@@ -114,9 +113,14 @@ rclc_support_t support;
 rcl_allocator_t allocator;
 rcl_node_t node;
 
-void fused_pose_callback(const void* msgin);
+// String buffers for message frame_id fields (micro-ROS needs preallocated storage)
+char gps_frame_id_buf[16];
+char gps_child_frame_id_buf[16];
+char imu_frame_id_buf[16];
+char fused_frame_id_buf[16];
+char fused_child_frame_id_buf[16];
 
-unsigned long time_offset = 0;
+void fused_pose_callback(const void* msgin);
 
 static bool pending_datum_publish = false;
 static int datum_publish_count = 0;
@@ -171,12 +175,6 @@ void init_micro_ros(){
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, NavSatFix),
         "esp/datum"));
 
-    // Odometry publisher
-    RCCHECK(rclc_publisher_init_default(
-        &odom_publisher, &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
-        "odom"));
-
     // IMU publisher
     RCCHECK(rclc_publisher_init_default(
         &imu_publisher, &node,
@@ -186,8 +184,8 @@ void init_micro_ros(){
     // GPS publisher
     RCCHECK(rclc_publisher_init_default(
         &gps_publisher, &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, NavSatFix),
-        "gps/fix"));
+        ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
+        "gps/odom"));
     
     RCCHECK(rclc_subscription_init_default(
         &fused_pose_subscriber,
@@ -199,6 +197,22 @@ void init_micro_ros(){
         &path_data_publisher, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float64MultiArray),
         "algo/path_data"));
+    
+    // GPS
+    strcpy(gps_frame_id_buf, "odom");
+    gps_msg.header.frame_id.data = gps_frame_id_buf;
+    gps_msg.header.frame_id.capacity = sizeof(gps_frame_id_buf);
+    gps_msg.header.frame_id.size = strlen(gps_frame_id_buf);
+    strcpy(gps_child_frame_id_buf, "base_link");
+    gps_msg.child_frame_id.data = gps_child_frame_id_buf;
+    gps_msg.child_frame_id.capacity = sizeof(gps_child_frame_id_buf);
+    gps_msg.child_frame_id.size = strlen(gps_child_frame_id_buf);
+
+    // IMU
+    strcpy(imu_frame_id_buf, "imu_link");
+    imu_msg.header.frame_id.data = imu_frame_id_buf;
+    imu_msg.header.frame_id.capacity = sizeof(imu_frame_id_buf);
+    imu_msg.header.frame_id.size = strlen(imu_frame_id_buf);
 
     // create executor
     RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
@@ -223,7 +237,7 @@ void publish_datum() {
     sensor_msgs__msg__NavSatFix datum_msg = {};
     datum_msg.latitude  = BASE_LAT;
     datum_msg.longitude = BASE_LON;
-    datum_msg.altitude  = (double)BASE_YAW;   // HACK: yaw (radians) smuggled via altitude; datum_relay.py decodes it
+    datum_msg.altitude  = 0.0;
     datum_msg.status.status  = 0;
     datum_msg.status.service = 1;
 
@@ -235,53 +249,14 @@ void datum_set_callback(dds_callback_context_t* context) {
     datum_data_t* data = (datum_data_t*)context->message_data.data;
     BASE_LAT = data->latitude;
     BASE_LON = data->longitude;
-    BASE_YAW = data->yaw;
     pending_datum_publish = true;
     datum_publish_count = 0;
 }
 
-void odom_topic_callback(dds_callback_context_t* context) {
-    odom_data_t* data = (odom_data_t*)context->message_data.data;
-
-    odom_msg.header.stamp.sec = data->timestamp_sec;
-    odom_msg.header.stamp.nanosec = data->timestamp_nsec;
-
-    odom_msg.pose.pose.position.x = data->x;
-    odom_msg.pose.pose.position.y = data->y;
-
-    odom_msg.pose.pose.position.z = 0.0f;
-    odom_msg.pose.pose.orientation.x = 0.0f;
-    odom_msg.pose.pose.orientation.y = 0.0f;
-    odom_msg.pose.pose.orientation.z = sinf(data->theta / 2.0f);
-    odom_msg.pose.pose.orientation.w = cosf(data->theta / 2.0f);
-
-    odom_msg.twist.twist.linear.x = data->linear_vel;
-    odom_msg.twist.twist.linear.y = 0.0f;
-    odom_msg.twist.twist.linear.z = 0.0f;
-
-    odom_msg.twist.twist.angular.x = 0.0f;
-    odom_msg.twist.twist.angular.y = 0.0f;
-    odom_msg.twist.twist.angular.z = data->angular_vel;
-
-    odom_msg.pose.covariance[0]  = 0.01f;   // x stddev ≈ 0.1 m
-    odom_msg.pose.covariance[7]  = 0.01f;   // y stddev ≈ 0.1 m
-    odom_msg.pose.covariance[35] = 0.05f;   // yaw stddev ≈ 0.22 rad
-
-    odom_msg.twist.covariance[0] = 0.16f;   // vx stddev ≈ 0.4 m/s
-    odom_msg.twist.covariance[35] = 0.1f;   // yaw stddev ≈ 0.32 rad/s
-
-    odom_msg.header.frame_id.data = (char*)"odom";
-    odom_msg.header.frame_id.size = strlen("odom");
-    odom_msg.child_frame_id.data = (char*)"base_link";
-    odom_msg.child_frame_id.size = strlen("base_link");
-
-    if (datum_published) {
-        RCSOFTCHECK(rcl_publish(&odom_publisher, &odom_msg, NULL));
-    }
-}
-
 void imu_topic_callback(dds_callback_context_t* context) {
     IMU_data_t* data = (IMU_data_t*)context->message_data.data;
+
+    if (!datum_published) return;
 
     imu_msg.header.stamp.sec = data->timestamp_sec;
     imu_msg.header.stamp.nanosec = data->timestamp_nsec;
@@ -306,41 +281,74 @@ void imu_topic_callback(dds_callback_context_t* context) {
     imu_msg.linear_acceleration_covariance[4] = 0.1f;
     imu_msg.linear_acceleration_covariance[8] = 0.1f;
 
-    imu_msg.header.frame_id.data = (char*)"imu_link";
-    imu_msg.header.frame_id.size = strlen("imu_link");
-
-    if (datum_published) {
-        RCSOFTCHECK(rcl_publish(&imu_publisher, &imu_msg, NULL));
-    }
+    RCSOFTCHECK(rcl_publish(&imu_publisher, &imu_msg, NULL));
 }
 
 void gps_topic_callback(dds_callback_context_t* context) {
     gps_data_t* data = (gps_data_t*)context->message_data.data;
 
-    gps_msg.header.stamp.sec = data->timestamp_sec;
+    if (!datum_published) return;
+
+    // Convert lat/lon to local meters relative to datum
+    const double METERS_PER_LAT = 111111.0;
+    double y_north = (data->latitude  - BASE_LAT) * METERS_PER_LAT;
+    double x_east  = (data->longitude - BASE_LON) * METERS_PER_LAT * cos(BASE_LAT * M_PI / 180.0);
+
+    // Header timestamp
+    gps_msg.header.stamp.sec     = data->timestamp_sec;
     gps_msg.header.stamp.nanosec = data->timestamp_nsec;
 
-    gps_msg.latitude  = data->latitude;
-    gps_msg.longitude = data->longitude;
-    gps_msg.altitude  = data->altitude;
+    // Pose: position in odom frame
+    gps_msg.pose.pose.position.x = x_east;
+    gps_msg.pose.pose.position.y = y_north;
+    gps_msg.pose.pose.position.z = 0.0;
 
-    float acc = data->accuracy * data->accuracy; // variance = accuracy^2
+    // Convert yaw to quaternion (Z axis only, 2D)
+    double half = data->heading * 0.5;
+    gps_msg.pose.pose.orientation.x = 0.0;
+    gps_msg.pose.pose.orientation.y = 0.0;
+    gps_msg.pose.pose.orientation.z = sin(half);
+    gps_msg.pose.pose.orientation.w = cos(half);
 
-    gps_msg.position_covariance[0] = acc;  // xx
-    gps_msg.position_covariance[4] = acc;  // yy
-    gps_msg.position_covariance[8] = acc * 4.0f; // zz (altitude less accurate)
+    // Pose covariance (6x6, row-major: x, y, z, roll, pitch, yaw)
+    // Only fill diagonals we care about; leave the rest at zero.
+    double pos_var = (double)data->accuracy * (double)data->accuracy;
+    gps_msg.pose.covariance[0]  = pos_var;      // x
+    gps_msg.pose.covariance[7]  = pos_var;      // y
+    gps_msg.pose.covariance[14] = 1e6;          // z — huge, we don't care
+    gps_msg.pose.covariance[21] = 1e6;          // roll
+    gps_msg.pose.covariance[28] = 1e6;          // pitch
 
-    gps_msg.position_covariance_type = sensor_msgs__msg__NavSatFix__COVARIANCE_TYPE_DIAGONAL_KNOWN;
-
-    gps_msg.status.status = 0;  // STATUS_FIX
-    gps_msg.status.service = 1; // SERVICE_GPS
-
-    gps_msg.header.frame_id.data = (char*)"gps_link";
-    gps_msg.header.frame_id.size = strlen("gps_link");
-
-    if (datum_published) {
-        RCSOFTCHECK(rcl_publish(&gps_publisher, &gps_msg, NULL));
+    // Yaw covariance — gate on speed, garbage at low speeds
+    if (data->speed > 0.3 && data->heading_accuracy > 0 && data->heading_accuracy < 1.0) {
+        gps_msg.pose.covariance[35] = data->heading_accuracy * data->heading_accuracy;
+    } else {
+        gps_msg.pose.covariance[35] = 1e6;      // ignore yaw measurement
     }
+
+    // Twist: velocity in base_link frame
+    // gps gives velocity in world ENU (vel_east, vel_north). For child_frame_id=base_link,
+    // twist should be in base_link frame. Since we may not have reliable yaw, send it in
+    // world frame instead and configure EKF to interpret /gps/odom twist as if in odom frame.
+    // Easier approach: just send linear x/y in world frame and tell EKF child_frame_id=odom.
+    // For now, send raw east/north and let EKF handle it (see config notes below).
+    gps_msg.twist.twist.linear.x = data->vel_east;   // east
+    gps_msg.twist.twist.linear.y = data->vel_north;  // north
+    gps_msg.twist.twist.linear.z = 0.0;
+    gps_msg.twist.twist.angular.x = 0.0;
+    gps_msg.twist.twist.angular.y = 0.0;
+    gps_msg.twist.twist.angular.z = 0.0;
+
+    double vel_var = (double)data->vel_accuracy * (double)data->vel_accuracy;
+    if (vel_var < 1e-6) vel_var = 0.01;  // floor — never zero
+    gps_msg.twist.covariance[0]  = vel_var;
+    gps_msg.twist.covariance[7]  = vel_var;
+    gps_msg.twist.covariance[14] = 1e6;
+    gps_msg.twist.covariance[21] = 1e6;
+    gps_msg.twist.covariance[28] = 1e6;
+    gps_msg.twist.covariance[35] = 1e6;
+
+    RCSOFTCHECK(rcl_publish(&gps_publisher, &gps_msg, NULL));
 }
 
 void fused_pose_callback(const void* msgin) {
@@ -367,9 +375,13 @@ void fused_pose_callback(const void* msgin) {
         .omega = (float)msg->twist.twist.angular.z,
     };
 
-    dds_result_t result = DDS_PUBLISH("/fused_pose", data);
-    if (result != DDS_SUCCESS) {
-        SerialDebug.printf("Fused pose publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
+    if (TASKS_STARTED) {
+        dds_result_t result = DDS_PUBLISH("/fused_pose", data);
+        if (result != DDS_SUCCESS) {
+            SerialDebug.printf("Fused pose publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
+        }
+    } else {
+        SerialDebug.println("Tasks not started, skipping fused pose publish");
     }
 }
 
@@ -404,7 +416,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             gps_task,
             "GPSTask",
-            2048,
+            2816,
             NULL,
             1,
             NULL,
@@ -416,7 +428,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             motion_task,
             "MotionTask",
-            3072,
+            2816,
             NULL,
             1,
             NULL,
@@ -428,7 +440,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             bluetooth_task,
             "BluetoothTask",
-            3072,
+            2816,
             NULL,
             1,
             NULL,
@@ -488,7 +500,6 @@ static void init_test_path() {
     // Datum (arbitrary - host EKF not running for this test)
     BASE_LAT = 45.5;
     BASE_LON = 18.0;
-    BASE_YAW = 0.0f;
 
     // Base exit point: fixed distance in the +x direction (yaw = 0 means east-aligned)
     BASE_EXIT_X_CM = DATUM_BASE_EXIT_DISTANCE_CM;
@@ -644,7 +655,7 @@ static dds_thread_context_t thread_context;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
 void loop() {
     thread_context.task = xTaskGetCurrentTaskHandle();
-    thread_context.queue = xQueueCreate(30, sizeof(dds_callback_context_t));
+    thread_context.queue = xQueueCreate(15, sizeof(dds_callback_context_t));
     thread_context.sync_mutex = xSemaphoreCreateMutex();
     
     esp_timer_create_args_t timer_args = {
@@ -658,10 +669,6 @@ void loop() {
 
     dds_result_t result;
     result = DDS_SUBSCRIBE("/datum/set", datum_set_callback, &thread_context);
-    if (result != DDS_SUCCESS) {
-        SerialDebug.printf("Topic subscribe failed: %s\r\n", DDS_RESULT_TO_STRING(result));
-    }
-    result = DDS_SUBSCRIBE("/odom", odom_topic_callback, &thread_context);
     if (result != DDS_SUCCESS) {
         SerialDebug.printf("Topic subscribe failed: %s\r\n", DDS_RESULT_TO_STRING(result));
     }

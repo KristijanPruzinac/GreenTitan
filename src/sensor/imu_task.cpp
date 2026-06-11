@@ -29,6 +29,7 @@ bool init_imu(){
   mpu.setAccelerometerRange(MPU6050_RANGE_4_G);
   mpu.setGyroRange(MPU6050_RANGE_500_DEG);
   mpu.setFilterBandwidth(MPU6050_BAND_10_HZ);
+  calibration_completed = true;
   return true;
 }
 
@@ -44,9 +45,9 @@ void imu_calibrate(){
   double acc_y = 0;
   double acc_z = 0;
 
-  //Read calibration data for 2s
+  //Read calibration data for 6s
   int sample_size = 40;
-  int sample_delay = 50;
+  int sample_delay = 150;
   for (int i = 0; i < sample_size; i++){
     mpu.getEvent(&imu_acc, &imu_gyro, &imu_temp);
 
@@ -135,6 +136,14 @@ void imu_task(void* parameter) {
               else {
                 gz = imu_gyro.gyro.z - gyro_z_offset;
               }
+              if (fabs(gz) < GYRO_DEADBAND) gz = 0.0f;
+
+              if (fabs(imu_acc.acceleration.x - acc_x_offset) < GYRO_DEADBAND) {
+                  imu_acc.acceleration.x = acc_x_offset;
+              }
+              if (fabs(imu_acc.acceleration.y - acc_y_offset) < GYRO_DEADBAND) {
+                  imu_acc.acceleration.y = acc_y_offset;
+              }
 
               IMU_data_t IMU_data = {imu_acc.acceleration.x - acc_x_offset, imu_acc.acceleration.y - acc_y_offset, imu_acc.acceleration.z - acc_z_offset,
                                     imu_gyro.gyro.x - gyro_x_offset, imu_gyro.gyro.y - gyro_y_offset, gz};
@@ -144,9 +153,18 @@ void imu_task(void* parameter) {
               IMU_data.timestamp_sec = ts.tv_sec;
               IMU_data.timestamp_nsec = ts.tv_nsec;
 
-              dds_result_t result = DDS_PUBLISH("/imu", IMU_data);
-              if (result != DDS_SUCCESS) {
-                  SerialDebug.printf("IMU Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
+              if (TASKS_STARTED) {
+                dds_result_t result = DDS_PUBLISH("/imu", IMU_data);
+                if (result != DDS_SUCCESS) {
+                    SerialDebug.printf("IMU Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
+                }
+
+                /*
+                SerialDebug.printf("IMU: acc=(%.2f, %.2f, %.2f) gyro=(%.2f, %.2f, %.2f)\r\n",
+                                   IMU_data.acc_x, IMU_data.acc_y, IMU_data.acc_z,
+                                   IMU_data.gyro_x, IMU_data.gyro_y, IMU_data.gyro_z);
+                                   */
+                                   
               }
             }
 

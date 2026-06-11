@@ -225,37 +225,6 @@ void motor_task(void* parameter) {
                   sim_angular_velocity = (rightSpeed - leftSpeed) / WHEEL_BASE;
                 }
               }
-
-              // Publish odometry
-              odom_data_t data;
-              if (SIMULATION_ENABLED){
-                data = {
-                    sim_pos_x,
-                    sim_pos_y,
-                    (float) sim_pos_theta,
-                    (float) sim_linear_velocity,
-                    (float) sim_angular_velocity,
-                };
-              }
-              else {
-                data = {
-                    odom_x,
-                    odom_y,
-                    (float) odom_theta,
-                    (float) ((leftSpeed + rightSpeed) / 2.0),
-                    (float) (rightSpeed - leftSpeed) / WHEEL_BASE,
-                };
-              }
-
-              struct timespec ts;
-              clock_gettime(CLOCK_REALTIME, &ts);
-              data.timestamp_sec = ts.tv_sec;
-              data.timestamp_nsec = ts.tv_nsec;
-
-              result = DDS_PUBLISH("/odom", data);
-              if (result != DDS_SUCCESS) {
-                  SerialDebug.printf("Odom Topic publish failed: %s\r\n", DDS_RESULT_TO_STRING(result));
-              }
             }
 
             // ------- THREAD LOOP CODE END -------

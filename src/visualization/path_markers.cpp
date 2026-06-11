@@ -4,7 +4,7 @@
 
 extern HardwareSerial SerialDebug;
 
-#define MAX_PATH_DATA_DOUBLES  512
+#define MAX_PATH_DATA_DOUBLES  64
 
 static double path_buffer[MAX_PATH_DATA_DOUBLES];
 static std_msgs__msg__Float64MultiArray path_msg;

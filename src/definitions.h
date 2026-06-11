@@ -16,24 +16,18 @@
 #define GPS_RX_PIN 16
 #define GPS_TX_PIN 17
 
-struct NAV_POSLLH {
-  unsigned char cls;
-  unsigned char id;
-  unsigned short len;
-  unsigned long iTOW;
-  long lon;
-  long lat;
-  long height;
-  long hMSL;
-  unsigned long hAcc;
-  unsigned long vAcc;
-};
-
 typedef struct {
-    double latitude;
-    double longitude;
-    float altitude;
-    float accuracy;
+    double latitude;          // deg
+    double longitude;         // deg
+    double altitude;          // meters (MSL)
+    double accuracy;          // horizontal accuracy (meters)
+    double heading;           // radians (0 = east, increasing north)
+    double heading_accuracy;  // radians
+    double speed;             // meters per second (2D ground speed) – optional, keep for compatibility
+    double speed_accuracy;    // meters per second
+    double vel_north;         // m/s (positive = north)
+    double vel_east;          // m/s (positive = east)
+    double vel_accuracy;      // m/s (same for both axes, from sAcc)
     uint32_t timestamp_sec;
     uint32_t timestamp_nsec;
 } gps_data_t;
@@ -47,6 +41,8 @@ typedef struct {
 //IMU
 #define GYRO_SDA_PIN 21
 #define GYRO_SCL_PIN 22
+
+#define GYRO_DEADBAND 0.04f
 
 typedef struct {
     float acc_x;
@@ -84,9 +80,9 @@ typedef struct {
 #define MOTION_HEADING_ERROR_ROTATE_ONLY  0.52f  // ~30° - rotate only above
 
 //Datum capture
-#define DATUM_CAPTURE_DRIVE_DURATION_MS  3000
+#define DATUM_CAPTURE_DRIVE_DURATION_MS  800
 #define DATUM_CAPTURE_DRIVE_SPEED        0.3f
-#define DATUM_CAPTURE_MIN_DISPLACEMENT_M 0.2f
+#define DATUM_CAPTURE_MIN_DISPLACEMENT_M 0.0f
 #define DATUM_BASE_EXIT_DISTANCE_CM      50
 
 //DAC
@@ -121,8 +117,8 @@ typedef struct {
 #define MAX_LINEAR_VEL  0.5f
 #define MAX_ANGULAR_VEL 1.0f
 
-#define MOTOR_MAX_SPEED 250
-#define MOTOR_ACCELERATION 600
+#define MOTOR_MAX_SPEED 200
+#define MOTOR_ACCELERATION 150
 
 // Manual mode
 #define MANUAL_LINEAR_SPEED   0.3f
@@ -155,17 +151,6 @@ typedef struct {
   float linear_vel;
   float angular_vel;
 } motor_data_t;
-
-typedef struct {
-    double x;
-    double y;
-    float theta;
-    float linear_vel;
-    float angular_vel;
-    
-    uint32_t timestamp_sec;
-    uint32_t timestamp_nsec;
-} odom_data_t;
 
 // Fused pose from ROS2 EKF
 typedef struct {
@@ -278,7 +263,6 @@ typedef struct {
 typedef struct {
     double latitude;
     double longitude;
-    float yaw;        // radians, ENU (0 = east, π/2 = north). Hacked into NavSatFix.altitude on the wire.
 } datum_data_t;
 
 typedef struct {

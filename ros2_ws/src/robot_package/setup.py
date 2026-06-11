@@ -29,7 +29,6 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'datum_relay = robot_package.datum_relay:main',
             'path_visualizer = robot_package.path_visualizer:main',
         ],
     },

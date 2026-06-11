@@ -11,12 +11,9 @@ running build_py
 running install
 running install_lib
 running install_data
-copying config/ekf_global.yaml -> /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/share/robot_package/config
-copying config/ekf_local.yaml -> /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/share/robot_package/config
 running install_egg_info
 removing '/home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package-0.0.0-py3.12.egg-info' (and everything under it)
 Copying ../../build/robot_package/robot_package.egg-info to /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/lib/python3.12/site-packages/robot_package-0.0.0-py3.12.egg-info
 running install_scripts
-Installing datum_relay script to /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/lib/robot_package
 Installing path_visualizer script to /home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/install/robot_package/lib/robot_package
 writing list of installed files to '/home/kristijan/Documents/GitHub/GreenTitan/ros2_ws/build/robot_package/install.log'

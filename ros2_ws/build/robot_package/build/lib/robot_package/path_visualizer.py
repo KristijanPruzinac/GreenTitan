@@ -8,7 +8,7 @@ from geometry_msgs.msg import Point
 class PathVisualizer(Node):
     def __init__(self):
         super().__init__('path_visualizer')
-        self.frame_id = 'map'
+        self.frame_id = 'odom'
         self.outlines_pub = self.create_publisher(MarkerArray, 'algo/markers/outlines', 10)
         self.infill_pub = self.create_publisher(MarkerArray, 'algo/markers/infill', 10)
         self.obstacles_pub = self.create_publisher(MarkerArray, 'algo/markers/obstacles', 10)
@@ -16,6 +16,8 @@ class PathVisualizer(Node):
         self.get_logger().info('Path visualizer ready')
 
     def on_data(self, msg):
+        stamp = self.get_clock().now().to_msg()
+
         d = list(msg.data)
         i = 0
 
@@ -35,15 +37,16 @@ class PathVisualizer(Node):
             i += 2 * m
             scanlines.append(pts)
 
-        self.outlines_pub.publish(self._outlines(outlines))
-        self.infill_pub.publish(self._infill(scanlines))
-        self.obstacles_pub.publish(self._obstacles(outlines))
+        self.outlines_pub.publish(self._outlines(outlines, stamp))
+        self.infill_pub.publish(self._infill(scanlines, stamp))
+        self.obstacles_pub.publish(self._obstacles(outlines, stamp))
         self.get_logger().info(f'Drew {len(outlines)} outlines, {len(scanlines)} scan lines')
 
-    def _outlines(self, outlines):
+    def _outlines(self, outlines, stamp):
         arr = MarkerArray()
         for idx, pts in enumerate(outlines):
             m = Marker()
+            m.header.stamp = stamp
             m.header.frame_id = self.frame_id
             m.ns = 'outlines'
             m.id = idx
@@ -58,8 +61,9 @@ class PathVisualizer(Node):
             arr.markers.append(m)
         return arr
 
-    def _infill(self, scanlines):
+    def _infill(self, scanlines, stamp):
         m = Marker()
+        m.header.stamp = stamp
         m.header.frame_id = self.frame_id
         m.ns = 'infill'
         m.id = 0
@@ -76,12 +80,13 @@ class PathVisualizer(Node):
         arr.markers.append(m)
         return arr
 
-    def _obstacles(self, outlines):
+    def _obstacles(self, outlines, stamp):
         arr = MarkerArray()
         for idx, pts in enumerate(outlines[1:], start=1):
             if len(pts) < 3:
                 continue
             m = Marker()
+            m.header.stamp = stamp
             m.header.frame_id = self.frame_id
             m.ns = 'obstacles'
             m.id = idx - 1

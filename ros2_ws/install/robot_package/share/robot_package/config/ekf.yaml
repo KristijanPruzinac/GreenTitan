@@ -1,0 +1,34 @@
+ekf:
+  ros__parameters:
+    frequency: 10.0
+    sensor_timeout: 1.0
+    two_d_mode: true
+    transform_time_offset: 0.0
+    transform_timeout: 0.0
+    print_diagnostics: true
+    publish_tf: true
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+
+    # GPS Odometry (provides x, y, yaw, vx, vy)
+    odom0: /gps/odom
+    odom0_config: [true,  true,  false,   # x, y, z
+                   false, false, true,    # roll, pitch, yaw
+                   true,  true,  false,   # vx, vy, vz
+                   false, false, false,   # vroll, vpitch, vyaw
+                   false, false, false]   # ax, ay, az
+    odom0_queue_size: 2
+    odom0_differential: false
+
+    # IMU (provides angular velocity and linear acceleration)
+    imu0: /imu/data
+    imu0_config: [false, false, false,
+              false, false, false,    # don't claim absolute orientation
+              false, false, false,
+              false, false, true,     # use vyaw (gyro z)
+              false, false, false]
+    imu0_queue_size: 5
+    imu0_differential: false
+    imu0_remove_gravitational_acceleration: false
