@@ -35,9 +35,11 @@ src/                     ESP32 firmware (PlatformIO, env esp32dev)
   functions.*            geometry helpers, angle utils, LED error blink
   sensor/                gps_task (UBX NAV-PVT), imu_task (MPU6050)
   motor/                 motor_task: steppers (ContinuousStepper), blade relay, sim odometry
-  motion/                motion_task: line-following heading PID
+  navigation/            robot-independent navigation core: NavPath (rounded corners, tool->axle path,
+                         speed profile), NavTracker (TinyMPC). No mower code here
+  motion/                motion_task: mower glue around navigation/ (config, point queue, blade, guards)
   controller/            controller_task: mission state machine
-  algorithm/             coverage planner (outline + boustrophedon infill); *.bck = legacy GPS-degree version
+  algorithm/             coverage planner (outline + skip-row boustrophedon infill); *.bck = legacy GPS-degree version
   bluetooth/             Classic-BT SPP command protocol ("GreenTitan")
   configuration/         NVS Preferences persistence
   visualization/         packs the planned path into a Float64MultiArray for RViz
@@ -54,6 +56,7 @@ ros2_ws/build|install|log   colcon output (gitignored)
 tools/android/           phone provisioning (adb debloat, Termux, camera over adb)
 cad/                     Python scripts that drive Fusion 360 / render studies (roof, canopy, cowl, ...)
 outputs/                 generated CAD exports/renders (mostly gitignored)
+lib/tinympc/             vendored TinyMPC solver (MIT), patched for the ESP32 (float, no stdout)
 platformio.ini           board, libs (incl. ESP-DDS, micro_ros_platformio jazzy), DDS limits
 ```
 
@@ -111,6 +114,7 @@ There are no automated tests. The `test/` folders only hold the PlatformIO and a
 
 - **Field-tested** (old drive train): localization (GPS + gyro, gated yaw) and line following. The drive was too weak for real terrain because the steppers had no gearbox.
 - **Works in teleport/sim mode:** the coverage planner and mission sequencing.
+- **Navigation core** (2026-10-27): curved axle paths (merged near-straight points, rounded corners, skip-row infill with arc U-turns, turning on the spot only for reversals) and TinyMPC tracking; the planner keeps half width + 5 cm from every outline. In HIL (blade-path version, before the clearance): smooth rows, mission 66 s on a 1.2 m square, but the body left the outline at corners. The axle-path and clearance changes are not yet run in HIL, and turns still swing the casters past the clearance (ARCHITECTURE §14 item 24).
 - **Works in Gazebo HIL** (2026-10-27): a full mission on a 2 m square, line following at 0.3 m/s (single-line test: console `l`, ~5 cm stop and cross-track error), stall and stuck-turn detection. Not yet checked on the real V3 drive: gear ratio, DM542T microsteps, motor wiring sign, STEP pulses on a scope.
 - **Not implemented:** return-to-base and docking, battery reading, rain sensor, obstacle sensing (obstacles are serial-triggered only), reverse driving, camera use.
 - **In progress:** the Mower V3 rebuild with 10:1 gearboxes, the cover design, and moving the ROS 2 host to the phone.

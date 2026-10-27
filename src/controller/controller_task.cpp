@@ -55,13 +55,15 @@ static void motor_main_off() {
     }
 }
 
-static void motion_stop() {
-    motion_command_t cmd = { WAITING, 0, 0, 0, 0 };
+static void motion_send(int mode) {
+    motion_command_t cmd = { mode, 0, 0, 0, 0, NAV_TOOL_KEEP };
     dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
     if (result != DDS_SUCCESS) {
         SerialDebug.printf("[CTRL] Failed to send motion command: %d\r\n", result);
     }
 }
+
+static void motion_stop() { motion_send(WAITING); }
 
 static void abort_mission(const char* reason) {
     SerialDebug.printf("[CTRL] Mission aborted (%s), returning to IDLE\r\n", reason);
@@ -72,7 +74,20 @@ static void abort_mission(const char* reason) {
     robot_state = ROBOT_STATE_IDLE;
 }
 
+// The motion task asks for points (SIGNAL_MOTION_WANT_POINT) while its path queue has room, so
+// it can plan corners and braking ahead. The planner therefore runs a few points ahead of the
+// mower; once it has none left, the mission ends when motion reports the end of the path.
+static bool planner_exhausted = false;
+
+static void complete_mission() {
+    SerialDebug.printf("[CTRL] Mowing complete, returning to IDLE\r\n");
+    stop_motors();
+    motor_main_off();
+    robot_state = ROBOT_STATE_IDLE;
+}
+
 static void go_to_next_algorithm_point() {
+    if (planner_exhausted) return;
     std::vector<double> next;
     // Safety net: a planner indexing bug throws std::out_of_range from .at(). Uncaught, that
     // reboots the ESP mid-field; here it stops the mower and blade and leaves it IDLE.
@@ -82,18 +97,11 @@ static void go_to_next_algorithm_point() {
         abort_mission(e.what());
         return;
     }
-    if (next.size() < 2) {
-        SerialDebug.printf("[CTRL] Mowing complete, returning to IDLE\r\n");
-        stop_motors();
-        motor_main_off();
-        robot_state = ROBOT_STATE_IDLE;
+    if (next.size() < 3) {
+        planner_exhausted = true;
         return;
     }
-
-    double next_x = next.at(0);
-    double next_y = next.at(1);
-
-    AlgorithmMotionSetTargetPoint(next_x, next_y);
+    AlgorithmMotionSetTargetPoint(next.at(0), next.at(1), (uint8_t)next.at(2));
 }
 
 static void enter_manual_mode() {
@@ -185,6 +193,7 @@ static void start_mowing() {
         AlgorithmReset();   // a new mission; without this a second start after "complete" did nothing
     }
     robot_state = ROBOT_STATE_MOWING;
+    planner_exhausted = false;
     AlgorithmSeedStartPosition();
     go_to_next_algorithm_point();
 }
@@ -196,8 +205,7 @@ static void pause_mowing() {
     }
     
     SerialDebug.printf("[CTRL] Pausing mowing\r\n");
-    stop_motors();
-    motion_stop();
+    motion_send(MOTION_PAUSE);   // keeps the queued path, so resume continues on it
     robot_state = ROBOT_STATE_PAUSED;
 }
 
@@ -209,7 +217,7 @@ static void resume_mowing() {
     
     SerialDebug.printf("[CTRL] Resuming mowing\r\n");
     robot_state = ROBOT_STATE_MOWING;
-    go_to_next_algorithm_point();
+    motion_send(MOTION_RESUME);
 }
 
 static void return_to_base() {
@@ -240,7 +248,8 @@ static void handle_docking_complete() {
 static void handle_motion_done() {
     switch (robot_state) {
         case ROBOT_STATE_MOWING:
-            go_to_next_algorithm_point();
+            go_to_next_algorithm_point();   // the queue ran dry before the next point arrived
+            if (planner_exhausted) complete_mission();
             break;
 
         case ROBOT_STATE_RETURNING_TO_BASE:
@@ -263,6 +272,8 @@ static void handle_motion_done() {
 static void handle_obstacle() {
     if (robot_state != ROBOT_STATE_MOWING) return;
 
+    // Motion has already stopped and dropped its path. The planner runs a few points ahead of
+    // the mower, so the line skipped is the one being planned, not always the one hit.
     SerialDebug.printf("[CTRL] Obstacle hit — skipping line\r\n");
     stop_motors();
     try {
@@ -312,6 +323,9 @@ static void controller_signal_callback(dds_callback_context_t* context) {
     switch (signal->signal) {
         case SIGNAL_MOTION_DONE:
             handle_motion_done();
+            break;
+        case SIGNAL_MOTION_WANT_POINT:
+            if (robot_state == ROBOT_STATE_MOWING) go_to_next_algorithm_point();
             break;
         case SIGNAL_LOW_BATTERY:
             handle_low_battery();

@@ -23,29 +23,18 @@ static long long GetLat(){
   return current_lat;
 }
 
-static void MotorMainOn() {
-    motor_data_t msg = { MOTOR_MAIN_ON, 0.0f, 0.0f };
-    dds_result_t result = DDS_PUBLISH("/motor", msg);
-    if (result != DDS_SUCCESS) {
-        SerialDebug.printf("[ALGO] Failed to send motor main on: %d\r\n", result);
-    }
-}
+// Blade state for the point being handed out. Points go to the motion queue ahead of the
+// mower, so the blade switches when the mower starts that leg (motion task), not here.
+static uint8_t nextTool = NAV_TOOL_KEEP;
 
-static void MotorMainOff() {
-    motor_data_t msg = { MOTOR_MAIN_OFF, 0.0f, 0.0f };
-    dds_result_t result = DDS_PUBLISH("/motor", msg);
-    if (result != DDS_SUCCESS) {
-        SerialDebug.printf("[ALGO] Failed to send motor main off: %d\r\n", result);
-    }
-}
-
-void AlgorithmMotionSetTargetPoint(double target_x_m, double target_y_m) {
+void AlgorithmMotionSetTargetPoint(double target_x_m, double target_y_m, uint8_t tool) {
   motion_command_t cmd = {
     MOVING,
     (double)prevPointLon / 100.0,
     (double)prevPointLat / 100.0,
     target_x_m,
-    target_y_m
+    target_y_m,
+    tool
   };
   dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
   if (result != DDS_SUCCESS) {
@@ -90,6 +79,73 @@ int algorithmCurrentPoint = 0;
 //Outlines - First point is the charging station exit point
 std::vector<std::vector<std::vector<long long>>> outlines;
 std::vector<std::vector<std::vector<long long>>> extOutlines; //Outlines with intersection points inserted
+std::vector<std::vector<std::vector<long long>>> planOutlines; //Outlines moved in by MOWER_EDGE_INSET: what the paths are planned on
+
+// Polygon offset by d cm, positive = to the left of the edges (inside for a counter-clockwise
+// polygon). Mitred corners; a vertex whose neighbouring offset edge would flip direction (the
+// edge collapses) is dropped and the offset redone. Fine for the gentle concave corners of a
+// lawn; a narrow neck thinner than 2 d may still fold.
+static std::vector<std::vector<long long>> OffsetPolygon(std::vector<std::vector<long long>> poly, double d){
+  for (int attempt = 0; attempt < 64 && poly.size() >= 3; attempt++){
+    size_t n = poly.size();
+    std::vector<std::vector<long long>> out(n, std::vector<long long>(2));
+    for (size_t i = 0; i < n; i++){
+      const std::vector<long long>& a = poly[(i + n - 1) % n];
+      const std::vector<long long>& b = poly[i];
+      const std::vector<long long>& c = poly[(i + 1) % n];
+      double e1x = b[0] - a[0], e1y = b[1] - a[1], l1 = hypot(e1x, e1y);
+      double e2x = c[0] - b[0], e2y = c[1] - b[1], l2 = hypot(e2x, e2y);
+      if (l1 < 1e-9 || l2 < 1e-9){ out[i] = b; continue; }
+      double n1x = -e1y / l1, n1y = e1x / l1, n2x = -e2y / l2, n2y = e2x / l2;   // left normals
+      double den = 1.0 + n1x * n2x + n1y * n2y;
+      double mx = n1x + n2x, my = n1y + n2y;
+      if (den < 0.1){ mx = n2x; my = n2y; den = 1.0; }   // near reversal: no mitre spike
+      out[i][0] = (long long)llround(b[0] + d * mx / den);
+      out[i][1] = (long long)llround(b[1] + d * my / den);
+    }
+    int collapsed = -1;
+    for (size_t i = 0; i < n; i++){
+      size_t j = (i + 1) % n;
+      double ox = poly[j][0] - poly[i][0], oy = poly[j][1] - poly[i][1];
+      double nx = out[j][0] - out[i][0], ny = out[j][1] - out[i][1];
+      if (ox * nx + oy * ny <= 0){ collapsed = (int)j; break; }
+    }
+    if (collapsed < 0) return out;
+    poly.erase(poly.begin() + collapsed);
+  }
+  return std::vector<std::vector<long long>>();
+}
+
+static double SignedArea(const std::vector<std::vector<long long>>& poly){
+  double a = 0;
+  for (size_t i = 0; i < poly.size(); i++){
+    const std::vector<long long>& p = poly[i];
+    const std::vector<long long>& q = poly[(i + 1) % poly.size()];
+    a += (double)p[0] * q[1] - (double)q[0] * p[1];
+  }
+  return a / 2.0;
+}
+
+// The outlines are where the mower must not go (a wall, a bed). The planned (axle) path keeps
+// MOWER_EDGE_INSET from them: the outer outline moves in, the inner ones (obstacles) move out.
+static bool BuildPlanOutlines(){
+  planOutlines.clear();
+  double d = MOWER_EDGE_INSET * 100.0;
+  for (size_t o = 0; o < outlines.size(); o++){
+    double inward = SignedArea(outlines[o]) > 0 ? d : -d;     // left = inside when counter-clockwise
+    std::vector<std::vector<long long>> off = OffsetPolygon(outlines[o], o == 0 ? inward : -inward);
+    if (off.size() < 3){
+      if (o == 0){
+        SerialDebug.printf("[ALGO] Outline too small for the %.2f m edge clearance\r\n", MOWER_EDGE_INSET);
+        return false;
+      }
+      SerialDebug.printf("[ALGO] Inner outline %u vanished in the offset, skipped\r\n", (unsigned)o);
+      continue;
+    }
+    planOutlines.push_back(off);
+  }
+  return true;
+}
 std::vector<std::vector<std::vector<long long>>> intersectionPaths; //Collections of points where infill intersects terrain and outer outline
 
 long long terrainMinX;
@@ -98,21 +154,22 @@ long long terrainMinY;
 long long terrainMaxY;
 
 void ClearOutlines(){
+  planOutlines.clear();
   extOutlines.clear();
   intersectionPaths.clear();
 }
 
 void FindTerrainBounds(){
   //Find terrain bounds
-  terrainMinX = outlines.at(0).at(0).at(0);
-  terrainMaxX = outlines.at(0).at(0).at(0);
-  terrainMinY = outlines.at(0).at(0).at(1);
-  terrainMaxY = outlines.at(0).at(0).at(1);
+  terrainMinX = planOutlines.at(0).at(0).at(0);
+  terrainMaxX = planOutlines.at(0).at(0).at(0);
+  terrainMinY = planOutlines.at(0).at(0).at(1);
+  terrainMaxY = planOutlines.at(0).at(0).at(1);
   
-  for (int i = 0; i < outlines.size(); i++){
-    for (int j = 0; j < outlines.at(i).size(); j++){
-      long long xVal = outlines.at(i).at(j).at(0);
-      long long yVal = outlines.at(i).at(j).at(1);
+  for (int i = 0; i < planOutlines.size(); i++){
+    for (int j = 0; j < planOutlines.at(i).size(); j++){
+      long long xVal = planOutlines.at(i).at(j).at(0);
+      long long yVal = planOutlines.at(i).at(j).at(1);
       
       if (xVal < terrainMinX){terrainMinX = xVal;}
       if (yVal < terrainMinY){terrainMinY = yVal;}
@@ -130,10 +187,10 @@ void ClearInterference(){
   {
     long long currentY = (long long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) / 2.0);
     
-    for (int o = 0; o < outlines.size(); o++){
-      for (int p = 0; p < outlines.at(o).size(); p++){
-        if (outlines.at(o).at(p).at(1) == currentY){
-          outlines.at(o).at(p).at(1) = outlines.at(o).at(p).at(1) + 1;
+    for (int o = 0; o < planOutlines.size(); o++){
+      for (int p = 0; p < planOutlines.at(o).size(); p++){
+        if (planOutlines.at(o).at(p).at(1) == currentY){
+          planOutlines.at(o).at(p).at(1) = planOutlines.at(o).at(p).at(1) + 1;
         }
       }
     }
@@ -142,14 +199,14 @@ void ClearInterference(){
 
 bool FindOutlineIntersections(){
   //Extend outlines with intersection points
-  for (int i = 0; i < outlines.size(); i++){
+  for (int i = 0; i < planOutlines.size(); i++){
     extOutlines.push_back( std::vector<std::vector<long long>>());
 
-    for (int j = 0; j < outlines.at(i).size(); j++){
+    for (int j = 0; j < planOutlines.at(i).size(); j++){
       extOutlines.back().push_back( std::vector<long long>());
       
-      for (int k = 0; k < outlines.at(i).at(j).size(); k++){
-        extOutlines.back().back().push_back(outlines.at(i).at(j).at(k));
+      for (int k = 0; k < planOutlines.at(i).at(j).size(); k++){
+        extOutlines.back().back().push_back(planOutlines.at(i).at(j).at(k));
       }
     }
   }
@@ -269,6 +326,22 @@ bool GeneratePaths(){
     }
   }
 
+  // Skip-row order: going straight to the neighbouring row would need a U-turn tighter than the
+  // tool can curve (radius = half the row spacing). Rows k apart are at least two minimum radii
+  // apart, so each pass goes up every k-th row. Passes start at rows 0, k-1, ..., 1, so the jump
+  // from the top of one pass back to the start of the next is long too (k = 3: 0,3,6,2,5,1,4).
+  double spacing_cm = abs(terrainMaxY - terrainMinY) / (double)numOfLines;
+  int k = spacing_cm > 0 ? (int)ceil(2.0 * MOTION_MIN_CORNER_RADIUS * 100.0 / spacing_cm) : 1;
+  if (k > 1 && (int)intersectionPaths.size() > 1){
+    std::vector<std::vector<std::vector<long long>>> ordered;
+    int n = (int)intersectionPaths.size();
+    for (int pass = 0; pass < k; pass++){
+      int first = pass == 0 ? 0 : k - pass;
+      for (int row = first; row < n; row += k) ordered.push_back(intersectionPaths.at(row));
+    }
+    intersectionPaths.swap(ordered);
+  }
+
   return true;
 }
 
@@ -287,6 +360,7 @@ bool GenerateGcode(){
     }
   }
   
+  if (!BuildPlanOutlines()){return false;}
   FindTerrainBounds();
 
   //Here it gets stuck
@@ -386,7 +460,7 @@ std::vector<double> AlgorithmNextPoint(){
   
   if (algorithmTarget == "FORWARD"){
     if (algorithmMode == "INFILL"){
-      MotorMainOn();
+      nextTool = NAV_TOOL_ON;
       
       //End of infill
       if (algorithmInfillDirection == 1 && algorithmInfillPoint == intersectionPaths.at(algorithmInfillIndex).size() - 1){
@@ -478,7 +552,7 @@ std::vector<double> AlgorithmNextPoint(){
       NextY = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(1);
     }
     if (algorithmTarget == "FORWARD" && algorithmMode == "SEEK"){
-      MotorMainOff();
+      nextTool = NAV_TOOL_OFF;
       
       //Calculate distances
       int distInfillA = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, (long long) (intersectionPaths.at(algorithmInfillIndex).at(0).at(1)));
@@ -518,7 +592,7 @@ std::vector<double> AlgorithmNextPoint(){
       NextY = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(1);
     }
     if (algorithmMode == "OUTLINE"){
-      MotorMainOn();
+      nextTool = NAV_TOOL_ON;
       
       algorithmCurrentPoint++;
       
@@ -538,7 +612,7 @@ std::vector<double> AlgorithmNextPoint(){
     }
   }
   if (algorithmTarget == "BASE"){
-    MotorMainOff();
+    nextTool = NAV_TOOL_OFF;
     
     if (algorithmMode == "INFILL"){
       //Jump outlines
@@ -663,6 +737,7 @@ std::vector<double> AlgorithmNextPoint(){
   std::vector<double> returnList;
   returnList.push_back((double)NextX / 100.0);
   returnList.push_back((double)NextY / 100.0);
+  returnList.push_back((double)nextTool);
   return returnList;
 }
 
@@ -744,6 +819,7 @@ void AlgorithmReset() {
   prevPointLat = 0;
   targetPointLon = 0;
   targetPointLat = 0;
+  nextTool = NAV_TOOL_KEEP;
 }
 
 void AlgorithmCaptureStart(){

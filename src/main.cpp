@@ -293,6 +293,20 @@ static float gyro_z_at(double t, float* spread) {
     return gyro_hist[(gyro_hist_head + GYRO_HISTORY - gyro_hist_n) % GYRO_HISTORY].gz;   // oldest
 }
 
+// Yaw turned between t0 and t1 by the local gyro (trapezoid over the history, newest held after it)
+static double gyro_turn_between(double t0, double t1) {
+    const double step = 0.02;
+    double turn = 0.0, s;
+    float spread, prev = gyro_z_at(t0, &spread);
+    for (double t = t0; t < t1; t += s) {
+        s = fmin(step, t1 - t);
+        float g = gyro_z_at(t + s, &spread);
+        turn += 0.5 * (prev + g) * s;
+        prev = g;
+    }
+    return turn;
+}
+
 void imu_topic_callback(dds_callback_context_t* context) {
     IMU_data_t* data = (IMU_data_t*)context->message_data.data;
 
@@ -403,8 +417,11 @@ void gps_topic_callback(dds_callback_context_t* context) {
             // Outlier gate: the axle can still slide sideways (caster drag, wheel slip in a pivot).
             // A yaw more than 3 sigma of the combined uncertainty away from the EKF's yaw at the
             // GPS epoch is not fused. At boot the EKF's yaw variance is huge, so the first lock passes.
+            // The EKF's yaw is its state FUSED_YAW_LAG before its stamp; the gyro carries it to the epoch.
             double gps_t = data->timestamp_sec + data->timestamp_nsec * 1e-9;
-            double yaw_then = fused_yaw_for_twist - gyro_z_at(gps_t, &gyro_spread) * (fused_yaw_stamp - gps_t);
+            double fused_t = fused_yaw_stamp - FUSED_YAW_LAG;
+            double yaw_then = fused_yaw_for_twist + (gps_t >= fused_t ? gyro_turn_between(fused_t, gps_t)
+                                                                      : -gyro_turn_between(gps_t, fused_t));
             double innov = angle_diff(yaw_meas, yaw_then);
             if (innov * innov > 9.0 * (yaw_var + fused_yaw_var)) yaw_var = 1e6;
         }
@@ -463,18 +480,41 @@ void fused_pose_callback(const void* msgin) {
     fused_pose_seen = true;
 
     // The pose is the EKF state at its stamp, which is already old when it gets here (~0.06 s
-    // in HIL). Motion control needs the pose now, so predict it forward over the measured age
-    // with the EKF's own velocity (GPS + gyro, no wheel odometry). The clock is synced at boot.
+    // in HIL). Motion control needs the pose now, so predict it forward over the measured age:
+    // position with the EKF's GPS velocity (no wheel odometry), yaw with the local gyro samples.
+    // The EKF's yaw also trails its own stamp by FUSED_YAW_LAG (its filtered yaw rate lags the
+    // gyro), so the gyro turn starts that much earlier. Uncorrected, the ~0.3 s total made the
+    // tracker weave +-20 cm in HIL (2026-10-27). The clock is synced at boot.
     float vx = (float)msg->twist.twist.linear.x, vy = (float)msg->twist.twist.linear.y;
-    float omega = (float)msg->twist.twist.angular.z;
+    float omega = (float)msg->twist.twist.angular.z;   // passed on, not used for the prediction
     struct timespec now;
     clock_gettime(CLOCK_REALTIME, &now);
     double age = (now.tv_sec - (double)msg->header.stamp.sec) + (now.tv_nsec - (double)msg->header.stamp.nanosec) * 1e-9;
     if (age > 0 && age < MOTION_POSE_TIMEOUT_MS / 1000.0) {           // otherwise the clock is off: no prediction
-        x += (cosf(yaw) * vx - sinf(yaw) * vy) * age;
-        y += (sinf(yaw) * vx + cosf(yaw) * vy) * age;
-        yaw += omega * age;
+        float turn = (float)gyro_turn_between(fused_yaw_stamp - FUSED_YAW_LAG, fused_yaw_stamp + age);
+        yaw += turn;
+        float mid = yaw - 0.5f * (float)gyro_turn_between(fused_yaw_stamp, fused_yaw_stamp + age);
+        x += (cosf(mid) * vx - sinf(mid) * vy) * age;   // along the heading halfway through
+        y += (sinf(mid) * vx + cosf(mid) * vy) * age;
     }
+
+    // Control heading: the local gyro carries it, the EKF yaw pulls it in with time constant
+    // CONTROL_YAW_TAU. Each 5 Hz GPS heading fix moves the EKF yaw by up to ~5 deg and the
+    // tracker chased every jump (HIL 2026-10-27); this keeps the EKF as the reference without them.
+    double now_t = now.tv_sec + now.tv_nsec * 1e-9;
+    static double control_yaw_t = 0.0;
+    static float control_yaw = 0.0f;
+    if (control_yaw_t == 0.0 || now_t - control_yaw_t > 1.0 ||
+        fabsf(angle_diff(yaw, control_yaw)) > CONTROL_YAW_SNAP) {
+        control_yaw = yaw;   // first pose, a gap, or far off: take the EKF as it is
+    } else {
+        control_yaw += (float)gyro_turn_between(control_yaw_t, now_t);
+        float k = fminf(1.0f, (float)(now_t - control_yaw_t) / CONTROL_YAW_TAU);
+        control_yaw += k * angle_diff(control_yaw, yaw);
+    }
+    control_yaw = normalize_angle(control_yaw);
+    control_yaw_t = now_t;
+    yaw = control_yaw;
 
     // Package and publish internally via your DDS system
     fused_pose_data_t data = {
@@ -704,7 +744,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             motion_task,
             "MotionTask",
-            4096,   // 2816 left 816 B free before the stall log, 2026-10-27
+            4096,   // the MPC's Eigen matrices are on the heap, not this stack
             NULL,
             1,
             &task_handles[3],

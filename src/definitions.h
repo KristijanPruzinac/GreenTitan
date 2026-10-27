@@ -77,23 +77,33 @@ typedef struct {
 #define BACKWARD 0
 #define MILLIS_PER_SECOND 1000
 
-//Motion
-// Lateral pull: target heading = line angle + atan(cross_track / gain). 0.8 m keeps this outer
-// loop ~3x slower than the heading PID at 0.3 m/s; 0.3 m (fine at the old ~0.12 m/s top
-// speed) made the mower weave +-50 deg in HIL at 0.5 m/s (2026-10-27).
-#define MOTION_CORRECTION_GAIN 0.8f
-
+//Motion (robot description for the navigation core, src/navigation; see ARCHITECTURE §6)
 #define MOTION_FORWARD_SPEED_NORMAL  0.3f   // 0.5 m/s was unstable with >0.3 s pose latency (2026-10-27)
-// Braking toward the goal: v <= sqrt(2 * decel * distance). Stays under the motor ramp
-// (MOTOR_ACCELERATION ~0.35 m/s^2), so the mower stops on the goal, not ~0.35 m past it.
+// Path acceleration and braking. Stays under the motor ramp (MOTOR_ACCELERATION ~0.35 m/s^2),
+// so the wheels follow the planned speed and the mower stops where the path does.
 #define MOTION_GOAL_DECEL                 0.25f  // m/s^2
 #define MOTION_GOAL_MIN_SPEED             0.05f  // m/s, so the last centimetres still close
-
-// Speed scaling based on heading error
-#define MOTION_HEADING_ERROR_FULL_SPEED   0.1f   // ~6° - full speed below
-#define MOTION_HEADING_ERROR_MIN_SPEED    0.26f  // ~15° - 50% speed here
-#define MOTION_MIN_SPEED_SCALE            0.5f
-#define MOTION_HEADING_ERROR_ROTATE_ONLY  0.52f  // ~30° - rotate only above
+// Corners: rounded into axle arcs of this radius where the legs leave room (the blade, 0.18 m
+// behind, runs just outside them); tighter or sharper corners turn on the spot.
+#define MOTION_CORNER_RADIUS              0.30f  // m
+#define MOTION_MIN_CORNER_RADIUS          0.22f  // m
+#define MOTION_MAX_ROUNDED_TURN           2.6f   // rad, ~150 deg
+// Mower body around the wheel axle centre (Mower V3 CAD, x forward = big wheels)
+#define MOWER_FRONT_OVERHANG              0.12f  // m, cover ahead of the axle
+#define MOWER_REAR_OVERHANG               0.415f // m, casters behind it
+#define MOWER_HALF_WIDTH                  0.20f  // m, outside of the drive wheels
+// Hard limit: the planned (axle) path keeps half the width plus this from the outline and from
+// the inner outlines. Turns swing the overhangs further out; the motion task warns where.
+#define MOWER_EDGE_CLEARANCE              0.05f  // m
+#define MOWER_EDGE_INSET                  (MOWER_HALF_WIDTH + MOWER_EDGE_CLEARANCE)
+#define MOTION_PATH_TOLERANCE             0.03f  // m, near-straight waypoints merged within this
+// Turning on the spot (path start, sharp corners, or far off the path heading)
+#define MOTION_MAX_TRACK_HEADING_ERROR    1.0f   // rad, ~57 deg: beyond this turn on the spot first
+#define MOTION_TURN_DONE                  0.05f  // rad, ~3 deg: then hand over to the tracker
+#define MOTION_ROTATE_GAIN                1.5f   // rad/s per rad of heading error
+#define CONTROL_YAW_TAU                   1.0f   // s, control heading follows the EKF yaw this slowly, gyro in between
+#define CONTROL_YAW_SNAP                  0.5f   // rad, ~30 deg: further off, take the EKF yaw directly
+#define FUSED_YAW_LAG                     0.15   // s, EKF yaw behind its own stamp (HIL 2026-10-27; measure on the robot)
 #define MOTION_POSE_TIMEOUT_MS            500    // stop driving if /fused_pose (10 Hz) goes quiet
 #define MOTION_STALL_DIST                0.10f  // m: driving forward but moved less than this ...
 #define MOTION_STALL_TIME_MS              4000   // ... for this long = stalled (obstacle signal)
@@ -185,9 +195,11 @@ typedef struct {
 } fused_pose_data_t;
 
 enum motion_mode {
-    WAITING,
-    MOVING,
+    WAITING,          // stop and drop the queued path
+    MOVING,           // append end_x/end_y to the path (start_x/y unused: the path starts at the robot)
     MOVING_REVERSE,
+    MOTION_PAUSE,     // stop, keep the queued path
+    MOTION_RESUME,
 };
 
 typedef struct {
@@ -196,6 +208,7 @@ typedef struct {
     double start_y;
     double end_x;
     double end_y;
+    uint8_t tool;     // nav_tool (navigation/nav_path.h): blade on the way to this point; 0 = unchanged
 } motion_command_t;
 
 enum robot_state {
@@ -212,7 +225,8 @@ enum robot_state {
 };
 
 enum controller_signal {
-    SIGNAL_MOTION_DONE,
+    SIGNAL_MOTION_DONE,         // stopped at the end of the queued path
+    SIGNAL_MOTION_WANT_POINT,   // room in the motion queue for the next planner point
     SIGNAL_LOW_BATTERY,
     SIGNAL_RAIN,
     SIGNAL_OBSTACLE,

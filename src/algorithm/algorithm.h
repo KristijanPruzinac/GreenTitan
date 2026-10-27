@@ -4,6 +4,7 @@
 #include "Arduino.h"
 #include "../definitions.h"
 #include "../functions.h"
+#include "../navigation/nav_path.h"
 
 #include "esp_dds.h"
 #include "esp_timer.h"
@@ -32,7 +33,7 @@ bool GenerateGcode();
 int ShortestOutlinePath(int outline_index, int current_point, int target_point);
 int OutlineTraverseInc(int outline_index, int current_point, int amount);
 int OutlineTraverseDec(int outline_index, int current_point, int amount);
-std::vector<double> AlgorithmNextPoint();
+std::vector<double> AlgorithmNextPoint();   // {x m, y m, tool (nav_tool)}; empty = done
 void AlgorithmAbort(bool full_abort);
 void AlgorithmSetCurrentPosition(long long x_cm, long long y_cm);
 void AlgorithmReset();
@@ -46,7 +47,7 @@ bool AlgorithmCaptureRemoveOutline();
 bool AlgorithmCaptureRemovePoint();
 bool AlgorithmCaptureEnd();
 
-void AlgorithmMotionSetTargetPoint(double tLon, double tLat);
+void AlgorithmMotionSetTargetPoint(double x_m, double y_m, uint8_t tool);   // tool: nav_tool
 void AlgorithmSeedStartPosition();
 
 String AlgorithmGetPathString();

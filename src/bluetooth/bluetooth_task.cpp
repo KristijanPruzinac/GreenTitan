@@ -1,4 +1,5 @@
 #include "bluetooth_task.h"
+#include "esp_bt.h"
 #include "../configuration/configuration.h"
 #include "../controller/controller_task.h"
 
@@ -20,6 +21,13 @@ extern void publish_datum();
 extern bool CONFIG_DATUM;
 
 bool InitBluetooth() {
+    // Classic only: the unused BLE controller memory goes back to the heap. Arduino 2.0.x always
+    // starts dual mode; with the controller already enabled here, SerialBT.begin() keeps it
+    // (newer cores do the same with begin(name, false, true)).
+    esp_bt_controller_mem_release(ESP_BT_MODE_BLE);
+    esp_bt_controller_config_t cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
+    cfg.mode = ESP_BT_MODE_CLASSIC_BT;
+    if (esp_bt_controller_init(&cfg) != ESP_OK || esp_bt_controller_enable(ESP_BT_MODE_CLASSIC_BT) != ESP_OK) return false;
     if (!SerialBT.begin("GreenTitan")) return false;
     SerialBT.setTimeout(COMMUNICATION_TIMEOUT);
     return true;

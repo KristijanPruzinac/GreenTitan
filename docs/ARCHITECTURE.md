@@ -11,7 +11,7 @@ How the firmware and the ROS 2 side work, how they connect, and what is known to
  MPU6050 ──I2C────► imu_task ──/imu──┘        ▲                                             │   │
                                               │ /fused_pose                                 │   │
             controller_task ◄─/controller/signal── motion_task ◄──/fused_pose               │   │
-              │   ▲  (state machine)            │  (line follow PID)                        │   │
+              │   ▲  (state machine)            │  (trajectory+MPC)                         │   │
               │   └── bluetooth_task, serial console                                        │   │
               ▼                                 ▼ /motor                                    │   │
           algorithm (planner) ──/motion/command─┘   motor_task ──STEP/DIR──► 2× DM542T       │   │
@@ -118,7 +118,7 @@ Data path: `gps_task` reads UBX NAV-PVT, then the bridge turns it into `gps/odom
 - **Measured** (HIL ritual 2026-10-27, manual mode: forward, stops, pivots, forward→reverse, reverse, 10 s freeform curves that slow down and reverse while turning): after the first drive, yaw error median 2–7° per step and worst 17.5°; world-velocity error median 0.055 m/s. The console command `v<lin>,<ang>` drives any manual motion for such tests.
 - Position (variance hAcc²) and velocity (variance sAcc², floor 0.01) are **always** fused.
 
-**Timing.** `gps_task` stamps each fix with the receiver's own epoch time (NAV-PVT UTC, when `valid` has date, time and fully-resolved). The fix arrives ~0.17 s later (output latency plus the 5 Hz poll). The EKF runs with `smooth_lagged_data` (1 s history) and replays it at the right moment instead of applying an old velocity as current. The ESP clock is synced to the host, so the host clock must be on real time (NTP); a host clock that is seconds off makes the EKF drop or misplace fixes. `fused_pose` is predicted forward by its measured age (ESP clock − stamp) with the EKF's own velocity before motion control uses it.
+**Timing.** `gps_task` stamps each fix with the receiver's own epoch time (NAV-PVT UTC, when `valid` has date, time and fully-resolved). The fix arrives ~0.17 s later (output latency plus the 5 Hz poll). The EKF runs with `smooth_lagged_data` (1 s history) and replays it at the right moment instead of applying an old velocity as current. The ESP clock is synced to the host, so the host clock must be on real time (NTP); a host clock that is seconds off makes the EKF drop or misplace fixes. Before motion control uses `fused_pose`, the ESP predicts it to the present: position over its measured age (ESP clock − stamp) with the EKF's GPS velocity, yaw with the ESP's own gyro samples from `FUSED_YAW_LAG` (0.15 s) before the stamp, because the EKF's yaw trails its own stamp by about that much. The EKF's yaw-rate process noise is raised (0.02 → 0.5) so its yaw rate follows the gyro instead of lagging it; lowering the yaw process noise as well made it worse (23° rms, turns timed out) and was reverted, and so did scaling up the GPS heading variance ×4 (5.5° instead of 4.3°: slow gyro drift took over) (HIL 2026-10-27). The heading in `fused_pose` is then a **control heading**: the local gyro carries it and the EKF yaw pulls it in with time constant `CONTROL_YAW_TAU` (1 s; snaps to the EKF beyond `CONTROL_YAW_SNAP`, 30°), so the ±5° step the EKF yaw takes at each 5 Hz GPS heading fix does not reach the tracker. The EKF remains the only reference. The GPS heading outlier gate compares against the EKF yaw carried by the gyro from `FUSED_YAW_LAG` before its stamp to the GPS epoch.
 
 **Why it's built this way.** In the field, GPS heading-of-motion is a good absolute heading while the mower drives. At standstill or crawling speed, RTK noise makes the "velocity direction" random, which used to make the heading wander while parked. Gyro-only holding fixes that. A compass was unreliable, and fuller fusion attempts did worse.
 
@@ -130,17 +130,36 @@ Data path: `gps_task` reads UBX NAV-PVT, then the bridge turns it into `gps/odom
 - GPS fix quality (RTK fixed vs float) isn't read. `hAcc` is the only quality signal.
 - Slip and stall are not detected. Commanded speed vs GPS speed would detect them (planned).
 
-## 6. Motion control (`motion_task`)
+## 6. Motion control (`motion_task` + `src/navigation`)
 
-The mower follows a straight segment `start → end`, both in metres.
-- **Target heading** = line angle + `atan(cross_track / 0.8)` (`MOTION_CORRECTION_GAIN`), which pulls the mower back onto the line. This outer loop must stay ~3× slower than the heading loop: 0.3 m worked in the field only because the old drive topped out at ~0.12 m/s, and at 0.3 m/s it weaved ±50° in HIL (2026-10-27). The heading error goes into a PID (Kp 1.5, Ki 0.1 with the integrator clamped to ±0.1 rad/s, Kd 0.1 on the error with a 0.2 s filter, output ±`MAX_ANGULAR_VEL`) to produce the angular velocity. The PID is reset at every new segment and during rotate-only, and starts without a derivative kick. Tuned in HIL 2026-10-27; the old gains (Kp 0.8, Ki 0.01, Kd 3.0) had a dead derivative (it was fed a constant 0) and turned slowly.
-- **Rotate-only** with hysteresis: it starts when |error to the line| ≥ 30° and stops below 3°. In rotate-only, linear speed is 0 and the PID is reset.
-- **Speed:** 0.3 m/s (`MOTION_FORWARD_SPEED_NORMAL`; 0.5 m/s was unstable with the ~0.3 s pose latency, 2026-10-27), scaled to 50% between 6° and 15° of heading error. Toward the goal it brakes along v = √(2 · 0.25 m/s² · d), where d is the distance still to go *along the line* from the age-predicted pose (§5 Timing; floor 0.05 m/s), which stays under the motor ramp (~0.35 m/s²). Before 2026-10-27 it slowed only within 0.15 m of the goal, shorter than the gearboxed drive needs to stop, and the straight distance to the goal never gets small while the mower is beside the line, so it crossed line ends at full speed (~0.3 m overshoot in HIL).
-- **Goal reached** = the projection onto the segment reaches t ≥ 1 (the mower passed the perpendicular through the end). Then it publishes `MOTOR_STOP` and `SIGNAL_MOTION_DONE`.
-- **Stall check** (2026-10-27): while driving forward (not rotate-only), if the fused position moves less than `MOTION_STALL_DIST` 0.10 m in `MOTION_STALL_TIME_MS` 4 s, it stops and publishes `SIGNAL_OBSTACLE` (the controller skips the line). It uses only the sign of the command, not its size. Rotate-only longer than `MOTION_ROTATE_TIMEOUT_MS` 10 s (a 180° turn takes ~3.5 s) counts as a stall too, so a broken yaw estimate can't spin the mower forever. Found in HIL: the mower high-centred on a 9 cm molehill and pushed forever. *Watch:* on a slope with heavy slip, slow progress below 2.5 cm/s counts as a stall; repeated stalls skip line after line.
-- It runs once per fused pose (EKF rate, 10 Hz). It only drives forward.
-- **Teleport mode** (`MOTION_TELEPORT_MODE`): skips driving. After 1 s it fakes the pose at the target, which lets the planner and controller be tested without motion.
-- `motor_task` turns (v, ω) into wheel speeds with diff-drive kinematics (`WHEEL_BASE` 0.3647, `WHEEL_RADIUS` 0.0749, clamped to ±0.5 m/s and ±1 rad/s). Motor A = left, B = right. Step-rate problems are in Known issues.
+Since 2026-10-27 the mower follows a **smooth trajectory with model-predictive control** (replaced pure pursuit, which replaced a heading PID). The robot-independent part is `src/navigation` (no mower code in it); `motion_task` is the mower glue: it fills `NavConfig` from `definitions.h`, feeds the planner's points in, drives `/motor` and switches the blade.
+
+**Path** (`NavPath`). Waypoints queue up (path start + up to 7 ahead), so corners and braking are planned before the mower gets there.
+- The core plans for a **tool point** `tool_offset` behind the axle. The mower sets it to 0 (2026-10-27): the **axle** follows the planned line. With the blade (= base_link, 0.18 m behind) as the tool point the axle had to swing outward entering every curve, since a trailing point moves outward as soon as the axle turns; the user ruled that out. The blade now runs slightly outside the axle arcs (√(r² + 0.18²)).
+- **Merging** (2026-10-27): a waypoint that bends the path by less than `MOTION_PATH_TOLERANCE` 3 cm is merged away, so the scan-line crossings on a straight outline edge become one long leg again. A reversal (> ~150°) that goes back less than 0.18 m is dropped too; it leaves less than 0.18 m uncut. Merging never touches the leg the robot is on, a decided corner or a blade switch.
+- **Corners** are rounded into blade arcs of radius r = min(`MOTION_CORNER_RADIUS` 0.30 m, the room on both legs). A leg shared by two corners is split in proportion to what each needs at the same radius (tan of half its turn), so a U-turn's two corners get half each. A corner is decided once the corner after it is known (or within 1 m of the axle); until then it is a provisional stop. Decided corners don't change.
+- **Corner cut:** an arc of radius r at turn Δ stays inside the corner by r(1/cos(Δ/2) − 1): ~9 cm at 90° with r = 0.22 m, ~12 cm with 0.30 m. That triangle is left uncut. The 3 cm tolerance is only about merging near-straight points.
+- **Pivots** only where no arc fits: tighter than `MOTION_MIN_CORNER_RADIUS` 0.22 m (must exceed L) or sharper than `MOTION_MAX_ROUNDED_TURN` ~150°. The axle stops on the corner and turns on the spot, so the blade stops 0.18 m short and starts 0.18 m behind it on the next leg. On a reversal the axle stops 0.18 m *before* the corner, so the half turn lands the blade on the corner instead of swinging it out past it.
+- **Axle path from the blade path.** For a diff drive whose tool trails by L, the axle heading θ along the blade path (arc length σ, blade heading φ) obeys dθ/dσ = −sin(φ − θ)/L. That is unstable forward and stable backward, so it is integrated backward from 2.7 m ahead (Heun, 2.5 cm steps). On an arc of blade radius r the axle settles on the concentric arc √(r² − L²) *inside*, with θ = φ + asin(L/r). So the wheels never swing outside the blade line. The axle position = blade + L·(cos θ, sin θ).
+- **Speed profile** on the axle path, CNC style: v ≤ 0.3 m/s (`MOTION_FORWARD_SPEED_NORMAL`), ≤ `MAX_ANGULAR_VEL`/|κ|, outer wheel ≤ `MAX_LINEAR_VEL`, and ≤ √(α/|dκ/ds|) where the curvature changes, α = 2·accel/wheel base ≈ 1.4 rad/s² being the turn-rate change the wheels can ramp (without it the robot lags into and out of every arc). A backward braking pass at 0.25 m/s² (`MOTION_GOAL_DECEL`, under the motor ramp) ends at 0 on pivots and at the path end. Creep 0.05 m/s so the end still closes.
+- Progress along the path only goes forward (nearest sample within 0.6 m ahead), so a path that folds back can't make it jump.
+
+**Tracking** (`NavTracker`, TinyMPC, vendored in `lib/tinympc`, MIT). The model is per metre of path, not per second: state [lateral error, heading error, curvature − path curvature], input = curvature change per metre, 15 steps of 0.1 m (1.5 m look-ahead). It is linear and the same at every speed, so one solver is set up at boot. The path curvature is fed forward and the MPC corrects the deviation. It may steer up to what the drive turns at creep speed (per-step state bounds): steering comes first, the speed gives way. The command is the plan interpolated at the distance covered in one control period (3 cm at 0.3 m/s), not at the 0.1 m step: taking step 1 straightened the robot early on every arc exit (4–6 cm row errors on the bench). The MPC does not set speed: that comes from the profile, which keeps the model linear. Weights 400/20/0.1, rate 0.01. TinyMPC adds its ADMM penalty ρ = 1 to the costs, so they are scaled ×1000 (otherwise it stops early with a ~10× too weak answer). Output κ → ω = v·κ; if ω would exceed the limit, v is cut and κ kept. Cost: ~0.15 ms per ADMM iteration on the ESP32 with `EIGEN_NO_DEBUG` (25 ms with Eigen's debug checks), ~7.7 KB heap.
+- **Turn on the spot** (ω = 1.5·e, `MOTION_ROTATE_GAIN`, until |e| < 3° `MOTION_TURN_DONE`): at the path start, at pivots (on a lawn: reversals only), and when the heading error exceeds `MOTION_MAX_TRACK_HEADING_ERROR` ~57°, outside what the linear model covers.
+
+**Protocol with the controller** (`/motion/command`, `/controller/signal`):
+- `MOVING` appends `end_x/end_y` with a `tool` flag (`NAV_TOOL_ON/OFF/KEEP`). The first point after a stop starts the path at the axle where it stands.
+- Motion sends `SIGNAL_MOTION_WANT_POINT` while the queue has room, at most one open request at a time, so a point never arrives to a full queue. `SIGNAL_MOTION_DONE` = stopped at the end of the queue.
+- The blade switches when the mower starts the leg the flag belongs to, not when the planner hands the point out.
+- `MOTION_PAUSE` stops and keeps the path, `MOTION_RESUME` turns back onto it and continues. `WAITING` stops and drops the path and any queued commands.
+- The planner therefore runs up to 7 points ahead of the mower. An obstacle skip (`AlgorithmAbort(false)`) skips the line being *planned*, which can be one after the line that was hit.
+
+**Guards** (kept from before):
+- **Stall:** while driving (not turning on the spot), fused position moving less than `MOTION_STALL_DIST` 0.10 m in `MOTION_STALL_TIME_MS` 4 s, or turning on the spot longer than `MOTION_ROTATE_TIMEOUT_MS` 10 s → stop, drop the path, `SIGNAL_OBSTACLE`. Only the sign of the command is used. Found in HIL: high-centred on a 9 cm molehill. *Watch:* heavy slip on a slope below 2.5 cm/s counts as a stall.
+- **Pose watchdog:** no `/fused_pose` for `MOTION_POSE_TIMEOUT_MS` 500 ms → wheels stop, path kept; the next pose resumes.
+- It runs once per fused pose (10 Hz) and only drives forward.
+- **Teleport mode** (`MOTION_TELEPORT_MODE`): skips driving; after 1 s it fakes the pose at the target, to test planner and controller without motion.
+- `motor_task` turns (v, ω) into wheel speeds (`WHEEL_BASE` 0.3647, `WHEEL_RADIUS` 0.0749, clamped to ±0.5 m/s and ±1 rad/s). Motor A = left, B = right.
 
 ## 7. Mission controller (`controller_task`)
 
@@ -149,7 +168,8 @@ States: `IDLE, MOWING, PAUSED, RETURNING_TO_BASE, ENTERING/LEAVING_CHARGING_STAT
 | Signal | Effect |
 |---|---|
 | `START_MOWING` | Only from IDLE/CHARGING, and needs datum + path. From IDLE the planner is reset (new mission). Seeds the planner with the current pose and requests the first point |
-| `MOTION_DONE` | MOWING: next point. RETURNING: docked → CHARGING. LEAVING: back to MOWING |
+| `MOTION_WANT_POINT` | MOWING: hand the motion queue the next planner point (with its blade flag) |
+| `MOTION_DONE` | MOWING: mission complete once the planner has no points left (else feed one). RETURNING: docked → CHARGING. LEAVING: back to MOWING |
 | `OBSTACLE` | MOWING: stop, `AlgorithmAbort(false)` (skip this line), then request the next point |
 | `STOP_MOWING` | any mission state: motion stop, blade off, planner reset, IDLE (console `x`) |
 | `RAIN`, `LOW_BATTERY` | MOWING → `return_to_base()`, which stops the motors and calls `go_to_base()`. **That function is empty**, so the mower just stops |
@@ -166,13 +186,15 @@ Nothing produces `LOW_BATTERY`, `RAIN` or `BATTERY_CHARGED` except the console (
 - Points are recorded by driving the mower (manual mode) and capturing the current fused pose. You can do that over BT or from the console (`c` start, `o` new outline, `p` add point, `e` end).
 
 **Planning** (`GenerateGcode`):
+0. **Edge clearance** (2026-10-27, hard limit): every outline is offset by `MOWER_EDGE_INSET` = half width 0.20 m + `MOWER_EDGE_CLEARANCE` 0.05 m (outer outline inward, inner outlines outward; mitred, collapsed vertices dropped) and all planning below runs on the offset copies (`planOutlines`). An outer outline that collapses fails the plan; a vanished inner one is skipped. The overhangs are not in it: the casters 0.415 m behind the axle swing out in every turn (a turn on the spot reaches 0.46 m), see §14 item 24.
 1. Bounding box.
 2. `numOfLines = ceil(height / (MOWER_OVERLAP·1.109))`, giving horizontal (constant-y, east–west) scan lines. `MOWER_OVERLAP` = 15 means a line spacing of about 16.6 cm. The 1.109 factor is a leftover from degree coordinates.
 3. Nudge vertices that lie exactly on a scan line.
 4. Insert each line/edge intersection into the outlines (`extOutlines`).
 5. Per scan line, sort intersection references by x (`intersectionPaths`). Pairs (0,1), (2,3) and so on are mowable spans.
+6. **Skip-row order** (2026-10-27): a U-turn into the neighbouring row would need radius 8 cm, below what the blade can curve. Rows are visited k apart, k = ⌈2·`MOTION_MIN_CORNER_RADIUS`/spacing⌉ (3 at 16.6 cm, so 0.5 m apart, 0.25 m U-turn arcs). Every pass goes up; passes start at rows 0, k−1, …, 1 so the jump back down is long too (7 rows: 0,3,6,2,5,1,4).
 
-**Execution** (`AlgorithmNextPoint`, one waypoint per `MOTION_DONE`). Target is `FORWARD` or `BASE`:
+**Execution** (`AlgorithmNextPoint`, one waypoint per `MOTION_WANT_POINT`, returned as {x, y, blade flag}; it no longer switches the blade itself). Target is `FORWARD` or `BASE`:
 - `OUTLINE`: drive the outer boundary, blade **on**.
 - `SEEK`: follow the outline to the nearest end of the next scan line, choosing the shorter direction around. Blade **off**.
 - `INFILL`: drive the span, then jump or follow an island outline to the next span. Blade **on**.
@@ -283,6 +305,7 @@ Findings that shaped the models:
 | EKF and control loop | 10 Hz |
 | Stepper loop | 1 kHz software ticks |
 | micro-ROS | 921600 baud serial |
+| Heap (HIL build, 2026-10-27) | 147 KB free after micro-ROS; Bluetooth Classic takes ~78 KB, the tasks ~30 KB, the MPC ~7.7 KB; ~11 KB left. Bluetooth starts Classic-only (BLE controller memory released, +18 KB): before that the MPC setup ran out of heap and the ESP boot-looped |
 
 Stamps on sensor messages come from the ESP32 clock, which is synced to the agent once at boot.
 
@@ -322,6 +345,11 @@ Ordered roughly by impact. Fix them inside the existing architecture.
 20. **Mission control could get stuck or crash (found 2026-10-27).** There was no way to stop a mission except power, a second START reused the finished planner state, paths could be edited (console or BT capture) while mowing, and an empty planner result threw from `.at(0)`.
    - **Fixed 2026-10-27:** `STOP_MOWING` (console `x`) aborts to IDLE with motors and blade off; START from IDLE resets the planner; path edits are refused unless IDLE or MANUAL (BT answers `FAIL/BUSY`); scan lines with an odd crossing count are skipped; `AlgorithmNextPoint` is wrapped in try/catch and any exception aborts the mission to IDLE. Console `h` prints per-task stack headroom and heap; in HIL GPSTask had 584 B and MotionTask 816 B left of 2816, so both are 4096 now. *Watch:* an aborted mission starts over from the first line.
 
+21. **Pose lag made the curved paths weave in HIL (fixed 2026-10-27).** The tracker steered on a heading ~0.3–0.4 s old: the EKF yaw trails its stamp by ~0.15 s (its yaw-rate state lagged the gyro), and the ESP only predicted over the stamp age (~0.06 s), with the EKF's noisy yaw rate. The result was a ±20 cm, ±50° weave once per row with ω pinned at the limit; the blade went up to 44 cm outside the outline. Replaying the logged HIL poses through NavPath/NavTracker reproduced the ESP's commands (correlation 0.93), and the native bench with 0.5 s of uncorrected lag reproduced the weave; MPC weights did not help. Fix: gyro-based prediction from `FUSED_YAW_LAG` before the stamp, and EKF yaw-rate process noise 0.5 (§5). HIL 1.2 m square after the fix: mission 66 s (was 117 s), EKF yaw error 4.3° rms (was 5.6°). The blade still goes up to 28 cm outside the outline; the worst point is the transit from the end of the outline drive to the first infill point, and the U-turns reach 5–10 cm past the edge. **Accuracy floor:** replaying the recorded HIL pose error (EKF yaw 4.3° rms; EKF position 1.9 cm rms lateral, 3.4 cm along) into the native bench reproduces the HIL wobble (blade off the ideal-pose path p95 6.3 cm bench vs 7.2 cm HIL); the MPC weights do not change it, the control heading takes it to 5.6 cm, and position error alone gives 4.8 cm. The tracker cannot be more accurate than the pose: better rows need a better position estimate, not control tuning. The outline crossing is now held off by the planner edge clearance (§8) and the axle-path change (§6), not yet run in HIL; the body swing in turns remains (item 24). Still open: measure `FUSED_YAW_LAG` on the real robot; the HIL mission test records its outline by manual driving, so runs differ in shape and are hard to compare.
+22. **Uncut corner triangles.** Arcs cut inside each corner (§6, ~9–12 cm at 90°), and a dropped short reversal leaves < 0.18 m. Lead-outs (§15) would cover them.
+23. **Bluetooth is Classic-only since 2026-10-27** (BLE memory released for the MPC heap, §13). Not yet tested with the phone app.
+24. **The body swings past the edge clearance in turns (found 2026-10-27).** The axle sits near the front and the casters stick out 0.415 m behind it, so a turn swings the rear out: on an axle arc of radius r the outer rear corner reaches hypot(0.415, r + 0.20) − r beyond the leg (0.37 m at r = 0.22, 0.46 m turning on the spot), against 0.25 m of clearance. The edge clearance alone therefore does not keep the body inside at outline corners. Planned: a corner turn that slides the outer rear corner along the clearance line until the swing points inward, then finishes on the spot (from Mier et al. 2024, J. Field Robotics, headland corner turns that never cross the border); reversing (their X-type turn) is the alternative for sharp corners.
+
 ## 15. Planned direction (proposed, not yet decided unless dated)
 
 - **Android phone as ROS 2 host (decided 2026-10):** a Galaxy A12 replaces the RPi. Keep the same nodes, EKF config and topics. The open problems:
@@ -330,6 +358,19 @@ Ordered roughly by impact. Fix them inside the existing architecture.
   - camera frames: `tools/android/cam.sh` uses an IP-camera app over adb. A bridge app could carry the frames too.
 
   See `HARDWARE.md` § Phone.
-- **Heading gate** for the front/back ambiguity (section 5). Use commanded-vs-GPS speed mismatch for slip/stall/"hit something" detection, not for localization.
+- Use commanded-vs-GPS speed mismatch for slip/stall/"hit something" detection, not for localization.
+- **Navigation core: trajectory + MPC** (decided 2026-10-27; in the firmware since 2026-10-27, see §6. Still to do: edge constraints in the MPC, the safety filter, then the base/mower split). Goal: a reusable base navigation layer (reliable state, reliable motion along straight, curved or any path, never crossing known edges) that other ESP32/ROS robots can configure instead of rebuilding. The split stays as it is: the phone runs the EKF; everything below runs on the ESP32.
+  - **Trajectory:** done, §6.
+  - **Tracking: MPC with [TinyMPC](https://tinympc.org)** on the wheel axle. The model is written per metre of path, not per second: lateral error, heading error and curvature, input = rate of curvature change. That makes it linear and the same at every speed, so one precomputed solver serves the whole mission. Path curvature is fed forward; the MPC only corrects the deviation. Known edges become per-step limits on the lateral error (planned).
+  - **Measured:** Python prototype with sensor noise and the motor ramp: 10 cm offset closed to 2 cm within 0.75 m, rounded square + U-turns followed within 1.7 cm median, 5 cm max. On the ESP32 (2026-10-27): 0.15 ms per solver iteration with `float`, `-O2` and Eigen's debug checks off (25 ms with them on); a typical solve is a few iterations. TinyMPC's costs must be large next to its ADMM penalty ρ (costs ×1000, ρ = 1), or the solver stops early with a far too weak answer.
+  - **Manual driving:** a safety filter (control barrier function) between the joystick and the motors removes only the part of a command that would cross a known edge, so pushing toward a wall turns into sliding along it (outline-recording assist).
+- **Curved paths and the blade offset** (raised 2026-10-27). What the geometry forces, because the blade sits 0.18 m *behind* the axle and the front is the big-wheel end:
+  - Driving head-on at a wall, the front touches first, so the blade stops at least ~0.18 m plus the front overhang away. A pivot next to a wall sweeps the front around the axle, so it needs that clearance.
+  - Along a wall the blade can get as close as the body's half-width allows; reversing toward a wall puts the blade first.
+  - So: mow wall edges parallel, and record the outline in the mowing direction so edges are driven alongside, not into. Easing into a corner instead of pivoting leaves a small uncut triangle at the corner.
+  - Dense infill rows (16.6 cm) are far tighter than any smooth U-turn, so the planner skips rows (§8, since 2026-10-27).
+  - On a curve the blade swings outside the axle's path (radius √(r² + 0.18²)), and it reaches a row end 0.18 m after the axle does. Infill turns therefore belong in a headland strip the outline pass has already mowed, as farm coverage planners do.
+  - The uncut corner triangles are covered by lead-outs (**proposed**): the outline pass knows the corners, so each cut runs a little past its own start (an outline ends beyond where it began), and the infill rows run out past the outline.
+- **Assisted manual driving and wall following** (raised 2026-10-27). Driving by hand next to a wall should not be able to hit it. While recording an outline, the mower should help the user follow a wall or terrain edge, because steering by hand and capturing points is finicky. Known edges: the safety filter above. Unknown walls need obstacle sensing (none yet, see Status).
 - **Simulation (implemented 2026-10-27, section 11):** Gazebo Harmonic HIL with procedural mesh terrain, the mower with gearbox/step-rate limits, MPU6050 and RTK GNSS device models at the real datum. Cameras are supported by `sim_env` but not yet on the mower. Gaussian-plus-Markov GNSS noise is still not field RTK behaviour, so keep tuning the filter with **rosbags recorded in the field**, and record a bag on every field test.
 - **Cameras:** molehill, obstacle and person detection first (a small TFLite model). The A12 (Helio P35) is likely too weak for real-time visual SLAM. Visual "return home around obstacles" comes later, possibly off-board.
