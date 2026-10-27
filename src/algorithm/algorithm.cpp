@@ -259,6 +259,16 @@ bool GeneratePaths(){
     ace_sorting::quickSortMiddle(intersectionPaths.at(d).data(), (uint16_t) intersectionPaths.at(d).size(), [](std::vector<long long> o1, std::vector<long long> o2) { return o1.at(2) < o2.at(2); });
   }
 
+  // The infill walks each scan line in enter/leave pairs; a line without points or with an
+  // odd count (it grazed a vertex) would index past its end, so it is skipped.
+  for (int d = (int)intersectionPaths.size() - 1; d >= 0; d--){
+    size_t n = intersectionPaths.at(d).size();
+    if (n < 2 || n % 2 != 0){
+      SerialDebug.printf("[ALGO] Scan line %d skipped (%u crossings)\r\n", d, (unsigned)n);
+      intersectionPaths.erase(intersectionPaths.begin() + d);
+    }
+  }
+
   return true;
 }
 
@@ -518,6 +528,9 @@ std::vector<double> AlgorithmNextPoint(){
         //Start seeking first infill start
         algorithmMode = "SEEK";
         algorithmInfillIndex = 0;
+        if (intersectionPaths.empty()){
+          algorithmTarget = "BASE";  // nothing to infill (area narrower than one lane)
+        }
       }
       
       NextX = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(0);
@@ -704,13 +717,9 @@ void AlgorithmAbort(bool full_abort){
     }
     
     //TODO: Implement mower reverse for a bit from obstacle
-    
-    std::vector<double> targetPoint = AlgorithmNextPoint();
-    targetPointLon = targetPoint.at(0);
-    targetPointLat = targetPoint.at(1);
-    
-    AlgorithmMotionSetTargetPoint(targetPointLon, targetPointLat);
   }
+  // The caller asks AlgorithmNextPoint() for the next target. (Before 2026-10-27 this function
+  // did that itself, crashed on the empty "done" result and sent cm values as metres.)
 }
 
 void AlgorithmSetCurrentPosition(long long x_cm, long long y_cm) {
@@ -760,6 +769,10 @@ void AlgorithmCaptureNewPoint(){
   outlines.back().back().push_back(GetLat());
 }
 void AlgorithmCaptureSetNewPoint(long long lon, long long lat){
+  if (outlines.empty()) {
+    AlgorithmCaptureNewOutline();
+  }
+
   outlines.back().push_back( std::vector<long long>());
 
   outlines.back().back().push_back(lon);
@@ -779,7 +792,7 @@ bool AlgorithmCaptureRemoveOutline(){
 
 bool AlgorithmCaptureRemovePoint(){
   //Index out of bounds, stop algorithm
-  if (outlines.back().size() == 0){return false;} 
+  if (outlines.empty() || outlines.back().size() == 0){return false;}
 
   outlines.back().pop_back();
   

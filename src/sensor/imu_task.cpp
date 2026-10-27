@@ -10,7 +10,7 @@ static double acc_x_offset = 0;
 static double acc_y_offset = 0;
 static double acc_z_offset = 0;
 
-static bool calibration_completed = false;
+static volatile bool calibration_completed = false;
 
 //Data
 static sensors_event_t imu_acc, imu_gyro, imu_temp;
@@ -64,6 +64,8 @@ static bool imu_calibrate_step(){
   SerialDebug.printf("[IMU] Gyro bias %.4f %.4f %.4f rad/s\r\n", mean[0], mean[1], mean[2]);
   return true;
 }
+
+bool imu_ready(){ return calibration_completed; }
 
 void imu_calibrate(){
   calibration_completed = false;

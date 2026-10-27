@@ -1,0 +1,82 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid (1 m)
+      Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 30
+      Reference Frame: <Fixed Frame>
+      Color: 160; 160; 164
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: true
+      Show Names: true
+      Marker Scale: 0.5
+    - Class: rviz_default_plugins/Odometry
+      Name: EKF pose
+      Enabled: true
+      Topic:
+        Value: /odometry/filtered/global
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+        History Policy: Keep Last
+      Keep: 600
+      Position Tolerance: 0.05
+      Angle Tolerance: 0.2
+      Shape:
+        Value: Arrow
+        Color: 255; 50; 50
+        Shaft Length: 0.15
+        Shaft Radius: 0.01
+        Head Length: 0.05
+        Head Radius: 0.03
+      Covariance:
+        Value: false
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Outlines
+      Enabled: true
+      Topic:
+        Value: /algo/markers/outlines
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Infill
+      Enabled: true
+      Topic:
+        Value: /algo/markers/infill
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Obstacles
+      Enabled: true
+      Topic:
+        Value: /algo/markers/obstacles
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: odom
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/Measure
+  Views:
+    Current:
+      Class: rviz_default_plugins/TopDownOrtho
+      Name: Current View
+      Scale: 80
+      X: 0
+      Y: 0
+      Target Frame: base_link
+    Saved: ~
+Window Geometry:
+  Height: 900
+  Width: 1400

@@ -44,8 +44,8 @@ The ESP32 owns everything that acts: mission logic, the planner, motion control 
 | `loop()` in main.cpp (bridge + console) | 10 ms | 3072 | `/datum/set`, `/imu`, `/gps` | ROS topics, `/fused_pose`, `/motor` (manual), `/controller/signal` (console) |
 | `motor_task` | 1 ms (1 kHz) | 2048 | `/motor`, `/sim/pose_set` | – |
 | `imu_task` | 100 ms | 4096 | – | `/imu` |
-| `gps_task` | 200 ms | 2816 | – | `/gps` |
-| `motion_task` | 100 ms (logic runs per pose) | 2816 | `/fused_pose`, `/motion/command` | `/motor`, `/controller/signal` |
+| `gps_task` | 200 ms | 4096 | – | `/gps` |
+| `motion_task` | 100 ms (logic runs per pose) | 4096 | `/fused_pose`, `/motion/command` | `/motor`, `/controller/signal` |
 | `controller_task` | 200 ms | 4096 | `/controller/signal`, `/gps` | `/motor`, `/motion/command`, `/datum/set` |
 | `bluetooth_task` | 100 ms | 2816 | `/gps`, `/fused_pose` | `/controller/signal`, `/motor` |
 
@@ -71,7 +71,7 @@ The algorithm isn't a task. Its functions run inside controller_task (`Algorithm
 | `gps/odom` | nav_msgs/Odometry | ESP→host | `odom` / child `base_link` | ENU metres from datum; yaw = GPS heading-of-motion; twist = **world-frame** east/north velocity |
 | `imu/data` | sensor_msgs/Imu | ESP→host | `imu_link` | **Best effort** (2026-10-27), like the EKF subscription. orientation_covariance[0] = -1 (no orientation); gyro var 0.01, accel var 0.1 |
 | `esp/datum` | sensor_msgs/NavSatFix | ESP→host | – | Datum lat/lon. Published once; nothing consumes it since `datum_relay` was removed (2026-06-11) |
-| `algo/path_data` | std_msgs/Float64MultiArray | ESP→host | – | Packed outlines + scan lines, max 64 doubles |
+| `algo/path_data` | std_msgs/Float64MultiArray | ESP→host | – | Packed outlines + scan lines, max 200 doubles (larger paths are sent truncated) |
 | `/odometry/filtered/global` | nav_msgs/Odometry | host→ESP | – | EKF output (remapped from `/odometry/filtered`) |
 | `hil/gnss_ubx` | std_msgs/UInt8MultiArray | host→ESP | – | **HIL build only.** Raw UBX bytes from the simulated receiver; replaces UART2 |
 | `hil/imu` | sensor_msgs/Imu | host→ESP | – | **HIL build only.** Simulated MPU6050 sample; replaces I2C |
@@ -111,22 +111,22 @@ Data path: `gps_task` reads UBX NAV-PVT, then the bridge turns it into `gps/odom
 - from `/imu/data`: vyaw (gyro z) only
 
 **The two-state behaviour.** The author describes it as "stationary vs moving". It is implemented through the **yaw covariance** in `gps_topic_callback`:
-- **Moving:** `speed > 0.3 m/s` and `0 < headingAcc < 1 rad`. GPS yaw is fused with variance headingAcc².
+- **Moving:** `speed > 0.2 m/s` (0.3 until 2026-10-27; that equalled the cruise speed, so GPS yaw was rarely fused), the gyro's recent peak |yaw rate| below `GPS_YAW_MAX_TURN_RATE` 0.15 rad/s (2026-10-27, condition (c) below), and `0 < headingAcc < 1 rad`. The turn-rate condition matters because the antenna is ~0.18 m behind the wheel axle: in a 1 rad/s pivot it moves sideways at 0.18 m/s, and in HIL that fed a heading 90° off into the EKF. GPS yaw is fused with variance headingAcc².
 - **Otherwise:** yaw variance = 1e6, so heading comes only from integrated gyro.
 - Position (variance hAcc²) and velocity (variance sAcc², floor 0.01) are **always** fused.
 
 **Why it's built this way.** In the field, GPS heading-of-motion is a good absolute heading while the mower drives. At standstill or crawling speed, RTK noise makes the "velocity direction" random, which used to make the heading wander while parked. Gyro-only holding fixes that. A compass was unreliable, and fuller fusion attempts did worse.
 
 **Known gaps in this scheme:**
-- **Front/back ambiguity.** GPS heading is the direction of *travel*, not of the body. While reversing it is off by π. Reverse isn't implemented yet (`MOVING_REVERSE` is unused), but any reverse motion, being pushed, or sliding sideways feeds a wrong yaw whenever the speed is above 0.3 m/s. The fix agreed in discussion (2026-10-27, **proposed**): accept GPS yaw only when
+- **Front/back ambiguity.** GPS heading is the direction of *travel*, not of the body. While reversing it is off by π. Reverse isn't implemented yet (`MOVING_REVERSE` is unused), but any reverse motion, being pushed, or sliding sideways feeds a wrong yaw whenever the speed is above 0.2 m/s. The fix agreed in discussion (2026-10-27, **proposed**): accept GPS yaw only when
   - (a) GPS speed is above the threshold
   - (b) the motion command is clearly forward or reverse with a small turn rate
-  - (c) the gyro rate is small
+  - (c) the gyro rate is small (implemented 2026-10-27)
   - (d) heading-of-motion, plus π when reversing, is within about 30° of the current estimate
   - (e) all of this holds for about 1 s.
 
   The first lock comes from a straight forward drive.
-- **Twist frame.** `gps/odom` sets child_frame_id to `base_link`, so robot_localization reads the twist as body-frame. The firmware sends world-frame east/north velocity, so vx/vy are treated as forward/left. This is only correct while yaw ≈ 0. The code comments admit it's a shortcut. Fix it by rotating into the body frame with the current yaw, or by not fusing vx/vy. Re-check field behaviour after changing this.
+- **Twist frame (fixed 2026-10-27).** `gps/odom` sets child_frame_id to `base_link`, so robot_localization reads the twist as body-frame, but the firmware sent world east/north velocity. Between GPS fixes the EKF then predicted motion in the wrong direction whenever yaw ≠ 0 (at yaw 90° it moved west while the mower drove north), which showed in HIL as a jagged pose up to ~0.45 m off ground truth. The firmware now rotates the GPS velocity into the body frame with the latest fused yaw. The EKF rotates it back with (almost) the same yaw, so the predicted position follows the GPS velocity even when yaw is off; yaw is not corrected through this path. *Watch:* re-check in the field; a mower pushed sideways now shows a lateral body velocity instead of a wrong forward one.
 - The gyro has **no bias calibration**: `imu_calibrate()` exists but is never called. A 0.04 rad/s (~2.3°/s) deadband hides the bias, but it also hides slow real turns.
 - GPS fix quality (RTK fixed vs float) isn't read. `hAcc` is the only quality signal.
 - Slip and stall are not detected. Commanded speed vs GPS speed would detect them (planned).
@@ -134,13 +134,14 @@ Data path: `gps_task` reads UBX NAV-PVT, then the bridge turns it into `gps/odom
 ## 6. Motion control (`motion_task`)
 
 The mower follows a straight segment `start → end`, both in metres.
-- **Target heading** = line angle + `atan(cross_track / 0.3)`, which pulls the mower back onto the line. The heading error goes into a PID (Kp 0.8, Ki 0.01, Kd 3.0, derivative on measurement, output ±3.2 rad/s) to produce the angular velocity.
+- **Target heading** = line angle + `atan(cross_track / 0.8)` (`MOTION_CORRECTION_GAIN`), which pulls the mower back onto the line. This outer loop must stay ~3× slower than the heading loop: 0.3 m worked in the field only because the old drive topped out at ~0.12 m/s, and at 0.3 m/s it weaved ±50° in HIL (2026-10-27). The heading error goes into a PID (Kp 1.5, Ki 0.1 with the integrator clamped to ±0.1 rad/s, Kd 0.1 on the error with a 0.2 s filter, output ±`MAX_ANGULAR_VEL`) to produce the angular velocity. The PID is reset at every new segment and during rotate-only, and starts without a derivative kick. Tuned in HIL 2026-10-27; the old gains (Kp 0.8, Ki 0.01, Kd 3.0) had a dead derivative (it was fed a constant 0) and turned slowly.
 - **Rotate-only** with hysteresis: it starts when |error to the line| ≥ 30° and stops below 3°. In rotate-only, linear speed is 0 and the PID is reset.
-- **Speed:** 0.5 m/s, scaled to 50% between 6° and 15° of heading error. Within 0.15 m of the goal it slows to a 0.1 m/s floor.
+- **Speed:** 0.3 m/s (`MOTION_FORWARD_SPEED_NORMAL`; 0.5 m/s was unstable with the ~0.3 s pose latency, 2026-10-27), scaled to 50% between 6° and 15° of heading error. Toward the goal it brakes along v = √(2 · 0.25 m/s² · d), where d is the distance still to go *along the line*, minus the EKF's GPS velocity × `MOTION_POSE_LATENCY_S` 0.35 s, because the pose arrives that old (floor 0.05 m/s), which stays under the motor ramp (~0.35 m/s²). Before 2026-10-27 it slowed only within 0.15 m of the goal, shorter than the gearboxed drive needs to stop, and the straight distance to the goal never gets small while the mower is beside the line, so it crossed line ends at full speed (~0.3 m overshoot in HIL).
 - **Goal reached** = the projection onto the segment reaches t ≥ 1 (the mower passed the perpendicular through the end). Then it publishes `MOTOR_STOP` and `SIGNAL_MOTION_DONE`.
+- **Stall check** (2026-10-27): while driving forward (not rotate-only), if the fused position moves less than `MOTION_STALL_DIST` 0.10 m in `MOTION_STALL_TIME_MS` 4 s, it stops and publishes `SIGNAL_OBSTACLE` (the controller skips the line). It uses only the sign of the command, not its size. Rotate-only longer than `MOTION_ROTATE_TIMEOUT_MS` 10 s (a 180° turn takes ~3.5 s) counts as a stall too, so a broken yaw estimate can't spin the mower forever. Found in HIL: the mower high-centred on a 9 cm molehill and pushed forever. *Watch:* on a slope with heavy slip, slow progress below 2.5 cm/s counts as a stall; repeated stalls skip line after line.
 - It runs once per fused pose (EKF rate, 10 Hz). It only drives forward.
 - **Teleport mode** (`MOTION_TELEPORT_MODE`): skips driving. After 1 s it fakes the pose at the target, which lets the planner and controller be tested without motion.
-- `motor_task` turns (v, ω) into wheel speeds with diff-drive kinematics (`WHEEL_BASE` 0.28, `WHEEL_RADIUS` 0.075, clamped to ±0.5 m/s and ±1 rad/s). Motor A = left, B = right. Step-rate problems are in Known issues.
+- `motor_task` turns (v, ω) into wheel speeds with diff-drive kinematics (`WHEEL_BASE` 0.3647, `WHEEL_RADIUS` 0.0749, clamped to ±0.5 m/s and ±1 rad/s). Motor A = left, B = right. Step-rate problems are in Known issues.
 
 ## 7. Mission controller (`controller_task`)
 
@@ -148,9 +149,10 @@ States: `IDLE, MOWING, PAUSED, RETURNING_TO_BASE, ENTERING/LEAVING_CHARGING_STAT
 
 | Signal | Effect |
 |---|---|
-| `START_MOWING` | Only from IDLE/CHARGING, and needs datum + path. Seeds the planner with the current pose and requests the first point |
+| `START_MOWING` | Only from IDLE/CHARGING, and needs datum + path. From IDLE the planner is reset (new mission). Seeds the planner with the current pose and requests the first point |
 | `MOTION_DONE` | MOWING: next point. RETURNING: docked → CHARGING. LEAVING: back to MOWING |
-| `OBSTACLE` | MOWING: stop, `AlgorithmAbort(false)` (skip this line), continue |
+| `OBSTACLE` | MOWING: stop, `AlgorithmAbort(false)` (skip this line), then request the next point |
+| `STOP_MOWING` | any mission state: motion stop, blade off, planner reset, IDLE (console `x`) |
 | `RAIN`, `LOW_BATTERY` | MOWING → `return_to_base()`, which stops the motors and calls `go_to_base()`. **That function is empty**, so the mower just stops |
 | `MANUAL_ON/OFF` | IDLE ↔ MANUAL. Manual moves time out after 500 ms (watchdogs in both main loop and BT task) |
 | `START_DATUM_CAPTURE` | IDLE and GPS hAcc ≤ `GPS_ACC_THRESHOLD`: the datum is set to the current fix, saved and published (instant, no drive) |
@@ -176,7 +178,10 @@ Nothing produces `LOW_BATTERY`, `RAIN` or `BATTERY_CHARGED` except the console (
 - `SEEK`: follow the outline to the nearest end of the next scan line, choosing the shorter direction around. Blade **off**.
 - `INFILL`: drive the span, then jump or follow an island outline to the next span. Blade **on**.
 - When all lines are done, target = `BASE`: SEEK along the outline to point 0, then `MainChargingStart()` and `algorithmDone`.
-- `AlgorithmAbort(full)` switches to BASE. With `full=false` it returns to FORWARD at the next line.
+- `AlgorithmAbort(full)` switches to BASE. With `full=false` it returns to FORWARD at the next line. It only changes the planner state; the controller then asks for the next point.
+- Scan lines with no crossings or an odd number (a line grazing a vertex) are dropped after planning, because the infill walks crossings in pairs. If none remain, the mission is outline only.
+- The controller calls the planner inside `try/catch`: a `std::out_of_range` from a planner indexing bug stops the mower, turns the blade off and returns to IDLE (`[CTRL] Mission aborted (...)`) instead of rebooting the ESP.
+- Path capture (console `c o p e`, BT `MOWER/CAPTURE/*`) is refused while a mission runs, since the planner reads the same vectors from another task.
 
 The planner state is strings (`algorithmTarget`, `algorithmMode`) plus indices into `extOutlines`/`intersectionPaths`. The path is saved as text (`O\n` then `x y\n` lines) in NVS and replanned on load.
 
@@ -205,6 +210,9 @@ The planner state is strings (`algorithmTarget`, `algorithmMode`) plus indices i
 | `c` `o` `p` `e` | path capture: start, new outline, add point, end |
 | `g` | capture datum |
 | `t` | start mowing |
+| `x` | stop mowing (back to IDLE), also ends a line test |
+| `l` | line test (IDLE, not manual): follow a 1.5 m line straight ahead from the current pose, then stop. For tuning braking and line following without a mission |
+| `h` | task stack headroom (FreeRTOS high-water marks) and free heap |
 | `k` | fake obstacle |
 | `b` | fake rain |
 | `p` within 1.5 s of boot | clear datum |
@@ -239,8 +247,8 @@ Findings that shaped the models:
 - Casters are fixed low-friction spheres; ball-joint casters drift.
 - HIL runs the sim nodes on wall time (`sim.launch.py sim_time:=false`); `/clock` and `joint_states` are lazy bridges. `/clock` comes at the physics rate (~1 kHz), and each Python device node spent ~70% of a core on it. That starved the micro-ROS agent, so reliable publishes stalled and the firmware loop fell to ~2 Hz. Wall time is only right while Gazebo runs at RTF 1.
 - Main loop over the WSL relay (2026-10-27): ~13 Hz instead of 100 Hz while `imu/data` was reliable, because every reliable publish waits for the agent's ack. Now ~24 Hz, with `gps/odom` 5 Hz, `imu/data` 10 Hz and the EKF 8–9 Hz. The remaining blocking publishes are `gps/odom` (Odometry is too large for a best-effort frame) and `esp/log`. A zero session timeout on `esp/log` made it stop for good once the reliable stream backed up, so it was reverted.
-- Inbound messages are still dropped sometimes (console keys), when bursts overflow the micro-ROS input buffers. Test scripts confirm each key via `esp/log`.
-- Mission test (2026-10-27): drove a ~2 m square, recorded it with `c o p … e`, then pressed `t`. Mowing started and followed line segments for 150 s without finishing. The mower went up to ~0.4 m outside the recorded outline near one corner, probably overshoot in the line-end turns; not analysed yet. Agent kill → `[ROS] Agent lost` → `[ROS] Agent reconnected` ~10 s later, with all streams back at normal rates.
+- Console keys on `esp/console` were dropped regularly. Cause: micro-ROS has one shared pool of `RMW_UXRCE_MAX_HISTORY` (default 4) received messages for all subscriptions, and `fused_pose` (10 Hz, 2 slots each), `hil/gnss_ubx` and `hil/imu` kept it full. Fixed 2026-10-27: `microros.meta` raises it to 10 (+12 kB RAM), and the loop runs a second zero-timeout `spin_some` per tick. The real build gets the same change (fewer subscriptions there).
+- Mission test (2026-10-27): drove a ~2 m square, recorded it with `c o p … e`, then pressed `t`. The first run (Kp 0.8 gains, 0.5 m/s, L 0.3) weaved ±50° and left the outline by ~0.4 m. After the twist-frame, PID and braking fixes, a full mission (76 segments) finished in 373 s with "Mowing complete", and a second `t` started a new mission. Braking and line tracking are now tested with console `l` (one 1.5 m line straight ahead) instead of full missions; the results are in Known issue #19. Agent kill → `[ROS] Agent lost` → `[ROS] Agent reconnected` ~10 s later, with all streams back at normal rates.
 
 **HIL build vs real build.** `HIL_ENABLED` changes only the byte/sample sources below; tasks, rates, parsers, control and topics are the same code.
 
@@ -283,32 +291,36 @@ Stamps on sensor messages come from the ESP32 clock, which is synced to the agen
 Ordered roughly by impact. Fix them inside the existing architecture.
 
 1. **Stepper step rate cap.** ContinuousStepper's software ticker toggles STEP once per `loop()` call, and `motor_task` calls it at 1 kHz. That gives **at most ~500 steps/s**, quantized to 1 ms periods. The 10:1 gearboxes make this much worse: at full step (200/rev), wheel speed tops out at about 0.25 rev/s, roughly 0.12 m/s with r = 75 mm. Microstepping on the DM542T reduces it further. Moving to hardware step generation fixes it, for example ContinuousStepper's oscillator ticker on LEDC, or FastAccelStepper on the ESP32 RMT/MCPWM.
-   - **Fixed 2026-10-27:** `motor_task.cpp` uses `OscillatorTicker<LedcOscillator>`, so STEP is a 50 % LEDC square wave (channels 0 and 2, separate timers, 8-bit). `loop()` at 1 kHz now only runs the acceleration ramp. `MOTOR_ACCELERATION` was scaled ×10 for the gearbox (150 → 1500 steps/s², still ~0.35 m/s² at the wheel). HIL: 0 → 1275 steps/s (0.3 m/s) in ~1 s; the sim's `max_step_rate` cap was removed. *Watch:* the ramp updates once per step period but at most every 1 ms, so above 1000 steps/s the effective acceleration drops (half at 2000 steps/s). Below 20 steps/s the output is off. Pulses have not been checked with a scope, and a speed change re-configures the LEDC timer, which can shorten one pulse during ramps. 0.5 m/s is ~2125 full steps/s (≈640 motor rpm), where the 23HS32's torque is well down, especially at low supply voltage. In HIL, the board's GPIO19/26 now output real pulses.
+   - **Fixed 2026-10-27:** `motor_task.cpp` uses `OscillatorTicker<LedcOscillator>`, so STEP is a 50 % LEDC square wave (channels 0 and 2, separate timers, 8-bit). `loop()` at 1 kHz now only runs the acceleration ramp. `MOTOR_ACCELERATION` was scaled ×10 for the gearbox (150 → 1500 steps/s², still ~0.35 m/s² at the wheel). HIL: 0 → 1275 steps/s (0.3 m/s) in ~1 s; the sim's `max_step_rate` cap was removed. *Watch:* the ramp updates once per step period but at most every 1 ms, so above 1000 steps/s the effective acceleration drops (half at 2000 steps/s). Below 20 steps/s the output is off. Pulses have not been checked with a scope (a PCNT self-count on the bench, 2026-10-27, read 0 on both pins while LEDC ran, so the readback setup is wrong, not proven to be the pulses), and a speed change re-configures the LEDC timer, which can shorten one pulse during ramps. 0.5 m/s is ~2125 full steps/s (≈640 motor rpm), where the 23HS32's torque is well down, especially at low supply voltage. In HIL, the board's GPIO19/26 now output real pulses.
 2. **Wheel-speed conversion.** `motor_move_vel` computes steps/s as `rad/s × MOTOR_STEPS_PER_REV`. That is missing `/2π`, ignores the DM542T microstep setting and has no gear ratio. Odometry uses `steps × 2πr/200`, which is inconsistent with it. Add `GEAR_RATIO` and `MICROSTEPS` constants and fix the formula. Re-measure `WHEEL_RADIUS` and `WHEEL_BASE` for Mower V3, where the wheels moved out 54.5 mm per side.
    - **Fixed 2026-10-27:** steps/s = rad/s / 2π × `MOTOR_STEPS_PER_WHEEL_REV` (200 × `MOTOR_MICROSTEPS` 1 × `MOTOR_GEAR_RATIO` 10), odometry uses the same constant. `WHEEL_RADIUS` 0.0749, `WHEEL_BASE` 0.3647 from CAD (not measured). *Watch:* commanded step rates are ~1.6× higher than before (0.3 m/s → ~1270 steps/s vs 800). `MOTOR_GEAR_RATIO` 10 is the catalogue value of the MG23-G10 and hasn't been checked on the part. `MOTOR_MICROSTEPS` must match the DM542T DIP switches, or speed is off by that factor. Turn rate now matches the command (the old 0.28 base made turns ~23% slow), so the heading PID effectively has more gain.
 3. **No pose timeout.** If `/fused_pose` stops (host or link down), motion_task stops updating, but the last `MOTOR_MOVE` keeps running. Add a watchdog that stops the motors.
    - **Fixed 2026-10-27:** motion_task stops the motors if no `/fused_pose` for `MOTION_POSE_TIMEOUT_MS` (500 ms) while MOVING, stays MOVING, and resumes on the next pose. *Watch:* an EKF slower than 2 Hz, or a long micro-ROS hiccup, now causes stop/start jerks; teleport mode is unaffected (not MOVING).
-4. **GPS yaw front/back ambiguity**, and **twist published in the world frame as if it were the body frame** (section 5).
+4. **GPS yaw front/back ambiguity** (section 5). The twist-frame half of this item was fixed 2026-10-27.
 5. **GPS parser publishes stale or partial data.** `gps_read()` writes bytes straight into the global `pvt` while parsing. It then publishes `pvt` every 200 ms tick with a fresh timestamp, whether or not a new frame was completed and checksum-verified that tick. Parse into a buffer, and publish only on a valid new frame.
    - **Fixed 2026-10-27:** `ubx_parse()` checks sync, class/id, length (≤100) and the checksum, and copies into `pvt` only on a complete valid NAV-PVT; `/gps` publishes only after a new frame. The old struct expected the 84-byte (M6) payload; M8/M9/F9 send 92, so the checksum **never** matched before and every publish was built from whatever bytes were last written. Any payload ≥84 is accepted now. *Watch:* if the receiver is set to output something other than NAV-PVT, nothing is published anymore (before, garbage was); GPS can now publish at < 5 Hz when frames straddle poll ticks, and `init_gps()` only succeeds on a valid frame.
 6. **BT `MOWER/START` is broken.** It publishes to the misspelled topic `"/controllemotorr/signal"`.
    - **Fixed 2026-10-27:** topic is `/controller/signal`. *Watch:* BT START now actually starts mowing.
 7. **Return-to-base and docking are empty** (`go_to_base`, `go_to_base_exit`). Rain and low battery only stop the mower. Battery (GPIO36) and rain (GPIO39) are never read.
-8. **Obstacle handling probably skips a waypoint.** `AlgorithmAbort()` already calls `AlgorithmNextPoint()` and sends a target, and then `handle_obstacle()` calls `go_to_next_algorithm_point()` again.
-   - **Fixed 2026-10-27:** `handle_obstacle()` no longer calls `go_to_next_algorithm_point()`. *Watch:* if `AlgorithmAbort` is called while the target is already BASE it sends nothing, so the mower stops and waits (it used to get the next point). `AlgorithmAbort` still calls `.at(0)` on the next point without checking for the end of the mission.
+8. **Obstacle handling skipped a waypoint and could crash.** `AlgorithmAbort()` called `AlgorithmNextPoint()` itself, then `.at(0)` on the result (throws at the end of the mission), stored metres into the cm `targetPoint` fields (wrong segment start for the next line), and `handle_obstacle()` asked for a point again.
+   - **Fixed 2026-10-27:** `AlgorithmAbort()` only switches planner state; `handle_obstacle()` then calls `go_to_next_algorithm_point()` once, which handles the end of the mission. *Watch:* an obstacle while already heading to BASE now moves on to the next BASE point instead of stopping.
 9. **Gyro bias is never calibrated** (`imu_calibrate()` is unused). The accel offsets are also 0, so `acc_z` includes gravity.
-   - **Fixed 2026-10-27 (gyro only):** imu_task averages the first 3 s of samples (30 at 10 Hz) into the gyro offsets and publishes nothing until done; it restarts the window if any axis std > 0.01 rad/s (mower moving). Accel offsets stay 0, so `acc_z` still includes gravity (intended). *Watch:* the mower must be still for 3 s after boot; vibration on the bench can keep it retrying (logged as `[IMU] Moving during gyro calibration`). `GYRO_DEADBAND` (0.04 rad/s) was hiding a large part of the bias before and may be lowerable now. The calibration log's float `printf` overflowed the 2048-byte IMUTask stack (panic seen in HIL), so the stack is now 4096.
+   - **Fixed 2026-10-27 (gyro only):** imu_task averages the first 3 s of samples (30 at 10 Hz) into the gyro offsets and publishes nothing until done; it restarts the window if any axis std > 0.01 rad/s (mower moving). Accel offsets stay 0, so `acc_z` still includes gravity (intended). *Watch:* the mower must be still for 3 s after boot. Since 2026-10-27 START, console `l` and motion_task refuse to drive until it is done (`imu_ready()`): a line test started during calibration kept the mower turning, so calibration restarted forever, `/imu/data` never came and the mower spun in place. A dead IMU therefore means no driving; vibration on the bench can keep it retrying (logged as `[IMU] Moving during gyro calibration`). `GYRO_DEADBAND` (0.04 rad/s) was hiding a large part of the bias before and may be lowerable now. The calibration log's float `printf` overflowed the 2048-byte IMUTask stack (panic seen in HIL), so the stack is now 4096.
 10. `init_peripherals()` early `return` on failure skips the remaining peripherals and Preferences init.
    - **Fixed 2026-10-27:** each peripheral is tried and disabled on its own. *Watch:* e.g. with a dead IMU the motors and BT now come up and the mower can drive.
 11. `DATUM_CAPTURE_ACTIVE` is never set, and the "drive to capture datum" constants are unused. Datum capture is instant.
 12. Planner leftovers: the `1.109` line-spacing factor from degree coordinates, `lon/lat` naming, `int` casts in `AlgorithmGetPathString`.
-13. `algo/path_data` is capped at 64 doubles, so real fields are silently not visualized.
+13. `algo/path_data` was capped at 64 doubles, so real fields were silently not visualized.
+   - **Fixed 2026-10-27:** cap 200 doubles (1.6 kB, one reliable message); a larger path is sent truncated (all outlines, then the scan lines that fit) and logged as `truncated`. *Watch:* a big lawn still shows only part of the infill in RViz.
 14. `SIMULATION_ENABLED` path is broken (section 11).
 15. Clock sync happens only at boot, so long runs drift against host time.
 16. Repo hygiene: `robot_package/package.xml` dependencies are incomplete. (`ros2_ws/build|install|log` untracked 2026-10-27.)
 17. `GPS_ACC_THRESHOLD` is still at the 3000 mm debug value.
 18. **espressif32 platform pinned to 6.13.0 (2026-10-27).** Platform 8.x breaks `micro_ros_platformio` (CCFLAGS become lists). Unpin when micro_ros_platformio supports it.
-19. **Mower leaves the outline in HIL (seen 2026-10-27).** In the first full HIL mission it went up to ~0.4 m past a recorded outline corner. Check the line-end turns and the planner's outline offset against ground truth before field tests.
+19. **Mower left the outline in HIL (seen 2026-10-27).** In the first full HIL mission it went up to ~0.4 m past a recorded outline corner, later up to 0.6 m. Causes: the twist in the wrong frame, the lateral loop as fast as the heading loop, and braking on the straight distance to the goal, which never gets small beside the line.
+   - **Fixed 2026-10-27:** see sections 5 and 6 (body-frame twist, L 0.8, 0.3 m/s, along-track braking, GPS-yaw gate 0.2 m/s plus turn rate, stall check). Line test `l` (1.5 m, 0.3 m/s, flat part of the lawn): the mower stops 3–9 cm past the goal with ≤ 5 cm cross-track (ground truth), and the EKF is within 1–5 cm of ground truth. Right after a reboot with a wrong EKF yaw, the first line takes ~13 s and ends ~35 cm off before GPS yaw locks. *Watch:* HIL has no slip and a perfect gyro; check stop distance and cross-track on grass.
+20. **Mission control could get stuck or crash (found 2026-10-27).** There was no way to stop a mission except power, a second START reused the finished planner state, paths could be edited (console or BT capture) while mowing, and an empty planner result threw from `.at(0)`.
+   - **Fixed 2026-10-27:** `STOP_MOWING` (console `x`) aborts to IDLE with motors and blade off; START from IDLE resets the planner; path edits are refused unless IDLE or MANUAL (BT answers `FAIL/BUSY`); scan lines with an odd crossing count are skipped; `AlgorithmNextPoint` is wrapped in try/catch and any exception aborts the mission to IDLE. Console `h` prints per-task stack headroom and heap; in HIL GPSTask had 584 B and MotionTask 816 B left of 2816, so both are 4096 now. *Watch:* an aborted mission starts over from the first line.
 
 ## 15. Planned direction (proposed, not yet decided unless dated)
 

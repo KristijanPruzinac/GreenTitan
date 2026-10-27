@@ -1,5 +1,6 @@
 #include "bluetooth_task.h"
 #include "../configuration/configuration.h"
+#include "../controller/controller_task.h"
 
 #if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
 #error Bluetooth is not enabled!
@@ -124,6 +125,10 @@ static void handle_message(String MessageGroup, String ActionGroup, String DataG
             bt_send(result == DDS_SUCCESS ? "MOWER/MOVE/OK" : "MOWER/MOVE/FAIL");
         }
         else if (ActionGroup == "CAPTURE") {
+            if (!controller_path_edit_allowed()) {
+                bt_send("MOWER/CAPTURE/" + DataGroup + "/FAIL/BUSY");
+                return;
+            }
             if (DataGroup == "POINT") {
                 if (!capture_preconditions_ok("MOWER/CAPTURE/POINT")) return;
                 AlgorithmCaptureNewPoint();

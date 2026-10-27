@@ -1,6 +1,11 @@
 #include "controller_task.h"
+#include "../sensor/imu_task.h"
 
-static int robot_state = ROBOT_STATE_IDLE;
+static volatile int robot_state = ROBOT_STATE_IDLE;
+
+bool controller_path_edit_allowed() {
+    return robot_state == ROBOT_STATE_IDLE || robot_state == ROBOT_STATE_MANUAL;
+}
 
 // External globals from algorithm
 extern String algorithmTarget;
@@ -58,8 +63,25 @@ static void motion_stop() {
     }
 }
 
+static void abort_mission(const char* reason) {
+    SerialDebug.printf("[CTRL] Mission aborted (%s), returning to IDLE\r\n", reason);
+    motion_stop();
+    stop_motors();
+    motor_main_off();
+    AlgorithmReset();
+    robot_state = ROBOT_STATE_IDLE;
+}
+
 static void go_to_next_algorithm_point() {
-    std::vector<double> next = AlgorithmNextPoint();
+    std::vector<double> next;
+    // Safety net: a planner indexing bug throws std::out_of_range from .at(). Uncaught, that
+    // reboots the ESP mid-field; here it stops the mower and blade and leaves it IDLE.
+    try {
+        next = AlgorithmNextPoint();
+    } catch (const std::exception& e) {
+        abort_mission(e.what());
+        return;
+    }
     if (next.size() < 2) {
         SerialDebug.printf("[CTRL] Mowing complete, returning to IDLE\r\n");
         stop_motors();
@@ -153,8 +175,15 @@ static void start_mowing() {
         SerialDebug.printf("[CTRL] Cannot start mowing: path not set\r\n");
         return;
     }
+    if (!imu_ready()) {   // driving now would keep the gyro calibration from ever finishing
+        SerialDebug.printf("[CTRL] Cannot start mowing: gyro not calibrated yet (keep still)\r\n");
+        return;
+    }
 
     SerialDebug.printf("[CTRL] Starting mowing\r\n");
+    if (robot_state == ROBOT_STATE_IDLE) {
+        AlgorithmReset();   // a new mission; without this a second start after "complete" did nothing
+    }
     robot_state = ROBOT_STATE_MOWING;
     AlgorithmSeedStartPosition();
     go_to_next_algorithm_point();
@@ -236,7 +265,23 @@ static void handle_obstacle() {
 
     SerialDebug.printf("[CTRL] Obstacle hit — skipping line\r\n");
     stop_motors();
-    AlgorithmAbort(false);           // already sends the next target
+    try {
+        AlgorithmAbort(false);
+    } catch (const std::exception& e) {
+        abort_mission(e.what());
+        return;
+    }
+    go_to_next_algorithm_point();
+}
+
+static void stop_mowing() {
+    if (robot_state == ROBOT_STATE_MANUAL) return;
+    if (robot_state == ROBOT_STATE_IDLE) {   // also ends a console line test
+        motion_stop();
+        stop_motors();
+        return;
+    }
+    abort_mission("stop requested");
 }
 
 static void handle_rain() {
@@ -294,6 +339,9 @@ static void controller_signal_callback(dds_callback_context_t* context) {
             break;
         case SIGNAL_START_DATUM_CAPTURE:
             start_datum_capture();
+            break;
+        case SIGNAL_STOP_MOWING:
+            stop_mowing();
             break;
         default:
             SerialDebug.printf("[CTRL] Unknown signal: %d\r\n", signal->signal);

@@ -22,6 +22,7 @@ extern double odom_angular_velocity;
 
 bool init_imu();
 void imu_calibrate();
+bool imu_ready();   // gyro bias calibrated, /imu is being published
 
 void imu_task(void* parameter);
 

@@ -264,6 +264,8 @@ void datum_set_callback(dds_callback_context_t* context) {
     datum_publish_count = 0;
 }
 
+static float recent_turn_rate = 0.0f;   // rad/s, see the GPS yaw gate
+
 void imu_topic_callback(dds_callback_context_t* context) {
     IMU_data_t* data = (IMU_data_t*)context->message_data.data;
 
@@ -293,7 +295,14 @@ void imu_topic_callback(dds_callback_context_t* context) {
     imu_msg.linear_acceleration_covariance[8] = 0.1f;
 
     RCSOFTCHECK(rcl_publish(&imu_publisher, &imu_msg, NULL));
+
+    // Recent turn rate for the GPS yaw gate: peak |gyro z| that decays over ~0.5 s (10 Hz IMU)
+    recent_turn_rate = fmaxf(fabsf(data->gyro_z), recent_turn_rate * 0.7f);
 }
+
+static float fused_yaw_for_twist = 0.0f;   // latest EKF yaw; both callbacks run in the loop task
+static double fused_x_last = 0.0, fused_y_last = 0.0;   // latest EKF position (console line test)
+static bool fused_pose_seen = false;
 
 void gps_topic_callback(dds_callback_context_t* context) {
     gps_data_t* data = (gps_data_t*)context->message_data.data;
@@ -330,21 +339,26 @@ void gps_topic_callback(dds_callback_context_t* context) {
     gps_msg.pose.covariance[21] = 1e6;          // roll
     gps_msg.pose.covariance[28] = 1e6;          // pitch
 
-    // Yaw covariance — gate on speed, garbage at low speeds
-    if (data->speed > 0.3 && data->heading_accuracy > 0 && data->heading_accuracy < 1.0) {
+    // Yaw covariance — gate on speed, garbage at low speeds. 0.2 m/s (was 0.3 until 2026-10-27,
+    // which equalled the 0.3 m/s cruise speed, so GPS yaw was almost never fused). The antenna
+    // sits ~0.18 m behind the wheel axle, so while turning it moves sideways to the body
+    // (0.18 m/s in a 1 rad/s pivot): only accept GPS yaw while the gyro says nearly straight.
+    if (data->speed > 0.2 && recent_turn_rate < GPS_YAW_MAX_TURN_RATE &&
+        data->heading_accuracy > 0 && data->heading_accuracy < 1.0) {
         gps_msg.pose.covariance[35] = data->heading_accuracy * data->heading_accuracy;
     } else {
         gps_msg.pose.covariance[35] = 1e6;      // ignore yaw measurement
     }
 
-    // Twist: velocity in base_link frame
-    // gps gives velocity in world ENU (vel_east, vel_north). For child_frame_id=base_link,
-    // twist should be in base_link frame. Since we may not have reliable yaw, send it in
-    // world frame instead and configure EKF to interpret /gps/odom twist as if in odom frame.
-    // Easier approach: just send linear x/y in world frame and tell EKF child_frame_id=odom.
-    // For now, send raw east/north and let EKF handle it (see config notes below).
-    gps_msg.twist.twist.linear.x = data->vel_east;   // east
-    gps_msg.twist.twist.linear.y = data->vel_north;  // north
+    // Twist: robot_localization reads it in child_frame_id (base_link), so the GPS east/north
+    // velocity is rotated into the body frame with the current fused yaw. The EKF rotates it
+    // back with the same yaw, so its position prediction follows the GPS velocity even when
+    // that yaw is off; yaw itself is not corrected by this. (Until 2026-10-27 east/north went
+    // in unrotated, so between fixes the EKF predicted motion in the wrong direction whenever
+    // yaw was not ~0: at yaw 90 deg it moved west while the mower drove north.)
+    float cy = cosf(fused_yaw_for_twist), sy = sinf(fused_yaw_for_twist);
+    gps_msg.twist.twist.linear.x =  cy * data->vel_east + sy * data->vel_north;   // forward
+    gps_msg.twist.twist.linear.y = -sy * data->vel_east + cy * data->vel_north;   // left
     gps_msg.twist.twist.linear.z = 0.0;
     gps_msg.twist.twist.angular.x = 0.0;
     gps_msg.twist.twist.angular.y = 0.0;
@@ -376,6 +390,10 @@ void fused_pose_callback(const void* msgin) {
     float qz = (float)msg->pose.pose.orientation.z;
     float qw = (float)msg->pose.pose.orientation.w;
     float yaw = atan2f(2.0f * qw * qz, 1.0f - 2.0f * qz * qz);
+    fused_yaw_for_twist = yaw;
+    fused_x_last = x;
+    fused_y_last = y;
+    fused_pose_seen = true;
 
     // Package and publish internally via your DDS system
     fused_pose_data_t data = {
@@ -554,6 +572,16 @@ static bool ros_link_check() {
 
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
 
+// Stack headroom report (console 'h'): FreeRTOS high-water mark per task, in bytes.
+static TaskHandle_t task_handles[6];   // motor, imu, gps, motion, bluetooth, controller
+static void print_task_report() {
+    for (TaskHandle_t t : task_handles) {
+        if (t) SerialDebug.printf("[SYS] %-14s stack free min %u B\r\n", pcTaskGetName(t), (unsigned)uxTaskGetStackHighWaterMark(t));
+    }
+    SerialDebug.printf("[SYS] loop stack free min %u B, heap free %u B (min %u B)\r\n",
+                       (unsigned)uxTaskGetStackHighWaterMark(NULL), (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap());
+}
+
 void init_freertos() {
     if (ENABLE_MOTORS) {
         xTaskCreatePinnedToCore(
@@ -562,7 +590,7 @@ void init_freertos() {
             2048,
             NULL,
             2,
-            NULL,
+            &task_handles[0],
             0
         );
     }
@@ -574,7 +602,7 @@ void init_freertos() {
             4096,  // float printf (gyro calibration log) overflowed 2048
             NULL,
             1,
-            NULL,
+            &task_handles[1],
             0
         );
     }
@@ -583,10 +611,10 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             gps_task,
             "GPSTask",
-            2816,
+            4096,   // 2816 left 584 B free (float printf), 2026-10-27
             NULL,
             1,
-            NULL,
+            &task_handles[2],
             0
         );
     }
@@ -595,10 +623,10 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             motion_task,
             "MotionTask",
-            2816,
+            4096,   // 2816 left 816 B free before the stall log, 2026-10-27
             NULL,
             1,
-            NULL,
+            &task_handles[3],
             0
         );
     }
@@ -610,7 +638,7 @@ void init_freertos() {
             2816,
             NULL,
             1,
-            NULL,
+            &task_handles[4],
             0
         );
     }
@@ -788,7 +816,7 @@ void setup() {
     SerialDebug.println("[BOOT] Starting FreeRTOS tasks...");
     init_freertos();
 
-    xTaskCreatePinnedToCore(controller_task, "ControllerTask", 4096, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(controller_task, "ControllerTask", 4096, NULL, 1, &task_handles[5], 0);
     SerialDebug.println("[BOOT] Controller task started");
 
     SerialDebug.println("[BOOT] Boot complete");
@@ -808,6 +836,9 @@ void setup() {
     SerialDebug.println("--- Other ---");
     SerialDebug.println("  g       capture GPS datum");
     SerialDebug.println("  t       start mowing");
+    SerialDebug.println("  x       stop mowing");
+    SerialDebug.println("  l       line test: 1.5 m straight ahead");
+    SerialDebug.println("  h       task stacks / heap");
     SerialDebug.println("  k       simulate obstacle");
     SerialDebug.println("  b       simulate rain");
     SerialDebug.println("==================================");
@@ -913,7 +944,10 @@ void loop() {
                     }
                 }
 
-                // Path Recording
+                // Path Recording (the planner owns the path while a mission runs)
+                else if ((c == 'c' || c == 'o' || c == 'p' || c == 'e') && !controller_path_edit_allowed()) {
+                    SerialDebug.println("[DEBUG] Path edit rejected: mission running (x stops it)");
+                }
                 else if (c == 'c') {  // Clear / start new path capture
                     AlgorithmCaptureStart();
                     CONFIG_PATH = false;
@@ -954,6 +988,26 @@ void loop() {
                     controller_signal_t signal = { SIGNAL_START_MOWING };
                     DDS_PUBLISH("/controller/signal", signal);
                 }
+                else if (c == 'l') {  // Line test: follow a 1.5 m line straight ahead, then stop
+                    if (MANUAL_MODE_ACTIVE || !controller_path_edit_allowed() || !fused_pose_seen || !imu_ready()) {
+                        SerialDebug.println("[DEBUG] Line test needs IDLE (not manual), a fused pose and a calibrated gyro");
+                    } else {
+                        motion_command_t cmd = { MOVING, fused_x_last, fused_y_last,
+                                                 fused_x_last + 1.5 * cos(fused_yaw_for_twist),
+                                                 fused_y_last + 1.5 * sin(fused_yaw_for_twist) };
+                        DDS_PUBLISH("/motion/command", cmd);
+                        SerialDebug.printf("[DEBUG] Line test from (%.2f, %.2f) to (%.2f, %.2f)\r\n",
+                                           cmd.start_x, cmd.start_y, cmd.end_x, cmd.end_y);
+                    }
+                }
+                else if (c == 'h') {  // Health: stack headroom and heap
+                    print_task_report();
+                }
+                else if (c == 'x') {  // Stop mowing: halt, blade off, back to IDLE
+                    SerialDebug.println("[DEBUG] Triggering mowing stop via serial");
+                    controller_signal_t signal = { SIGNAL_STOP_MOWING };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
                 else if (c == 'k') {  // Obstacle (k for blocK)
                     SerialDebug.println("[DEBUG] Triggering obstacle avoidance via serial");
                     controller_signal_t signal = { SIGNAL_OBSTACLE };
@@ -969,6 +1023,9 @@ void loop() {
             if (ros_link_check()) {
                 hil_ros_tick();
                 RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
+                // spin_some takes at most one message per subscription; a second pass drains
+                // what queued up meanwhile (fused_pose, HIL samples) before it fills the history
+                RCSOFTCHECK(rclc_executor_spin_some(&executor, 0));
             }
 
             DDS_PROCESS_THREAD_MESSAGES(&thread_context);

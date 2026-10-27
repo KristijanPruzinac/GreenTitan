@@ -83,9 +83,10 @@ source ~/.cache/greentitan_ws/install/setup.bash
 pio run -e esp32dev_hil -t upload                                  # firmware with HIL sources
 ros2 launch greentitan_sim hil.launch.py device:=/dev/ttyUSB0       # Linux
 # WSL2: on Windows `python ros2_ws/src/sim_env/scripts/serial_tcp_bridge.py COM10 --host <wsl ip>` (not localhost: its forwarder jams after a reconnect), then in WSL:
-GZ_IP=127.0.0.1 ros2 launch greentitan_sim hil.launch.py gui:=true
+GZ_IP=127.0.0.1 ros2 launch greentitan_sim hil.launch.py gui:=true rviz:=true
 ros2 run greentitan_sim console                                     # debug console over ROS
 ```
+`gui:=true` opens the Gazebo window (true mower, WSLg on Windows 11). `rviz:=true` opens RViz with `config/hil.rviz`: top-down view in `odom` following `base_link`, EKF pose trail, outline/infill markers.
 Without firmware: `hil.launch.py robot:=<share>/config/mower_teleop.yaml agent:=false` and drive with `teleop_twist_keyboard`. HIL-vs-real differences are listed in ARCHITECTURE §11.
 
 There are no automated tests. The `test/` folders only hold the PlatformIO and ament templates.
@@ -110,6 +111,7 @@ There are no automated tests. The `test/` folders only hold the PlatformIO and a
 
 - **Field-tested** (old drive train): localization (GPS + gyro, gated yaw) and line following. The drive was too weak for real terrain because the steppers had no gearbox.
 - **Works in teleport/sim mode:** the coverage planner and mission sequencing.
+- **Works in Gazebo HIL** (2026-10-27): a full mission on a 2 m square, line following at 0.3 m/s (single-line test: console `l`, ~5 cm stop and cross-track error), stall and stuck-turn detection. Not yet checked on the real V3 drive: gear ratio, DM542T microsteps, motor wiring sign, STEP pulses on a scope.
 - **Not implemented:** return-to-base and docking, battery reading, rain sensor, obstacle sensing (obstacles are serial-triggered only), reverse driving, camera use.
 - **In progress:** the Mower V3 rebuild with 10:1 gearboxes, the cover design, and moving the ROS 2 host to the phone.
 - Next work items: `docs/ARCHITECTURE.md` → Known issues / Planned direction, and `docs/HARDWARE.md` → Open items.

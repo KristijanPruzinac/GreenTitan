@@ -30,7 +30,7 @@ Current design (2026-10-26):
 - **Drivers:** 2× **DM542T** (STEP/DIR).
   - Check the supply voltage: DM542T drivers are typically rated about 20–50 VDC, and an 18 V pack runs about 16–20 V. Torque at speed also drops at low voltage.
   - The microstep DIP setting must match the firmware's steps/rev.
-- **Speed budget:** STEP comes from the ESP32 LEDC hardware since 2026-10-27 (ARCHITECTURE Known issue #1), so there's no firmware step-rate cap. At full step, 0.3 m/s is ~1275 steps/s (≈380 motor rpm), and the 0.5 m/s limit is ~2125 steps/s (≈640 rpm), where the 23HS32's torque is well down.
+- **Speed budget:** STEP comes from the ESP32 LEDC hardware since 2026-10-27 (ARCHITECTURE Known issue #1), so there's no firmware step-rate cap. At full step, 0.3 m/s is ~1275 steps/s (≈380 motor rpm), and the 0.5 m/s limit is ~2125 steps/s (≈640 rpm), where the 23HS32's torque is well down. Line following cruises at 0.3 m/s since 2026-10-27 (ARCHITECTURE §6).
 - StepperOnline STEP models download from `files.omc-stepperonline.com/<model>.STEP`.
 
 ### Geometry used by firmware and sim (from Mower V3 CAD, 2026-10-27; not yet measured)
@@ -121,7 +121,7 @@ Tooling in `cad/`:
 These are what the software must survive:
 - **RTK GPS:**
   - centimetre position with a fix, but noisy, with jumps and float/fix switches
-  - at standstill the velocity direction is random, so heading from GPS is only valid while clearly moving (firmware gate: 0.3 m/s)
+  - at standstill the velocity direction is random, so heading from GPS is only valid while clearly moving (firmware gate: 0.2 m/s and gyro below 0.15 rad/s, because the antenna sits ~0.18 m behind the wheel axle and moves sideways in turns)
   - GPS heading is the **direction of travel, not of the body**
 - **Wheels:** plastic on grass. They slip, especially on slopes, wet grass and turns in place. They stall against walls, and brushing an obstacle pushes the mower off its line. **Commanded motion is not odometry.**
 - **Terrain:** roughness tilts and shakes the chassis. This shows up in the gyro and accelerometer, and a 2D simulation can't reproduce it.

@@ -21,5 +21,7 @@ extern int GPS_ACC_THRESHOLD;
 extern volatile bool TASKS_STARTED;
 
 void controller_task(void* parameter);
+// False while a mission runs: the planner's path vectors must not change under it.
+bool controller_path_edit_allowed();
 
 #endif

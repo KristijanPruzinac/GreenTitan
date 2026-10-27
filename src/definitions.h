@@ -52,6 +52,7 @@ typedef struct {
 #define GYRO_SCL_PIN 22
 
 #define GYRO_DEADBAND 0.04f
+#define GPS_YAW_MAX_TURN_RATE 0.15f   // rad/s: GPS heading is fused only below this gyro rate
 
 typedef struct {
     float acc_x;
@@ -77,10 +78,16 @@ typedef struct {
 #define MILLIS_PER_SECOND 1000
 
 //Motion
-#define MOTION_CORRECTION_GAIN 0.3f
+// Lateral pull: target heading = line angle + atan(cross_track / gain). 0.8 m keeps this outer
+// loop ~3x slower than the heading PID at 0.3 m/s; 0.3 m (fine at the old ~0.12 m/s top
+// speed) made the mower weave +-50 deg in HIL at 0.5 m/s (2026-10-27).
+#define MOTION_CORRECTION_GAIN 0.8f
 
-#define MOTION_FORWARD_SPEED_NORMAL  0.5f
-#define MOTION_GOAL_SLOW_DOWN_DISTANCE    0.15f
+#define MOTION_FORWARD_SPEED_NORMAL  0.3f   // 0.5 m/s was unstable with >0.3 s pose latency (2026-10-27)
+// Braking toward the goal: v <= sqrt(2 * decel * distance). Stays under the motor ramp
+// (MOTOR_ACCELERATION ~0.35 m/s^2), so the mower stops on the goal, not ~0.35 m past it.
+#define MOTION_GOAL_DECEL                 0.25f  // m/s^2
+#define MOTION_GOAL_MIN_SPEED             0.05f  // m/s, so the last centimetres still close
 
 // Speed scaling based on heading error
 #define MOTION_HEADING_ERROR_FULL_SPEED   0.1f   // ~6° - full speed below
@@ -88,6 +95,10 @@ typedef struct {
 #define MOTION_MIN_SPEED_SCALE            0.5f
 #define MOTION_HEADING_ERROR_ROTATE_ONLY  0.52f  // ~30° - rotate only above
 #define MOTION_POSE_TIMEOUT_MS            500    // stop driving if /fused_pose (10 Hz) goes quiet
+#define MOTION_POSE_LATENCY_S             0.35f  // s, age of /fused_pose on arrival (HIL 2026-10-27)
+#define MOTION_STALL_DIST                0.10f  // m: driving forward but moved less than this ...
+#define MOTION_STALL_TIME_MS              4000   // ... for this long = stalled (obstacle signal)
+#define MOTION_ROTATE_TIMEOUT_MS          10000  // rotate-only longer than this = stalled (180 deg ~3.5 s)
 
 //Datum capture
 #define DATUM_CAPTURE_DRIVE_DURATION_MS  800
@@ -212,6 +223,7 @@ enum controller_signal {
     SIGNAL_MANUAL_ON,
     SIGNAL_MANUAL_OFF,
     SIGNAL_START_DATUM_CAPTURE,
+    SIGNAL_STOP_MOWING,
 };
 
 typedef struct {

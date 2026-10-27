@@ -1,19 +1,23 @@
 #include "motion_task.h"
 #include "PID.h"
+#include "../sensor/imu_task.h"
 
 static dds_thread_context_t thread_context;
 
 static PIDController heading_pid;
 
 // PID tuning parameters (adjust these)
-#define PID_KP      0.8f    // Proportional gain
-#define PID_KI      0.01f    // Integral gain
-#define PID_KD      3.0f    // Derivative gain
-#define PID_TAU     0.1f   // Derivative low-pass filter time constant
-#define PID_LIM_MIN -3.2f    // Min rotation speed (rad/s)
-#define PID_LIM_MAX 3.2f   // Max rotation speed (rad/s)
-#define PID_LIM_MIN_INT -0.01f // Min integrator windup
-#define PID_LIM_MAX_INT 0.01f // Max integrator windup
+// Heading PID: input = heading error (rad), output = rotation speed (rad/s). Runs once per
+// /fused_pose (EKF, 10 Hz). Tuned in HIL 2026-10-27; before that the derivative was fed a
+// constant 0 (dead) and Kp 0.8 made the corner turns slow.
+#define PID_KP      1.5f    // Proportional gain
+#define PID_KI      0.1f    // Integral gain
+#define PID_KD      0.1f    // Derivative gain (on the error)
+#define PID_TAU     0.2f    // Derivative low-pass filter time constant
+#define PID_LIM_MIN -MAX_ANGULAR_VEL  // Min rotation speed (rad/s)
+#define PID_LIM_MAX MAX_ANGULAR_VEL   // Max rotation speed (rad/s)
+#define PID_LIM_MIN_INT -0.1f // Min integrator windup
+#define PID_LIM_MAX_INT 0.1f  // Max integrator windup
 #define SAMPLE_TIME_S 0.1f   // Sample time (seconds)
 
 static void PIDController_Init(PIDController *pid) {
@@ -82,18 +86,37 @@ static double   teleport_target_x = 0;
 static double   teleport_target_y = 0;
 
 static bool rotate_only_active = false;
+static bool pid_fresh = true;   // next PID update starts from a clean state
+
+static void pid_reset() {
+    PIDController_Init(&heading_pid);
+    pid_fresh = true;
+}
 
 static uint32_t last_pose_ms  = 0;
 static bool     pose_stale    = false;
 
+// Stall check: driving forward but the fused (GPS) position has not moved. Uses only the sign
+// of the command, never its magnitude. Seen in HIL 2026-10-27: high-centred on a molehill.
+static bool     stall_anchor_set = false;
+static double   stall_anchor_x, stall_anchor_y;
+static uint32_t stall_anchor_ms;
+static uint32_t rotate_since_ms;   // rotate-only start; a turn that never ends is a stall too
+
 static void motion_start(double p_start_x, double p_start_y, double p_end_x, double p_end_y) {
+    if (!imu_ready()) {   // the controller and console check this too; never drive without gyro
+        SerialDebug.printf("[MOTION] Gyro not calibrated, not driving\r\n");
+        return;
+    }
     mode    = MOVING;
+    stall_anchor_set = false;
     last_pose_ms = millis();   // grace period until the first pose arrives
     start_x = p_start_x;
     start_y = p_start_y;
     end_x   = p_end_x;
     end_y   = p_end_y;
     rotate_only_active = false;
+    pid_reset();
 }
 
 static void motion_stop() {
@@ -119,6 +142,7 @@ static void pose_updated_callback(dds_callback_context_t* context) {
     last_pose_ms = millis();
     if (pose_stale) {
         pose_stale = false;
+        stall_anchor_set = false;   // the wheels were stopped, don't count that as a stall
         SerialDebug.printf("[MOTION] Pose resumed\r\n");
     }
     
@@ -137,6 +161,7 @@ static void pose_updated_callback(dds_callback_context_t* context) {
             }
         } else if (raw_heading_error_abs >= MOTION_HEADING_ERROR_ROTATE_ONLY) {
             rotate_only_active = true;
+            rotate_since_ms = millis();
         }
 
         // Correction: zero if rotate-only, else lateral pull
@@ -145,10 +170,7 @@ static void pose_updated_callback(dds_callback_context_t* context) {
             correction = 0.0f;
 
             // Reset PID state during rotate-only so transition to forward is clean
-            heading_pid.integrator = 0.0f;
-            heading_pid.differentiator = 0.0f;
-            heading_pid.prevMeasurement = 0.0f;
-            heading_pid.prevError = 0.0f;
+            pid_reset();
         } else {
             correction = sign_of(distance_from_line) * atan(fabs(distance_from_line) / MOTION_CORRECTION_GAIN);
         }
@@ -156,7 +178,14 @@ static void pose_updated_callback(dds_callback_context_t* context) {
         float target_yaw = normalize_angle(line_angle + correction);
 
         float heading_error = angle_diff(yaw, target_yaw);
-        float rotation_cmd = PIDController_Update(&heading_pid, heading_error, 0.0f);
+        // The PID differentiates its measurement; feeding -error makes that the error's
+        // derivative. A fresh PID starts with prev = current, so the first step has no kick.
+        if (pid_fresh) {
+            heading_pid.prevMeasurement = -heading_error;
+            heading_pid.prevError = heading_error;
+            pid_fresh = false;
+        }
+        float rotation_cmd = PIDController_Update(&heading_pid, 0.0f, -heading_error);
 
         double distance_to_goal = DistanceBetweenPoints(x, y, end_x, end_y);
         float heading_error_abs = fabsf(heading_error);
@@ -176,17 +205,46 @@ static void pose_updated_callback(dds_callback_context_t* context) {
         }
 
         // Base speed based on distance to goal
-        float base_speed = MOTION_FORWARD_SPEED_NORMAL;
-        if (distance_to_goal < MOTION_GOAL_SLOW_DOWN_DISTANCE) {
-            base_speed = MOTION_FORWARD_SPEED_NORMAL * (distance_to_goal / MOTION_GOAL_SLOW_DOWN_DISTANCE);
-            if (base_speed < 0.1f) base_speed = 0.1f;  // floor
-        }
+        // Brake on the distance still to go along the line, not the straight distance to the
+        // goal: with a lateral offset the straight distance never gets small, so the mower used
+        // to cross the line end at full speed and overshoot ~0.3 m (HIL 2026-10-27).
+        double seg_dx = end_x - start_x, seg_dy = end_y - start_y;
+        double seg_len = sqrt(seg_dx * seg_dx + seg_dy * seg_dy);
+        double along_to_go = seg_len > 1e-3
+            ? ((end_x - x) * seg_dx + (end_y - y) * seg_dy) / seg_len
+            : distance_to_goal;
+        // The fused pose is ~0.35 s old when it arrives (HIL: 10 cm behind ground truth at
+        // 0.3 m/s), so brake for where the mower is now. linear_vel is the EKF's GPS velocity.
+        along_to_go -= fmaxf(linear_vel, 0.0f) * MOTION_POSE_LATENCY_S;
+        if (along_to_go < 0.0) along_to_go = 0.0;
+        float base_speed = fminf(MOTION_FORWARD_SPEED_NORMAL,
+                                 sqrtf(2.0f * MOTION_GOAL_DECEL * (float)along_to_go));
+        if (base_speed < MOTION_GOAL_MIN_SPEED) base_speed = MOTION_GOAL_MIN_SPEED;
 
         float linear_cmd = base_speed * speed_scale;
-        
+
+        // Stall: the time only counts while driving forward (not in rotate-only)
+        if (!stall_anchor_set || linear_cmd <= 0.0f ||
+            DistanceBetweenPoints(x, y, stall_anchor_x, stall_anchor_y) > MOTION_STALL_DIST) {
+            stall_anchor_set = true;
+            stall_anchor_x = x;
+            stall_anchor_y = y;
+            stall_anchor_ms = millis();
+        }
+        bool stalled = (millis() - stall_anchor_ms) > MOTION_STALL_TIME_MS ||
+                       (rotate_only_active && (millis() - rotate_since_ms) > MOTION_ROTATE_TIMEOUT_MS);
+
         // Check if goal reached
         bool passed_goal = has_passed_goal(x, y, start_x, start_y, end_x, end_y);
-        if (passed_goal) {
+        if (stalled && !passed_goal) {
+            SerialDebug.printf("[MOTION] Stalled at (%.2f, %.2f) (%s), stopping\r\n",
+                               x, y, rotate_only_active ? "turn did not finish" : "no progress");
+            motion_stop();
+
+            controller_signal_t signal = { SIGNAL_OBSTACLE };
+            DDS_PUBLISH("/controller/signal", signal);
+        }
+        else if (passed_goal) {
             SerialDebug.printf("Goal reached! Final position: (%.2f, %.2f)\r\n", x, y);
 
             motion_stop();

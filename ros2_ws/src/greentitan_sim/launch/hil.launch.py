@@ -40,7 +40,9 @@ def _setup(context):
         actions.append(IncludeLaunchDescription(AnyLaunchDescriptionSource(
             os.path.join(get_package_share_directory('robot_package'), 'launch', 'robot.launch.xml'))))
     if arg('rviz') == 'true':
-        actions.append(Node(package='rviz2', executable='rviz2', output='log'))
+        actions.append(Node(package='rviz2', executable='rviz2', output='log',
+                            arguments=['-d', os.path.join(get_package_share_directory('greentitan_sim'),
+                                                          'config', 'hil.rviz')]))
     return actions
 
 
