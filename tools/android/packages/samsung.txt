@@ -1,0 +1,77 @@
+# Samsung preloads, cloud, account and telemetry. Tested on One UI 3 (Android 11).
+# Removed for user 0 only: restore with `cmd package install-existing <pkg>`.
+
+# Third-party preloads
+com.facebook.katana
+com.facebook.appmanager
+com.facebook.services
+com.facebook.system
+com.microsoft.skydrive
+com.microsoft.office.officehubrow
+com.linkedin.android
+com.netflix.mediaclient
+com.netflix.partner.activation
+
+# Bixby and extras
+com.samsung.android.bixby.agent
+com.samsung.android.bixby.wakeup
+com.samsung.android.bixbyvision.framework
+com.samsung.android.visionintelligence
+com.samsung.android.app.spage
+com.samsung.android.app.tips
+com.samsung.android.voc
+com.samsung.android.game.gamehome
+com.samsung.android.game.gametools
+com.samsung.android.arzone
+com.samsung.android.aremoji
+com.samsung.android.ardrawing
+com.sec.android.mimage.avatarstickers
+com.samsung.android.app.camera.sticker.facearavatar.preload
+com.samsung.android.livestickers
+com.samsung.android.kidsinstaller
+com.sec.android.app.kidshome
+com.samsung.android.spay
+com.samsung.android.samsungpass
+com.samsung.android.samsungpassautofill
+com.samsung.android.oneconnect
+com.samsung.android.app.watchmanagerstub
+com.samsung.android.da.daagent
+com.samsung.android.app.reminder
+com.samsung.android.forest
+com.samsung.android.smartswitchassistant
+com.sec.android.easyMover.Agent
+com.sec.android.app.sbrowser
+com.samsung.android.email.provider
+
+# Cloud, account, telemetry, diagnostics
+com.osp.app.signin
+com.samsung.android.mobileservice
+com.samsung.android.scloud
+com.samsung.android.rubin.app
+com.sec.android.diagmonagent
+com.samsung.android.dqagent
+com.samsung.android.knox.analytics.uploader
+com.samsung.klmsagent
+com.samsung.android.svcagent
+com.samsung.android.authfw
+com.samsung.android.ipsgeofence
+com.samsung.android.mdx
+com.samsung.android.mdx.kit
+com.samsung.android.app.sharelive
+com.samsung.android.privateshare
+com.samsung.android.beaconmanager
+com.samsung.android.easysetup
+com.samsung.android.smartsuggestions
+com.samsung.android.service.stplatform
+com.samsung.android.fmm
+com.samsung.android.sdm.config
+com.samsung.android.wifi.ai
+com.samsung.android.mcfds
+com.sec.spp.push
+com.samsung.android.ststub
+com.sec.android.app.chromecustomizations
+com.samsung.android.cidmanager
+
+# Ad/app auto-installers (AppCloud/Aura pushes promoted apps after setup)
+com.aura.oobe.samsung.gl
+com.ironsource.appcloud.oobe

@@ -1,0 +1,237 @@
+{
+  "generated_utc": "2026-10-03T05:38:11.007992+00:00",
+  "layout_revision": "preferred_lower_rearward_Y70_200_205_295_305_375",
+  "scope": "Four provisional component envelopes on unchanged original V3; no roof CAD",
+  "front": "Large drive wheels at low Y",
+  "source_unchanged": true,
+  "input_files": [
+    {
+      "path": "C:\\Users\\kikom\\Documents\\GitHub\\GreenTitan\\outputs\\chassis_reference\\original_v3_context.step",
+      "sha256_before": "f19d623ea47cec435b83eec787ea7425343f398b055c4625c52260883089e7a7",
+      "sha256_after": "f19d623ea47cec435b83eec787ea7425343f398b055c4625c52260883089e7a7",
+      "unchanged": true
+    },
+    {
+      "path": "C:\\Users\\kikom\\Documents\\GitHub\\GreenTitan\\outputs\\chassis_reference\\source_fingerprint.json",
+      "sha256_before": "deb2dd4c1b31ae2598d1de907a98c35d6f3de61b262d9b11e39ddd28949d8f44",
+      "sha256_after": "deb2dd4c1b31ae2598d1de907a98c35d6f3de61b262d9b11e39ddd28949d8f44",
+      "unchanged": true
+    },
+    {
+      "path": "C:\\Users\\kikom\\Documents\\GitHub\\GreenTitan\\outputs\\chassis_reference\\BladeSpace_local.step",
+      "sha256_before": "60c50eeee3b1ee834921f1c92aedf578727593eb15a7a9fdcd0157a301c1f1d1",
+      "sha256_after": "60c50eeee3b1ee834921f1c92aedf578727593eb15a7a9fdcd0157a301c1f1d1",
+      "unchanged": true
+    },
+    {
+      "path": "C:\\Users\\kikom\\Documents\\GitHub\\GreenTitan\\outputs\\chassis_reference\\BladeSpace_transform.json",
+      "sha256_before": "22c590d01f28bf2a7db3b7a36c8b27450ee40ca14ed36f494ec4199bd68e628e",
+      "sha256_after": "22c590d01f28bf2a7db3b7a36c8b27450ee40ca14ed36f494ec4199bd68e628e",
+      "unchanged": true
+    }
+  ],
+  "actual_component_models": false,
+  "source_electronics_case_battery_bodies": [],
+  "source_actual_body_count": 43,
+  "source_keepout_count": 3,
+  "proxy_parts": [
+    {
+      "name": "DM_left",
+      "provisional": true,
+      "bounds_local_mm": {
+        "u": [
+          -80,
+          -40
+        ],
+        "y": [
+          70,
+          200
+        ],
+        "z_above_frame": [
+          15,
+          105
+        ]
+      },
+      "size_mm": [
+        40,
+        130,
+        90
+      ],
+      "volume_mm3": 467999.9999999999,
+      "valid": true,
+      "original_intersections": [],
+      "keepout_intersections": [],
+      "minimum_original_clearance_mm": 20.611677667040556,
+      "nearest_original_bodies": [
+        "BladeFrame:1/Body9"
+      ],
+      "minimum_keepout_clearance_mm": 68.39449999999715
+    },
+    {
+      "name": "DM_right",
+      "provisional": true,
+      "bounds_local_mm": {
+        "u": [
+          40,
+          80
+        ],
+        "y": [
+          70,
+          200
+        ],
+        "z_above_frame": [
+          15,
+          105
+        ]
+      },
+      "size_mm": [
+        40,
+        130,
+        90
+      ],
+      "volume_mm3": 467999.9999999999,
+      "valid": true,
+      "original_intersections": [],
+      "keepout_intersections": [],
+      "minimum_original_clearance_mm": 20.61167766704627,
+      "nearest_original_bodies": [
+        "BladeFrame:1/Body10"
+      ],
+      "minimum_keepout_clearance_mm": 68.39449999999715
+    },
+    {
+      "name": "Custom_PCB",
+      "provisional": true,
+      "bounds_local_mm": {
+        "u": [
+          -65,
+          65
+        ],
+        "y": [
+          205,
+          295
+        ],
+        "z_above_frame": [
+          60,
+          95
+        ]
+      },
+      "size_mm": [
+        130,
+        90,
+        35
+      ],
+      "volume_mm3": 409499.99999999994,
+      "valid": true,
+      "original_intersections": [],
+      "keepout_intersections": [],
+      "minimum_original_clearance_mm": 19.898499999995693,
+      "nearest_original_bodies": [
+        "MY1016 24VDC motor v1:1+MY1016 24VDC motor:1/Body1"
+      ],
+      "minimum_keepout_clearance_mm": 113.39449999999704
+    },
+    {
+      "name": "C94_proxy",
+      "provisional": true,
+      "bounds_local_mm": {
+        "u": [
+          -45,
+          45
+        ],
+        "y": [
+          305,
+          375
+        ],
+        "z_above_frame": [
+          60,
+          95
+        ]
+      },
+      "size_mm": [
+        90,
+        70,
+        35
+      ],
+      "volume_mm3": 220499.99999999997,
+      "valid": true,
+      "original_intersections": [],
+      "keepout_intersections": [],
+      "minimum_original_clearance_mm": 21.930499999995845,
+      "nearest_original_bodies": [
+        "MY1016 24VDC motor v1:1+MY1016 24VDC motor:1/Body1"
+      ],
+      "minimum_keepout_clearance_mm": 97.21452451172976
+    }
+  ],
+  "proxy_pair_checks": [
+    {
+      "a": "DM_left",
+      "b": "DM_right",
+      "intersection_mm3": 0.0,
+      "minimum_distance_mm": 80.0
+    },
+    {
+      "a": "DM_left",
+      "b": "Custom_PCB",
+      "intersection_mm3": 0.0,
+      "minimum_distance_mm": 5.0
+    },
+    {
+      "a": "DM_left",
+      "b": "C94_proxy",
+      "intersection_mm3": 0.0,
+      "minimum_distance_mm": 105.0
+    },
+    {
+      "a": "DM_right",
+      "b": "Custom_PCB",
+      "intersection_mm3": 0.0,
+      "minimum_distance_mm": 5.0
+    },
+    {
+      "a": "DM_right",
+      "b": "C94_proxy",
+      "intersection_mm3": 0.0,
+      "minimum_distance_mm": 105.0
+    },
+    {
+      "a": "Custom_PCB",
+      "b": "C94_proxy",
+      "intersection_mm3": 0.0,
+      "minimum_distance_mm": 10.0
+    }
+  ],
+  "passed_within_proxy_scope": true,
+  "aggregate_bounds_local_mm": {
+    "u": [
+      -80,
+      80
+    ],
+    "y": [
+      70,
+      375
+    ],
+    "z_above_frame": [
+      15,
+      105
+    ]
+  },
+  "aggregate_is_clear_rectangular_allowance": false,
+  "limits": [
+    "These are provisional envelopes, not manufacturer STEP models or finished PCB designs. DM542T revision, connectors and mounting dimensions remain unverified.",
+    "The two drivers use provisional 40 x 130 x 90 mm upright envelopes; custom PCB uses 130 x 90 x 35 mm; C94 board and connector proxy uses 90 x 70 x 35 mm.",
+    "No electronics, cases, PCBs or battery are identified in the original V3 source; this only verifies the stated proxy envelopes against modeled source geometry.",
+    "The union bounds 160 x 305 x 90 mm are not a clear rectangular bay: existing mowing motor occupies unused space between or below individual envelopes.",
+    "Battery, antenna, wiring, connectors beyond envelope assumptions, cooling, water protection, service access and mounting retention are not verified.",
+    "BladeSpace and caster Space are the supplied original keepouts, not newly certified complete operating envelopes.",
+    "This standalone packaging audit does not verify a roof; the new roof requires its own matching-manifest clearance and containment audit."
+  ],
+  "assets": {
+    "isometric": "outputs/design_study/packaging_b/component_layout_isometric.png",
+    "side": "outputs/design_study/packaging_b/component_layout_side.png",
+    "top": "outputs/design_study/packaging_b/component_layout_top.png",
+    "proxy_step": "outputs/design_study/packaging_b/provisional_component_envelopes.step",
+    "original_context_and_proxies_step": "outputs/design_study/packaging_b/provisional_layout_with_original_v3.step"
+  }
+}

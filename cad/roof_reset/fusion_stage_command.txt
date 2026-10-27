@@ -1,0 +1,1 @@
+gtroofreset={'__name__':'greentitan_roof_reset'};exec(open('C:/Users/kikom/Documents/GitHub/GreenTitan/cad/roof_reset/fusion_present_concept.py').read(),gtroofreset);_gtroofreset_result=gtroofreset['present']()

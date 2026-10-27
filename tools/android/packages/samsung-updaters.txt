@@ -1,0 +1,8 @@
+# Samsung updaters and auto-installers. Disabled (not removed) to freeze the firmware.
+# Restore with `pm enable <pkg>`.
+com.wssyncmldm
+com.sec.android.soagent
+com.samsung.android.app.omcagent
+com.sec.android.app.samsungapps
+com.samsung.android.app.updatecenter
+com.sec.android.preloadinstaller

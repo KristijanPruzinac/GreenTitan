@@ -1,0 +1,1 @@
+_gtcowl_archive=gtcowl['archive_and_verify']()

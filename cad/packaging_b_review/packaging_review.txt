@@ -1,0 +1,28 @@
+Original V3 chassis: provisional200mm electronics-height review
+No geometry changed; no Fusion access.
+Original CAD contains no identifiable electronics, electronics cases or battery.
+
+Candidate | U bounds | Y bounds | Z bounds | W x L x H | litres | minimum actual mechanical clearance | occupied source bodies
+requested_front_base0 | [-90, 90] | [25, 205] | [0, 200] | [180, 180, 200] | 6.4800 | 0.000000 | 2020 Corner Brace:1/Body1:666.774254mm3; 2020 Corner Brace:3/Body1:666.774254mm3
+requested_175_length_base0 | [-90, 90] | [30, 205] | [0, 200] | [180, 175, 200] | 6.3000 | 0.000000 | 2020 Corner Brace:1/Body1:387.599687mm3; 2020 Corner Brace:3/Body1:387.599687mm3
+requested_front_raised8 | [-90, 90] | [25, 205] | [8, 208] | [180, 180, 200] | 6.4800 | 2.128000 | 
+wide_front_inner_2mm_plan_margin | [-98, 98] | [22, 213.3] | [8, 208] | [196, 191.3, 200] | 7.4990 | 2.001200 | 
+base0_wide_contact_check | [-98, 98] | [54, 213.3] | [0, 200] | [196, 159.3, 200] | 6.2446 | 0.127500 | 
+base0_front_5mm_screen | [-89, 89] | [57, 210] | [0, 200] | [178, 153, 200] | 5.4468 | 5.001625 | 
+front_inner_5mm_screen | [-95, 95] | [25, 210] | [11, 211] | [190, 185, 200] | 7.0300 | 5.128000 | 
+front_above_rails_2mm_screen | [-107, 107] | [2, 213] | [8, 208] | [214, 211, 200] | 9.0308 | 2.128000 | 
+full_inner_2mm_plan_margin | [-98, 98] | [22, 378] | [45, 245] | [196, 356, 200] | 13.9552 | 4.898500 | 
+full_inner_5mm_plan_margin | [-95, 95] | [25, 375] | [46, 246] | [190, 350, 200] | 13.3000 | 5.898500 | 
+full_outer_2mm_plan_margin | [-118, 118] | [2, 398] | [45, 245] | [236, 396, 200] | 18.6912 | 4.898500 | 
+full_outer_5mm_plan_margin | [-115, 115] | [5, 395] | [46, 246] | [230, 390, 200] | 17.9400 | 5.898500 | 
+prior_front_footprint_height200 | [-90, 90] | [70, 205] | [0, 200] | [180, 135, 200] | 4.8600 | 4.002032 | 
+
+Limitations:
+- The candidate solids are temporary in-memory measurement boxes. No CAD geometry or STEP file is written or altered.
+- Largest is conditional on a stated footprint window, clearance allowance and elevation; without an upper elevation or exterior limit there is no unique unrestricted largest box.
+- Positive-volume intersection with mechanical hardware means a box is not wholly vacant. A future outer cover may enclose unchanged hardware, but electronics cannot occupy the same material; local pockets or a different arrangement would be required.
+- No electronics/cases/battery appear in the46-body original V3 export. User-declared actual electronics are therefore recorded as absent from this CAD, not as forbidden occupants or already packed components.
+- The200mm dimension is clear provisional equipment height, not whole-mower height. Original lowest modeled wheel point is about129.245mm below frame top; add the box base elevation plus200mm before any roof skin or extra mounting thickness.
+- AABB screening is followed by exact solid intersections where needed; nearest clearances use OCCT BRepExtrema_DistShapeShape against unchanged original mechanical bodies.
+- Rectangular volume does not establish full inventory fit. Driver fins, electrical clearances, connectors, wire bends, cooling, antenna sky view, battery, service access, tray/mounts and structural load paths remain unmodelled.
+- Current widths/lengths are packaging windows only, not final cover dimensions, print partitions, mounting designs or approved external dimensions.

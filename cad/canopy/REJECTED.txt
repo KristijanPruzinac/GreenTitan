@@ -1,0 +1,2 @@
+Rejected internal canopy test. Do not build or stage. Current design: cad/cowl.
+Removal was blocked by automatic policy review; source retained as inactive.

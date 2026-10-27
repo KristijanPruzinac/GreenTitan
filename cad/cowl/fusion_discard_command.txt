@@ -1,0 +1,1 @@
+_gtcowl_discarded=gtcowl['discard_staged']()

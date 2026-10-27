@@ -1,0 +1,1254 @@
+{
+  "generated_utc": "2026-10-03T05:18:06.396407+00:00",
+  "purpose": "Original-chassis packaging review before new CAD;200mm provisional electronics height",
+  "geometry_modified": false,
+  "fusion_accessed": false,
+  "units": "mm",
+  "local_datum": {
+    "CX": -50.982847088709,
+    "ZF": 1002.105249352016,
+    "front": "large drive wheels / decreasing Y",
+    "rear": "casters / increasing Y"
+  },
+  "source": {
+    "name": "Mower V3",
+    "version": 23,
+    "body_count": 46,
+    "actual_mechanical_bodies": 43,
+    "keepout_bodies": 3,
+    "coverage_complete": true
+  },
+  "input_files": [
+    {
+      "path": "C:\\Users\\kikom\\Documents\\GitHub\\GreenTitan\\outputs\\chassis_reference\\original_v3_context.step",
+      "sha256_before": "f19d623ea47cec435b83eec787ea7425343f398b055c4625c52260883089e7a7",
+      "sha256_after": "f19d623ea47cec435b83eec787ea7425343f398b055c4625c52260883089e7a7",
+      "unchanged": true
+    },
+    {
+      "path": "C:\\Users\\kikom\\Documents\\GitHub\\GreenTitan\\outputs\\chassis_reference\\source_fingerprint.json",
+      "sha256_before": "deb2dd4c1b31ae2598d1de907a98c35d6f3de61b262d9b11e39ddd28949d8f44",
+      "sha256_after": "deb2dd4c1b31ae2598d1de907a98c35d6f3de61b262d9b11e39ddd28949d8f44",
+      "unchanged": true
+    },
+    {
+      "path": "C:\\Users\\kikom\\Documents\\GitHub\\GreenTitan\\outputs\\chassis_reference\\BladeSpace_local.step",
+      "sha256_before": "60c50eeee3b1ee834921f1c92aedf578727593eb15a7a9fdcd0157a301c1f1d1",
+      "sha256_after": "60c50eeee3b1ee834921f1c92aedf578727593eb15a7a9fdcd0157a301c1f1d1",
+      "unchanged": true
+    },
+    {
+      "path": "C:\\Users\\kikom\\Documents\\GitHub\\GreenTitan\\outputs\\chassis_reference\\BladeSpace_transform.json",
+      "sha256_before": "22c590d01f28bf2a7db3b7a36c8b27450ee40ca14ed36f494ec4199bd68e628e",
+      "sha256_after": "22c590d01f28bf2a7db3b7a36c8b27450ee40ca14ed36f494ec4199bd68e628e",
+      "unchanged": true
+    }
+  ],
+  "original_component_bounds": [
+    {
+      "name": "2020 (1):1",
+      "component": "2020 (1)",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          99.9999999999994,
+          119.99999999999952
+        ],
+        "y": [
+          -2.1552204465535856e-13,
+          399.9999999999989
+        ],
+        "z_above_frame": [
+          -20.000000000002046,
+          -1.9326762412674725e-12
+        ]
+      }
+    },
+    {
+      "name": "2020 (2):1",
+      "component": "2020 (2)",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -99.9999999999998,
+          99.99999999999943
+        ],
+        "y": [
+          380.00000000000443,
+          400.00000000000443
+        ],
+        "z_above_frame": [
+          -20.00000000000125,
+          1.1368683772161603e-12
+        ]
+      }
+    },
+    {
+      "name": "2020 (3):1",
+      "component": "2020 (3)",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -99.99999999999952,
+          99.99999999999969
+        ],
+        "y": [
+          -3.019806626980426e-13,
+          20.000000000000092
+        ],
+        "z_above_frame": [
+          -20.00000000000182,
+          5.684341886080801e-13
+        ]
+      }
+    },
+    {
+      "name": "2020:1",
+      "component": "2020",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -119.99999999999963,
+          -99.99999999999918
+        ],
+        "y": [
+          -1.749384980344748e-13,
+          400.00000000000426
+        ],
+        "z_above_frame": [
+          -19.999999999999318,
+          1.0231815394945443e-12
+        ]
+      }
+    },
+    {
+      "name": "23HE30-2804S v2:1",
+      "component": "23HE30-2804S v2",
+      "body_names": [
+        "Body1",
+        "Body2",
+        "Body3",
+        "Body4",
+        "Body5",
+        "Body6",
+        "Body7",
+        "Body8",
+        "Body9"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -116.5999999999965,
+          -19.99999999999742
+        ],
+        "y": [
+          58.99999999999973,
+          131.4999999999996
+        ],
+        "z_above_frame": [
+          -81.49999999999682,
+          -24.49999999999477
+        ]
+      }
+    },
+    {
+      "name": "23HE30-2804S v2:2",
+      "component": "23HE30-2804S v2",
+      "body_names": [
+        "Body1",
+        "Body2",
+        "Body3",
+        "Body4",
+        "Body5",
+        "Body6",
+        "Body7",
+        "Body8",
+        "Body9"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          20.000000000002313,
+          116.60000000000261
+        ],
+        "y": [
+          58.999999999999304,
+          131.49999999999932
+        ],
+        "z_above_frame": [
+          -81.50000000000023,
+          -24.499999999999318
+        ]
+      }
+    },
+    {
+      "name": "2020 Corner Brace:1",
+      "component": "2020 Corner Brace",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          68.12799999999962,
+          120.12799999999953
+        ],
+        "y": [
+          -0.1280000000002124,
+          51.871999999999616
+        ],
+        "z_above_frame": [
+          -26.128000000001066,
+          5.871999999999616
+        ]
+      }
+    },
+    {
+      "name": "2020 Corner Brace:2",
+      "component": "2020 Corner Brace",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          68.12799999999946,
+          120.12799999999953
+        ],
+        "y": [
+          348.12800000000465,
+          400.1280000000043
+        ],
+        "z_above_frame": [
+          -26.128000000001066,
+          5.871999999999616
+        ]
+      }
+    },
+    {
+      "name": "2020 Corner Brace:3",
+      "component": "2020 Corner Brace",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -120.12799999999947,
+          -68.1279999999993
+        ],
+        "y": [
+          -0.12800000000027012,
+          51.87199999999951
+        ],
+        "z_above_frame": [
+          -26.127999999998906,
+          5.872000000001663
+        ]
+      }
+    },
+    {
+      "name": "2020 Corner Brace:4",
+      "component": "2020 Corner Brace",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -120.12799999999976,
+          -68.12799999999982
+        ],
+        "y": [
+          348.12800000000465,
+          400.1280000000045
+        ],
+        "z_above_frame": [
+          -26.127999999998906,
+          5.872000000001663
+        ]
+      }
+    },
+    {
+      "name": "blade_holder_with_guard_v3 v3:1",
+      "component": "blade_holder_with_guard_v3 v3",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -126.7500000000162,
+          126.74999999998434
+        ],
+        "y": [
+          218.56284221864792,
+          313.63955778135966
+        ],
+        "z_above_frame": [
+          -66.89449999999817,
+          -54.89449999999658
+        ]
+      }
+    },
+    {
+      "name": "MY1016 24VDC motor v1:1+MY1016 24VDC motor:1",
+      "component": "MY1016 24VDC motor",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -54.10200000000368,
+          54.101999999994426
+        ],
+        "y": [
+          215.30120000000406,
+          320.0000000000034
+        ],
+        "z_above_frame": [
+          -65.8164999999982,
+          40.10149999999976
+        ]
+      }
+    },
+    {
+      "name": "WheelAdapter V2 v4:1+MetalCoupler:1",
+      "component": "MetalCoupler",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -124.59999999999889,
+          -99.59999999999874
+        ],
+        "y": [
+          80.50000000000048,
+          94.50000000000058
+        ],
+        "z_above_frame": [
+          -59.999999999995,
+          -45.99999999999466
+        ]
+      }
+    },
+    {
+      "name": "WheelAdapter V2 v4:1+Wheel:1",
+      "component": "Wheel",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -146.60000000000002,
+          -109.0999999999976
+        ],
+        "y": [
+          12.593808667107096,
+          162.406191332894
+        ],
+        "z_above_frame": [
+          -129.24457968053616,
+          20.567802985250296
+        ]
+      }
+    },
+    {
+      "name": "WheelAdapter V2 v4:2+MetalCoupler:1",
+      "component": "MetalCoupler",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          99.5999999999986,
+          124.5999999999988
+        ],
+        "y": [
+          80.4999999999992,
+          94.49999999999925
+        ],
+        "z_above_frame": [
+          -60.000000000000455,
+          -46.0
+        ]
+      }
+    },
+    {
+      "name": "WheelAdapter V2 v4:2+Wheel:1",
+      "component": "Wheel",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          109.09999999999776,
+          146.59999999999957
+        ],
+        "y": [
+          12.593808667106021,
+          162.40619133289246
+        ],
+        "z_above_frame": [
+          -126.56780298524563,
+          23.244579680541392
+        ]
+      }
+    },
+    {
+      "name": "MowingMotorBracket:1",
+      "component": "MowingMotorBracket",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -120.00000000000006,
+          119.99999999999656
+        ],
+        "y": [
+          320.00000000000443,
+          399.50000000000443
+        ],
+        "z_above_frame": [
+          -38.13049999999987,
+          18.130500000001234
+        ]
+      }
+    },
+    {
+      "name": "NemaMotorBracket:1",
+      "component": "NemaMotorBracket",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -119.99999999999906,
+          119.99999999999744
+        ],
+        "y": [
+          -3.758622543070258e-13,
+          119.99999999999969
+        ],
+        "z_above_frame": [
+          -82.99999999999795,
+          -19.99999999999818
+        ]
+      }
+    },
+    {
+      "name": "SteeringWheel:1",
+      "component": "SteeringWheel",
+      "body_names": [
+        "Body",
+        "Wheel",
+        "Space"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -200.9348470269813,
+          -70.93484702698035
+        ],
+        "y": [
+          372.60366943303495,
+          502.6037978717393
+        ],
+        "z_above_frame": [
+          -126.00012843868979,
+          -25.999999999983288
+        ]
+      }
+    },
+    {
+      "name": "SteeringWheel:2",
+      "component": "SteeringWheel",
+      "body_names": [
+        "Body",
+        "Wheel",
+        "Space"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          70.93484702699035,
+          200.93484702699197
+        ],
+        "y": [
+          372.4756694330266,
+          502.47579787173163
+        ],
+        "z_above_frame": [
+          -126.00012843868922,
+          -25.999999999980446
+        ]
+      }
+    },
+    {
+      "name": "SteeringWheelBracket:1",
+      "component": "SteeringWheelBracket",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -149.99999999999966,
+          -69.9999999999998
+        ],
+        "y": [
+          350.000000000014,
+          450.00000000001353
+        ],
+        "z_above_frame": [
+          -25.99999999998431,
+          -2.0463630789890885e-12
+        ]
+      }
+    },
+    {
+      "name": "SteeringWheelBracket (1):1",
+      "component": "SteeringWheelBracket (1)",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          69.99999999999937,
+          149.99999999999923
+        ],
+        "y": [
+          349.8720000000048,
+          449.8720000000037
+        ],
+        "z_above_frame": [
+          -25.999999999985903,
+          -1.2505552149377763e-12
+        ]
+      }
+    },
+    {
+      "name": "BladeSpace:1",
+      "component": "BladeSpace",
+      "body_names": [
+        "Body1"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -137.5000000000159,
+          137.49999999998408
+        ],
+        "y": [
+          133.60120000000725,
+          403.6012000000038
+        ],
+        "z_above_frame": [
+          -68.39449999999738,
+          -53.39449999999715
+        ]
+      }
+    },
+    {
+      "name": "BladeFrame:1",
+      "component": "BladeFrame",
+      "body_names": [
+        "Body9",
+        "Body10",
+        "Body11"
+      ],
+      "bounds_local_mm": {
+        "u": [
+          -140.5000000000318,
+          140.49999999996902
+        ],
+        "y": [
+          129.17450674640287,
+          420.00000000000443
+        ],
+        "z_above_frame": [
+          -83.39450000000011,
+          20.000000000001023
+        ]
+      }
+    }
+  ],
+  "electronics_case_battery_bodies_identified_in_source": [],
+  "user_declared_inventory_not_in_source": [
+    {
+      "item": "DM542T driver",
+      "quantity": 2,
+      "mechanical_model_status": "Being retrieved independently by root; not used in this audit"
+    },
+    {
+      "item": "Custom PCB with ESP32, MPU6050 and voltage regulator",
+      "quantity": 1,
+      "mechanical_model_status": "Not yet designed; approximately two ESP32-board areas supplied by user is not a verified rectangular outline or height"
+    },
+    {
+      "item": "C94-M8P application board",
+      "quantity": 1,
+      "mechanical_model_status": "No installed board or antenna geometry in V3 source"
+    },
+    {
+      "item": "Battery",
+      "quantity": "unknown",
+      "mechanical_model_status": "No dimensions, model or placement supplied"
+    }
+  ],
+  "collision_volume_threshold_mm3": 0.01,
+  "mass_method": "OCP BRepGProp.VolumePropertiesGK_s; Eps=1e-12; OnlyClosed=True; IsUseSpan=True; CGFlag=False; IFlag=False; SkipShared=False",
+  "candidates": [
+    {
+      "name": "requested_front_base0",
+      "bounds_local_mm": {
+        "u": [
+          -90,
+          90
+        ],
+        "y": [
+          25,
+          205
+        ],
+        "z_above_frame": [
+          0,
+          200
+        ]
+      },
+      "size_mm": [
+        180,
+        180,
+        200
+      ],
+      "gross_volume_mm3": 6480000,
+      "gross_volume_litres": 6.48,
+      "note": "Requested180x180 allowance; assess original brace occupation",
+      "existing_component_intersections": [
+        {
+          "original": "2020 Corner Brace:1/Body1",
+          "volume_mm3": 666.7742538816168,
+          "overlap_bounds_local_mm": {
+            "u": [
+              71.01335931288102,
+              90.0
+            ],
+            "y": [
+              24.999999999999996,
+              43.98664068711899
+            ],
+            "z_above_frame": [
+              0.0,
+              5.872000000002686
+            ]
+          }
+        },
+        {
+          "original": "2020 Corner Brace:3/Body1",
+          "volume_mm3": 666.7742538818081,
+          "overlap_bounds_local_mm": {
+            "u": [
+              -90.0,
+              -71.0133593128806
+            ],
+            "y": [
+              25.0,
+              43.98664068711931
+            ],
+            "z_above_frame": [
+              0.0,
+              5.872000000003595
+            ]
+          }
+        }
+      ],
+      "keepout_intersections": [],
+      "exact_boolean_count": 2,
+      "errors": [],
+      "minimum_mechanical_clearance_mm": 0.0,
+      "nearest_components": [
+        {
+          "original": "2020 Corner Brace:1/Body1",
+          "distance_mm": 0.0
+        },
+        {
+          "original": "2020 Corner Brace:3/Body1",
+          "distance_mm": 0.0
+        }
+      ],
+      "entire_box_free_of_positive_volume_occupation": false,
+      "positive_mechanical_clearance": false,
+      "at_least_2mm_mechanical_clearance": false,
+      "at_least_5mm_mechanical_clearance": false,
+      "minimum_total_height_from_original_low_point_mm": 329.244579680535
+    },
+    {
+      "name": "requested_175_length_base0",
+      "bounds_local_mm": {
+        "u": [
+          -90,
+          90
+        ],
+        "y": [
+          30,
+          205
+        ],
+        "z_above_frame": [
+          0,
+          200
+        ]
+      },
+      "size_mm": [
+        180,
+        175,
+        200
+      ],
+      "gross_volume_mm3": 6300000,
+      "gross_volume_litres": 6.3,
+      "note": "180x175 alternative at frame datum",
+      "existing_component_intersections": [
+        {
+          "original": "2020 Corner Brace:1/Body1",
+          "volume_mm3": 387.5996867431909,
+          "overlap_bounds_local_mm": {
+            "u": [
+              76.01335931288102,
+              90.0
+            ],
+            "y": [
+              30.0,
+              43.986640687119
+            ],
+            "z_above_frame": [
+              0.0,
+              5.872000000002572
+            ]
+          }
+        },
+        {
+          "original": "2020 Corner Brace:3/Body1",
+          "volume_mm3": 387.59968674330355,
+          "overlap_bounds_local_mm": {
+            "u": [
+              -90.0,
+              -76.01335931288062
+            ],
+            "y": [
+              29.999999999999993,
+              43.98664068711931
+            ],
+            "z_above_frame": [
+              0.0,
+              5.872000000003595
+            ]
+          }
+        }
+      ],
+      "keepout_intersections": [],
+      "exact_boolean_count": 2,
+      "errors": [],
+      "minimum_mechanical_clearance_mm": 0.0,
+      "nearest_components": [
+        {
+          "original": "2020 Corner Brace:1/Body1",
+          "distance_mm": 0.0
+        },
+        {
+          "original": "2020 Corner Brace:3/Body1",
+          "distance_mm": 0.0
+        }
+      ],
+      "entire_box_free_of_positive_volume_occupation": false,
+      "positive_mechanical_clearance": false,
+      "at_least_2mm_mechanical_clearance": false,
+      "at_least_5mm_mechanical_clearance": false,
+      "minimum_total_height_from_original_low_point_mm": 329.244579680535
+    },
+    {
+      "name": "requested_front_raised8",
+      "bounds_local_mm": {
+        "u": [
+          -90,
+          90
+        ],
+        "y": [
+          25,
+          205
+        ],
+        "z_above_frame": [
+          8,
+          208
+        ]
+      },
+      "size_mm": [
+        180,
+        180,
+        200
+      ],
+      "gross_volume_mm3": 6480000,
+      "gross_volume_litres": 6.48,
+      "note": "Same front footprint, raised above corner-brace tops",
+      "existing_component_intersections": [],
+      "keepout_intersections": [],
+      "exact_boolean_count": 0,
+      "errors": [],
+      "minimum_mechanical_clearance_mm": 2.1279999999965185,
+      "nearest_components": [
+        {
+          "original": "2020 Corner Brace:3/Body1",
+          "distance_mm": 2.1279999999965185
+        },
+        {
+          "original": "2020 Corner Brace:1/Body1",
+          "distance_mm": 2.1279999999973143
+        }
+      ],
+      "entire_box_free_of_positive_volume_occupation": true,
+      "positive_mechanical_clearance": true,
+      "at_least_2mm_mechanical_clearance": true,
+      "at_least_5mm_mechanical_clearance": false,
+      "minimum_total_height_from_original_low_point_mm": 337.244579680535
+    },
+    {
+      "name": "wide_front_inner_2mm_plan_margin",
+      "bounds_local_mm": {
+        "u": [
+          -98,
+          98
+        ],
+        "y": [
+          22,
+          213.3
+        ],
+        "z_above_frame": [
+          8,
+          208
+        ]
+      },
+      "size_mm": [
+        196,
+        191.3,
+        200
+      ],
+      "gross_volume_mm3": 7498960.000000001,
+      "gross_volume_litres": 7.498960000000001,
+      "note": "Near-full inner width; minimum2mm nominal plan/bounding margin",
+      "existing_component_intersections": [],
+      "keepout_intersections": [],
+      "exact_boolean_count": 0,
+      "errors": [],
+      "minimum_mechanical_clearance_mm": 2.001200000003962,
+      "nearest_components": [
+        {
+          "original": "MY1016 24VDC motor v1:1+MY1016 24VDC motor:1/Body1",
+          "distance_mm": 2.001200000003962
+        }
+      ],
+      "entire_box_free_of_positive_volume_occupation": true,
+      "positive_mechanical_clearance": true,
+      "at_least_2mm_mechanical_clearance": true,
+      "at_least_5mm_mechanical_clearance": false,
+      "minimum_total_height_from_original_low_point_mm": 337.244579680535
+    },
+    {
+      "name": "base0_wide_contact_check",
+      "bounds_local_mm": {
+        "u": [
+          -98,
+          98
+        ],
+        "y": [
+          54,
+          213.3
+        ],
+        "z_above_frame": [
+          0,
+          200
+        ]
+      },
+      "size_mm": [
+        196,
+        159.3,
+        200
+      ],
+      "gross_volume_mm3": 6244560.000000001,
+      "gross_volume_litres": 6.244560000000001,
+      "note": "Shows why zero-volume contact is not positive clearance",
+      "existing_component_intersections": [],
+      "keepout_intersections": [],
+      "exact_boolean_count": 0,
+      "errors": [],
+      "minimum_mechanical_clearance_mm": 0.1275000000023283,
+      "nearest_components": [
+        {
+          "original": "BladeFrame:1/Body9",
+          "distance_mm": 0.1275000000023283
+        },
+        {
+          "original": "BladeFrame:1/Body10",
+          "distance_mm": 0.12750000000482942
+        }
+      ],
+      "entire_box_free_of_positive_volume_occupation": true,
+      "positive_mechanical_clearance": true,
+      "at_least_2mm_mechanical_clearance": false,
+      "at_least_5mm_mechanical_clearance": false,
+      "minimum_total_height_from_original_low_point_mm": 329.244579680535
+    },
+    {
+      "name": "base0_front_5mm_screen",
+      "bounds_local_mm": {
+        "u": [
+          -89,
+          89
+        ],
+        "y": [
+          57,
+          210
+        ],
+        "z_above_frame": [
+          0,
+          200
+        ]
+      },
+      "size_mm": [
+        178,
+        153,
+        200
+      ],
+      "gross_volume_mm3": 5446800,
+      "gross_volume_litres": 5.4468,
+      "note": "Narrow enough to clear blade-frame side members by5mm",
+      "existing_component_intersections": [],
+      "keepout_intersections": [],
+      "exact_boolean_count": 0,
+      "errors": [],
+      "minimum_mechanical_clearance_mm": 5.001625360816873,
+      "nearest_components": [
+        {
+          "original": "BladeFrame:1/Body9",
+          "distance_mm": 5.001625360816873
+        },
+        {
+          "original": "BladeFrame:1/Body10",
+          "distance_mm": 5.001625360822772
+        }
+      ],
+      "entire_box_free_of_positive_volume_occupation": true,
+      "positive_mechanical_clearance": true,
+      "at_least_2mm_mechanical_clearance": true,
+      "at_least_5mm_mechanical_clearance": true,
+      "minimum_total_height_from_original_low_point_mm": 329.244579680535
+    },
+    {
+      "name": "front_inner_5mm_screen",
+      "bounds_local_mm": {
+        "u": [
+          -95,
+          95
+        ],
+        "y": [
+          25,
+          210
+        ],
+        "z_above_frame": [
+          11,
+          211
+        ]
+      },
+      "size_mm": [
+        190,
+        185,
+        200
+      ],
+      "gross_volume_mm3": 7030000,
+      "gross_volume_litres": 7.03,
+      "note": "190x185 low front bay with approximately5mm minimum mechanical clearance",
+      "existing_component_intersections": [],
+      "keepout_intersections": [],
+      "exact_boolean_count": 0,
+      "errors": [],
+      "minimum_mechanical_clearance_mm": 5.127999999996405,
+      "nearest_components": [
+        {
+          "original": "2020 Corner Brace:3/Body1",
+          "distance_mm": 5.127999999996405
+        },
+        {
+          "original": "2020 Corner Brace:1/Body1",
+          "distance_mm": 5.127999999997314
+        }
+      ],
+      "entire_box_free_of_positive_volume_occupation": true,
+      "positive_mechanical_clearance": true,
+      "at_least_2mm_mechanical_clearance": true,
+      "at_least_5mm_mechanical_clearance": true,
+      "minimum_total_height_from_original_low_point_mm": 340.244579680535
+    },
+    {
+      "name": "front_above_rails_2mm_screen",
+      "bounds_local_mm": {
+        "u": [
+          -107,
+          107
+        ],
+        "y": [
+          2,
+          213
+        ],
+        "z_above_frame": [
+          8,
+          208
+        ]
+      },
+      "size_mm": [
+        214,
+        211,
+        200
+      ],
+      "gross_volume_mm3": 9030800,
+      "gross_volume_litres": 9.0308,
+      "note": "Wider above-rail front bay, limited by drive wheels",
+      "existing_component_intersections": [],
+      "keepout_intersections": [],
+      "exact_boolean_count": 0,
+      "errors": [],
+      "minimum_mechanical_clearance_mm": 2.127999999996291,
+      "nearest_components": [
+        {
+          "original": "2020 Corner Brace:3/Body1",
+          "distance_mm": 2.127999999996291
+        },
+        {
+          "original": "2020 Corner Brace:1/Body1",
+          "distance_mm": 2.1279999999973143
+        }
+      ],
+      "entire_box_free_of_positive_volume_occupation": true,
+      "positive_mechanical_clearance": true,
+      "at_least_2mm_mechanical_clearance": true,
+      "at_least_5mm_mechanical_clearance": false,
+      "minimum_total_height_from_original_low_point_mm": 337.244579680535
+    },
+    {
+      "name": "full_inner_2mm_plan_margin",
+      "bounds_local_mm": {
+        "u": [
+          -98,
+          98
+        ],
+        "y": [
+          22,
+          378
+        ],
+        "z_above_frame": [
+          45,
+          245
+        ]
+      },
+      "size_mm": [
+        196,
+        356,
+        200
+      ],
+      "gross_volume_mm3": 13955200,
+      "gross_volume_litres": 13.9552,
+      "note": "Largest rectangle in2mm-inset inner frame window, elevated above motor",
+      "existing_component_intersections": [],
+      "keepout_intersections": [],
+      "exact_boolean_count": 0,
+      "errors": [],
+      "minimum_mechanical_clearance_mm": 4.898499999996147,
+      "nearest_components": [
+        {
+          "original": "MY1016 24VDC motor v1:1+MY1016 24VDC motor:1/Body1",
+          "distance_mm": 4.898499999996147
+        }
+      ],
+      "entire_box_free_of_positive_volume_occupation": true,
+      "positive_mechanical_clearance": true,
+      "at_least_2mm_mechanical_clearance": true,
+      "at_least_5mm_mechanical_clearance": false,
+      "minimum_total_height_from_original_low_point_mm": 374.244579680535
+    },
+    {
+      "name": "full_inner_5mm_plan_margin",
+      "bounds_local_mm": {
+        "u": [
+          -95,
+          95
+        ],
+        "y": [
+          25,
+          375
+        ],
+        "z_above_frame": [
+          46,
+          246
+        ]
+      },
+      "size_mm": [
+        190,
+        350,
+        200
+      ],
+      "gross_volume_mm3": 13300000,
+      "gross_volume_litres": 13.3,
+      "note": "Largest rectangle in5mm-inset inner frame window, elevated above motor",
+      "existing_component_intersections": [],
+      "keepout_intersections": [],
+      "exact_boolean_count": 0,
+      "errors": [],
+      "minimum_mechanical_clearance_mm": 5.898499999996147,
+      "nearest_components": [
+        {
+          "original": "MY1016 24VDC motor v1:1+MY1016 24VDC motor:1/Body1",
+          "distance_mm": 5.898499999996147
+        }
+      ],
+      "entire_box_free_of_positive_volume_occupation": true,
+      "positive_mechanical_clearance": true,
+      "at_least_2mm_mechanical_clearance": true,
+      "at_least_5mm_mechanical_clearance": true,
+      "minimum_total_height_from_original_low_point_mm": 375.244579680535
+    },
+    {
+      "name": "full_outer_2mm_plan_margin",
+      "bounds_local_mm": {
+        "u": [
+          -118,
+          118
+        ],
+        "y": [
+          2,
+          398
+        ],
+        "z_above_frame": [
+          45,
+          245
+        ]
+      },
+      "size_mm": [
+        236,
+        396,
+        200
+      ],
+      "gross_volume_mm3": 18691200,
+      "gross_volume_litres": 18.6912,
+      "note": "Above-frame outer footprint with2mm plan margin; height tradeoff",
+      "existing_component_intersections": [],
+      "keepout_intersections": [],
+      "exact_boolean_count": 0,
+      "errors": [],
+      "minimum_mechanical_clearance_mm": 4.898499999996147,
+      "nearest_components": [
+        {
+          "original": "MY1016 24VDC motor v1:1+MY1016 24VDC motor:1/Body1",
+          "distance_mm": 4.898499999996147
+        }
+      ],
+      "entire_box_free_of_positive_volume_occupation": true,
+      "positive_mechanical_clearance": true,
+      "at_least_2mm_mechanical_clearance": true,
+      "at_least_5mm_mechanical_clearance": false,
+      "minimum_total_height_from_original_low_point_mm": 374.244579680535
+    },
+    {
+      "name": "full_outer_5mm_plan_margin",
+      "bounds_local_mm": {
+        "u": [
+          -115,
+          115
+        ],
+        "y": [
+          5,
+          395
+        ],
+        "z_above_frame": [
+          46,
+          246
+        ]
+      },
+      "size_mm": [
+        230,
+        390,
+        200
+      ],
+      "gross_volume_mm3": 17940000,
+      "gross_volume_litres": 17.94,
+      "note": "Above-frame outer footprint with5mm plan margin; height tradeoff",
+      "existing_component_intersections": [],
+      "keepout_intersections": [],
+      "exact_boolean_count": 0,
+      "errors": [],
+      "minimum_mechanical_clearance_mm": 5.898499999996147,
+      "nearest_components": [
+        {
+          "original": "MY1016 24VDC motor v1:1+MY1016 24VDC motor:1/Body1",
+          "distance_mm": 5.898499999996147
+        }
+      ],
+      "entire_box_free_of_positive_volume_occupation": true,
+      "positive_mechanical_clearance": true,
+      "at_least_2mm_mechanical_clearance": true,
+      "at_least_5mm_mechanical_clearance": true,
+      "minimum_total_height_from_original_low_point_mm": 375.244579680535
+    },
+    {
+      "name": "prior_front_footprint_height200",
+      "bounds_local_mm": {
+        "u": [
+          -90,
+          90
+        ],
+        "y": [
+          70,
+          205
+        ],
+        "z_above_frame": [
+          0,
+          200
+        ]
+      },
+      "size_mm": [
+        180,
+        135,
+        200
+      ],
+      "gross_volume_mm3": 4860000,
+      "gross_volume_litres": 4.86,
+      "note": "Prior narrower front footprint with height increased to200",
+      "existing_component_intersections": [],
+      "keepout_intersections": [],
+      "exact_boolean_count": 0,
+      "errors": [],
+      "minimum_mechanical_clearance_mm": 4.002031515364832,
+      "nearest_components": [
+        {
+          "original": "BladeFrame:1/Body9",
+          "distance_mm": 4.002031515364832
+        },
+        {
+          "original": "BladeFrame:1/Body10",
+          "distance_mm": 4.002031515370746
+        }
+      ],
+      "entire_box_free_of_positive_volume_occupation": true,
+      "positive_mechanical_clearance": true,
+      "at_least_2mm_mechanical_clearance": true,
+      "at_least_5mm_mechanical_clearance": false,
+      "minimum_total_height_from_original_low_point_mm": 329.244579680535
+    }
+  ],
+  "limitations": [
+    "The candidate solids are temporary in-memory measurement boxes. No CAD geometry or STEP file is written or altered.",
+    "Largest is conditional on a stated footprint window, clearance allowance and elevation; without an upper elevation or exterior limit there is no unique unrestricted largest box.",
+    "Positive-volume intersection with mechanical hardware means a box is not wholly vacant. A future outer cover may enclose unchanged hardware, but electronics cannot occupy the same material; local pockets or a different arrangement would be required.",
+    "No electronics/cases/battery appear in the46-body original V3 export. User-declared actual electronics are therefore recorded as absent from this CAD, not as forbidden occupants or already packed components.",
+    "The200mm dimension is clear provisional equipment height, not whole-mower height. Original lowest modeled wheel point is about129.245mm below frame top; add the box base elevation plus200mm before any roof skin or extra mounting thickness.",
+    "AABB screening is followed by exact solid intersections where needed; nearest clearances use OCCT BRepExtrema_DistShapeShape against unchanged original mechanical bodies.",
+    "Rectangular volume does not establish full inventory fit. Driver fins, electrical clearances, connectors, wire bends, cooling, antenna sky view, battery, service access, tray/mounts and structural load paths remain unmodelled.",
+    "Current widths/lengths are packaging windows only, not final cover dimensions, print partitions, mounting designs or approved external dimensions."
+  ],
+  "all_source_files_unchanged": true,
+  "completed_without_errors": true,
+  "conclusion": "Use the raised front bay as the low-elevation baseline; whole-inner-frame or whole-outer-frame rectangles provide more space only when lifted above the unchanged mowing motor. All options still need actual equipment placement."
+}

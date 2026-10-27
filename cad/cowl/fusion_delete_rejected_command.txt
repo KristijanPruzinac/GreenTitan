@@ -1,0 +1,1 @@
+exec(open('C:/Users/kikom/.codex/coordination/fusion/greentitan_delete_rejected_curved.py').read(),gtcowl)

@@ -4,3 +4,18 @@
 .vscode/launch.json
 .vscode/ipch
 Simulator/config.txt
+cad/**/__pycache__/
+# Generated CAD exports, renders, downloads and local review reports.
+outputs/roof_v4/
+outputs/roof_v5/
+outputs/roof_v6/
+outputs/canopy/
+outputs/chassis_reference/
+outputs/cowl/
+outputs/design_study/
+outputs/roof_reset/
+outputs/spine_b/
+
+# phone tooling
+.env
+tools/android/apks/

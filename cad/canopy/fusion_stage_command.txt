@@ -1,0 +1,1 @@
+gtcanopy={'__name__':'greentitan_canopy'};exec(open('C:/Users/kikom/Documents/GitHub/GreenTitan/cad/canopy/fusion_present_concept.py').read(),gtcanopy);_gtcanopy_result=gtcanopy['present']()
