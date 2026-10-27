@@ -14,6 +14,18 @@ struct NavConfig {
     float wheel_v_max;        // m/s, per wheel
     float accel;              // m/s^2 along the path; stay under what the drive can ramp
 
+    // Body around the axle centre. A turn swings the overhangs out past the half width. Where
+    // the incoming leg runs along an edge (NavWaypoint::edge) on the outer side of the turn, the
+    // corner is driven so that the rear swings out at most edge_swing; elsewhere, and where that
+    // does not fit, on_body_swing reports how far past edge_clearance the body goes.
+    float front_overhang;     // m, ahead of the axle
+    float rear_overhang;      // m, behind it
+    float half_width;         // m
+    float edge_clearance;     // m, the path keeps half_width + this from edges
+    float edge_swing;         // m, <= edge_clearance; the rest is for tracking error
+    void (*on_body_swing)(double x, double y, float beyond);   // corner at (x, y) swings the body
+                                                               // `beyond` m past that; may be null
+
     // Corners of the waypoint path: rounded into arcs of the tool path where they fit, else the
     // robot stops and turns on the spot (with the axle on the corner). min_radius must exceed
     // tool_offset: on an arc of radius r the axle runs at sqrt(r^2 - tool_offset^2), inside the

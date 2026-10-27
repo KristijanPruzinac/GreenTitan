@@ -12,12 +12,17 @@
 #define NAV_WINDOW_STEP     0.025f   // ... m of tool path per sample (2.7 m)
 #define NAV_HORIZON         15       // MPC steps ...
 #define NAV_HORIZON_STEP    0.1f     // ... m of axle path per step (1.5 m)
+#define NAV_EDGE_SEGS       16       // arcs approximating the edge-corner curve
+#define NAV_EDGE_STEP       0.08f    // rad of heading per arc of its sliding part
+#define NAV_EDGE_MIN_SIN    0.2f     // turns this close to a reversal can't end the curve on the next leg
 
 enum nav_tool { NAV_TOOL_KEEP = 0, NAV_TOOL_ON = 1, NAV_TOOL_OFF = 2 };
 
 struct NavWaypoint {
     double x, y;     // m
     uint8_t tool;    // nav_tool, applies on the way *to* this waypoint
+    int8_t edge;     // the way to this waypoint runs along an edge on this side: +1 left, -1 right,
+                     // 0 none. Corners keep the body from swinging out over it.
 };
 
 // What the tracker needs for one control period, all for the wheel axle
@@ -56,7 +61,7 @@ public:
     uint8_t tool() const { return count_ >= 2 ? nodes_[1].tool : (uint8_t)NAV_TOOL_KEEP; }
 
 private:
-    enum { K_START, K_RESUME, K_END, K_STRAIGHT, K_ROUND, K_PIVOT };
+    enum { K_START, K_RESUME, K_END, K_STRAIGHT, K_ROUND, K_PIVOT, K_EDGE };
     struct Node {
         double x, y;
         uint8_t tool, kind;
@@ -64,28 +69,48 @@ private:
         float curvature;           // K_ROUND: 1/radius, + = left
         float turn;                // rad, + = left
         bool  fixed;               // corner decided (else a provisional stop)
+        bool  warned;              // body swing reported
+        int8_t edge;               // edge beside the leg *to* this node (NavWaypoint::edge)
+        bool  edge_pivot;          // K_EDGE: ends with a turn on the spot where the curve ends
+        float edge_inset;          // K_EDGE: ... this far inside the next leg (front swing)
     };
     struct Prim {                  // piece of tool path
         double x, y;               // start
         float heading, curvature, length, s0;
+        bool  edge;                // the edge curve, curvature = +-1 for left / right
     };
 
     bool can_merge_last(const NavWaypoint& wp) const;
     void stop_corner(int i);
     void classify(int i);
+    bool edge_corner(int i, float room_in, float room_out);
+    void warn_swing(int i);
+    void build_edge_curve();
+    // Edge curve for a left turn of `turn` from the origin along +x: end point and heading
+    float edge_end(float turn, float* ex, float* ey) const;
+    // Point at distance d along that curve: position, heading, curvature
+    void  edge_at(float d, float* x, float* y, float* heading, float* curvature) const;
     int  build();                  // tool path up to the first stop; returns the primitive count
     void tool_at(float s, double* x, double* y, float* heading, float* curvature) const;
 
     const NavConfig* cfg_ = nullptr;
     Node  nodes_[NAV_MAX_NODES];
     int   count_ = 0;
-    Prim  prims_[2 * NAV_MAX_NODES];
+    Prim  prims_[NAV_MAX_NODES * 2];
     int   prim_count_ = 0;
     float s_stop_ = 0, s_pop_ = -1;   // tool-path length to the first stop / to the start of leg 1
     bool  stop_is_end_ = false;
     float s_now_ = 0;                 // progress along the tool path from node 0
     double dropped_[NAV_MAX_MERGED][2];   // waypoints merged into the last leg
     int   dropped_count_ = 0;
+    float decide_distance_ = NAV_DECIDE_DISTANCE;
+    double axle_x_ = 0, axle_y_ = 0;  // where the robot was last
+
+    // Edge-corner curve (left turn from the origin along +x), built once from the footprint
+    float edge_k_[NAV_EDGE_SEGS], edge_len_[NAV_EDGE_SEGS];   // arcs: curvature, length
+    int   edge_n_ = 0;
+    float edge_heading_ = 0;      // heading where the curve ends (then on the spot)
+    float edge_drop_ = 0;         // most the outer rear corner gets past half_width on it
 
     // window samples (static storage, not on the task stack)
     float ws_[NAV_WINDOW_SAMPLES];    // tool-path position

@@ -26,15 +26,19 @@ static long long GetLat(){
 // Blade state for the point being handed out. Points go to the motion queue ahead of the
 // mower, so the blade switches when the mower starts that leg (motion task), not here.
 static uint8_t nextTool = NAV_TOOL_KEEP;
+// Outline point handed out last, to tell legs that run along an outline (see AlgorithmNextPoint)
+static long long lastOutline = -1;
+static long long lastPoint = -1;
 
-void AlgorithmMotionSetTargetPoint(double target_x_m, double target_y_m, uint8_t tool) {
+void AlgorithmMotionSetTargetPoint(double target_x_m, double target_y_m, uint8_t tool, int8_t edge) {
   motion_command_t cmd = {
     MOVING,
     (double)prevPointLon / 100.0,
     (double)prevPointLat / 100.0,
     target_x_m,
     target_y_m,
-    tool
+    tool,
+    edge
   };
   dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
   if (result != DDS_SUCCESS) {
@@ -734,10 +738,24 @@ std::vector<double> AlgorithmNextPoint(){
   targetPointLon = NextX;
   targetPointLat = NextY;
   
+  // A leg between neighbouring points of one outline runs along it: the mower must not swing
+  // out on the outline's side. Counter-clockwise, the inside is on the left going up the
+  // indices; outside the outer outline and inside an island is where the mower must not go.
+  int edge = 0;
+  if (lastOutline == algorithmCurrentOutline && lastPoint >= 0){
+    long long n = extOutlines.at(algorithmCurrentOutline).size();
+    int dir = algorithmCurrentPoint == (lastPoint + 1) % n ? 1 : lastPoint == (algorithmCurrentPoint + 1) % n ? -1 : 0;
+    int ccw = SignedArea(extOutlines.at(algorithmCurrentOutline)) > 0 ? 1 : -1;
+    edge = dir * ccw * (algorithmCurrentOutline == 0 ? -1 : 1);
+  }
+  lastOutline = algorithmCurrentOutline;
+  lastPoint = algorithmCurrentPoint;
+
   std::vector<double> returnList;
   returnList.push_back((double)NextX / 100.0);
   returnList.push_back((double)NextY / 100.0);
   returnList.push_back((double)nextTool);
+  returnList.push_back((double)edge);
   return returnList;
 }
 
@@ -820,6 +838,8 @@ void AlgorithmReset() {
   targetPointLon = 0;
   targetPointLat = 0;
   nextTool = NAV_TOOL_KEEP;
+  lastOutline = -1;
+  lastPoint = -1;
 }
 
 void AlgorithmCaptureStart(){

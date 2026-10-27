@@ -96,6 +96,9 @@ typedef struct {
 // the inner outlines. Turns swing the overhangs further out; the motion task warns where.
 #define MOWER_EDGE_CLEARANCE              0.05f  // m
 #define MOWER_EDGE_INSET                  (MOWER_HALF_WIDTH + MOWER_EDGE_CLEARANCE)
+// Corners along an edge are driven so that the rear swings out at most this past the half
+// width; the rest of the clearance is for tracking error
+#define MOTION_EDGE_SWING                 0.02f  // m
 #define MOTION_PATH_TOLERANCE             0.03f  // m, near-straight waypoints merged within this
 // Turning on the spot (path start, sharp corners, or far off the path heading)
 #define MOTION_MAX_TRACK_HEADING_ERROR    1.0f   // rad, ~57 deg: beyond this turn on the spot first
@@ -209,6 +212,7 @@ typedef struct {
     double end_x;
     double end_y;
     uint8_t tool;     // nav_tool (navigation/nav_path.h): blade on the way to this point; 0 = unchanged
+    int8_t edge;      // the way to this point runs along an outline on this side: +1 left, -1 right, 0 none
 } motion_command_t;
 
 enum robot_state {

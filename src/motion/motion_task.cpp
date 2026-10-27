@@ -6,15 +6,26 @@
 // Mower glue around the navigation core (src/navigation): fills its robot description, feeds it
 // the planner's points, drives the motors from its output and switches the blade per leg.
 
+static void warn_body_swing(double sx, double sy, float beyond) {
+    SerialDebug.printf("[MOTION] Turn at (%.2f, %.2f): body swings %.0f cm past the edge clearance\r\n",
+                       sx, sy, beyond * 100.0f);
+}
+
 static const NavConfig nav_config = {
     WHEEL_BASE,                    // wheel_base
-    0.0f,                          // tool_offset: the axle follows the path; the blade trails it and
-                                   // cuts inside the curves, so no part swings out (2026-10-27)
+    0.0f,                          // tool_offset: the axle follows the path (2026-10-27); with the
+                                   // blade as tool point it swung outward entering every curve
     MOTION_FORWARD_SPEED_NORMAL,   // v_max
     MOTION_GOAL_MIN_SPEED,         // v_min
     MAX_ANGULAR_VEL,               // w_max
     MAX_LINEAR_VEL,                // wheel_v_max
     MOTION_GOAL_DECEL,             // accel
+    MOWER_FRONT_OVERHANG,          // front_overhang
+    MOWER_REAR_OVERHANG,           // rear_overhang
+    MOWER_HALF_WIDTH,              // half_width
+    MOWER_EDGE_CLEARANCE,          // edge_clearance
+    MOTION_EDGE_SWING,             // edge_swing
+    warn_body_swing,               // on_body_swing
     MOTION_CORNER_RADIUS,          // corner_radius
     MOTION_MIN_CORNER_RADIUS,      // min_radius
     MOTION_MAX_ROUNDED_TURN,       // max_rounded_turn
@@ -103,7 +114,7 @@ static void motion_stop() {
     xQueueReset(thread_context.queue); // Clear any pending motion commands to prevent them from executing after a stop command
 }
 
-static void motion_add_point(double px, double py, uint8_t tool) {
+static void motion_add_point(double px, double py, uint8_t tool, int8_t edge) {
     point_requested = false;
     if (!imu_ready()) {   // the controller and console check this too; never drive without gyro
         SerialDebug.printf("[MOTION] Gyro not calibrated, not driving\r\n");
@@ -112,7 +123,7 @@ static void motion_add_point(double px, double py, uint8_t tool) {
     bool starting = !path.active();
     double ax = x + GNSS_ANTENNA_BEHIND_AXLE * cos(yaw);
     double ay = y + GNSS_ANTENNA_BEHIND_AXLE * sin(yaw);
-    NavWaypoint wp = { px, py, tool };
+    NavWaypoint wp = { px, py, tool, edge };
     bool added = path.push(wp, ax, ay);
     if (starting && path.active()) {
         if (mode != MOTION_PAUSE) mode = MOVING;
@@ -248,7 +259,7 @@ static void motion_command_callback(dds_callback_context_t* context) {
             return;
         }
 
-        motion_add_point(data->end_x, data->end_y, data->tool);
+        motion_add_point(data->end_x, data->end_y, data->tool, data->edge);
     }
 }
 

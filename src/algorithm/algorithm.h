@@ -47,7 +47,7 @@ bool AlgorithmCaptureRemoveOutline();
 bool AlgorithmCaptureRemovePoint();
 bool AlgorithmCaptureEnd();
 
-void AlgorithmMotionSetTargetPoint(double x_m, double y_m, uint8_t tool);   // tool: nav_tool
+void AlgorithmMotionSetTargetPoint(double x_m, double y_m, uint8_t tool, int8_t edge);   // tool: nav_tool, edge: see motion_command_t
 void AlgorithmSeedStartPosition();
 
 String AlgorithmGetPathString();

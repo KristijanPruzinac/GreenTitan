@@ -56,7 +56,7 @@ static void motor_main_off() {
 }
 
 static void motion_send(int mode) {
-    motion_command_t cmd = { mode, 0, 0, 0, 0, NAV_TOOL_KEEP };
+    motion_command_t cmd = { mode, 0, 0, 0, 0, NAV_TOOL_KEEP, 0 };
     dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
     if (result != DDS_SUCCESS) {
         SerialDebug.printf("[CTRL] Failed to send motion command: %d\r\n", result);
@@ -97,11 +97,11 @@ static void go_to_next_algorithm_point() {
         abort_mission(e.what());
         return;
     }
-    if (next.size() < 3) {
+    if (next.size() < 4) {
         planner_exhausted = true;
         return;
     }
-    AlgorithmMotionSetTargetPoint(next.at(0), next.at(1), (uint8_t)next.at(2));
+    AlgorithmMotionSetTargetPoint(next.at(0), next.at(1), (uint8_t)next.at(2), (int8_t)next.at(3));
 }
 
 static void enter_manual_mode() {
