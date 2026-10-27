@@ -4,7 +4,8 @@
 #include <stdint.h>
 #include "nav_config.h"
 
-#define NAV_MAX_NODES       8        // path start + up to 7 waypoints queued ahead
+#define NAV_MAX_NODES       16       // path start + up to 15 waypoints queued ahead (a corner is
+                                     // decided ~2 m ahead; the corner after it must be known by then)
 #define NAV_MAX_MERGED      16       // near-straight waypoints merged into one leg
 #define NAV_DECIDE_DISTANCE 1.0      // m: a provisional corner this close to the axle is decided
 #define NAV_STOP_REACH      0.3f     // m of path: the stop test only looks this close to the stop
@@ -73,6 +74,7 @@ private:
         int8_t edge;               // edge beside the leg *to* this node (NavWaypoint::edge)
         bool  edge_pivot;          // K_EDGE: ends with a turn on the spot where the curve ends
         float edge_inset;          // K_EDGE: ... this far inside the next leg (front swing)
+        bool  cut;                 // moved inward (cut_corner): turning on the spot there stays in
     };
     struct Prim {                  // piece of tool path
         double x, y;               // start
@@ -83,7 +85,10 @@ private:
     bool can_merge_last(const NavWaypoint& wp) const;
     void stop_corner(int i);
     void classify(int i);
+    void cut_corner(int i);
+    float turn_margin() const;
     bool edge_corner(int i, float room_in, float room_out);
+    bool edge_fit(int i, float turn, float* d, float* out, float* inset, float* h) const;
     void warn_swing(int i);
     void build_edge_curve();
     // Edge curve for a left turn of `turn` from the origin along +x: end point and heading

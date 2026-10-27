@@ -26,9 +26,9 @@ static long long GetLat(){
 // Blade state for the point being handed out. Points go to the motion queue ahead of the
 // mower, so the blade switches when the mower starts that leg (motion task), not here.
 static uint8_t nextTool = NAV_TOOL_KEEP;
-// Outline point handed out last, to tell legs that run along an outline (see AlgorithmNextPoint)
-static long long lastOutline = -1;
-static long long lastPoint = -1;
+// The point handed out last was on an outline lap (lapRings), to tell legs that run along the
+// outline (see AlgorithmNextPoint)
+static bool lastOnLapRing = false;
 
 void AlgorithmMotionSetTargetPoint(double target_x_m, double target_y_m, uint8_t tool, int8_t edge) {
   motion_command_t cmd = {
@@ -83,7 +83,16 @@ int algorithmCurrentPoint = 0;
 //Outlines - First point is the charging station exit point
 std::vector<std::vector<std::vector<long long>>> outlines;
 std::vector<std::vector<std::vector<long long>>> extOutlines; //Outlines with intersection points inserted
-std::vector<std::vector<std::vector<long long>>> planOutlines; //Outlines moved in by MOWER_EDGE_INSET: what the paths are planned on
+std::vector<std::vector<std::vector<long long>>> planOutlines; //Outlines moved in by MOWER_TURN_INSET: what the infill is planned on
+// Outline laps before the infill, outermost first: the outer outline moved in by MOWER_EDGE_INSET,
+// then in steps of at most a row spacing up to (not including) MOWER_TURN_INSET. The last lap runs
+// on extOutlines[0].
+static std::vector<std::vector<std::vector<long long>>> lapRings;
+static int algorithmLap = 0;          // lap being mowed: lapRings index, lapRings.size() = extOutlines[0]
+static std::vector<std::vector<long long>> lapPath;   // points of the lap being mowed
+static size_t lapPathIndex = 0;       // next lapPath point to hand out
+static long long lapStartX = 0, lapStartY = 0;          // where the current lap joined its ring
+static int lapEndVertex = 0;          // last lap: extOutlines[0] vertex it ends on (SEEK goes on from there)
 
 // Polygon offset by d cm, positive = to the left of the edges (inside for a counter-clockwise
 // polygon). Mitred corners; a vertex whose neighbouring offset edge would flip direction (the
@@ -130,17 +139,31 @@ static double SignedArea(const std::vector<std::vector<long long>>& poly){
   return a / 2.0;
 }
 
-// The outlines are where the mower must not go (a wall, a bed). The planned (axle) path keeps
-// MOWER_EDGE_INSET from them: the outer outline moves in, the inner ones (obstacles) move out.
+// The outlines are where the mower must not go (a wall, a bed). The laps along the outer outline
+// keep MOWER_EDGE_INSET from it (edge corners keep the body in, see ARCHITECTURE §6); the infill,
+// whose row ends turn every which way, keeps MOWER_TURN_INSET from all outlines: the outer
+// outline moves in, the inner ones (obstacles) move out.
 static bool BuildPlanOutlines(){
   planOutlines.clear();
-  double d = MOWER_EDGE_INSET * 100.0;
+  lapRings.clear();
+  double inward0 = SignedArea(outlines[0]) > 0 ? 1.0 : -1.0;
+  double gap = (MOWER_TURN_INSET - MOWER_EDGE_INSET) * 100.0;
+  int rings = gap > 0 ? (int)ceil(gap / fmax(1.0, (double)MOWER_OVERLAP)) : 0;
+  for (int j = 0; j < rings; j++){
+    std::vector<std::vector<long long>> ring = OffsetPolygon(outlines[0], inward0 * (MOWER_EDGE_INSET * 100.0 + gap * j / rings));
+    if (ring.size() < 3){
+      SerialDebug.printf("[ALGO] Outline too small for the %.2f m edge clearance\r\n", MOWER_EDGE_INSET);
+      return false;
+    }
+    lapRings.push_back(ring);
+  }
+  double d = MOWER_TURN_INSET * 100.0;
   for (size_t o = 0; o < outlines.size(); o++){
     double inward = SignedArea(outlines[o]) > 0 ? d : -d;     // left = inside when counter-clockwise
     std::vector<std::vector<long long>> off = OffsetPolygon(outlines[o], o == 0 ? inward : -inward);
     if (off.size() < 3){
       if (o == 0){
-        SerialDebug.printf("[ALGO] Outline too small for the %.2f m edge clearance\r\n", MOWER_EDGE_INSET);
+        SerialDebug.printf("[ALGO] Outline too small to turn %.2f m inside it\r\n", MOWER_TURN_INSET);
         return false;
       }
       SerialDebug.printf("[ALGO] Inner outline %u vanished in the offset, skipped\r\n", (unsigned)o);
@@ -150,6 +173,85 @@ static bool BuildPlanOutlines(){
   }
   return true;
 }
+static const std::vector<std::vector<long long>>& LapRing(int lap){
+  return lap < (int)lapRings.size() ? lapRings.at(lap) : extOutlines.at(0);
+}
+
+static int NearestPoint(const std::vector<std::vector<long long>>& ring, long long x, long long y){
+  int best = 0;
+  double best_d = 1e300;
+  for (size_t i = 0; i < ring.size(); i++){
+    double d = hypot((double)(ring[i][0] - x), (double)(ring[i][1] - y));
+    if (d < best_d){ best_d = d; best = (int)i; }
+  }
+  return best;
+}
+
+// Lap `lap`, joining its ring on a side, never at a corner: a turn on the spot closer to the
+// outline than MOWER_TURN_INSET swings the body out over it. The first lap starts in the middle of
+// the longest side, the robot coming in at a slant from a point MOWER_TURN_INSET inside, where it
+// may turn on the spot. A lap on a lapRing ends on its last corner moved in that much more, where
+// it may turn on the spot again; the next lap starts beside where this one started, so the robot
+// comes onto it at a slant from the inside, driving forward. The last lap (extOutlines[0], turning
+// anywhere is safe there) ends on a corner for SEEK to go on from.
+static void StartLap(int lap){
+  const std::vector<std::vector<long long>>& ring = LapRing(lap);
+  size_t n = ring.size(), k = 0;
+  double sx = 0, sy = 0, best = 0;
+  bool found = false;
+  for (size_t i = 0; i < n; i++){
+    const std::vector<long long>& a = ring[i];
+    const std::vector<long long>& b = ring[(i + 1) % n];
+    double dx = (double)(b[0] - a[0]), dy = (double)(b[1] - a[1]), l2 = dx * dx + dy * dy;
+    if (l2 <= 0) continue;
+    double px, py, score;
+    if (lap == 0){                                   // longest side, its middle
+      px = a[0] + dx / 2; py = a[1] + dy / 2; score = l2;
+    } else {                                         // nearest point to the last lap's start
+      double t = fmin(1.0, fmax(0.0, ((lapStartX - a[0]) * dx + (lapStartY - a[1]) * dy) / l2));
+      px = a[0] + t * dx; py = a[1] + t * dy;
+      score = -hypot(px - lapStartX, py - lapStartY);
+    }
+    if (!found || score > best){ found = true; best = score; k = i; sx = px; sy = py; }
+  }
+  double in = SignedArea(outlines[0]) > 0 ? 1.0 : -1.0;   // inside = left when counter-clockwise
+  double m = (MOWER_TURN_INSET - MOWER_EDGE_INSET) * 100.0;
+  lapPath.clear();
+  lapPathIndex = 0;
+  if (lap == 0 && !lapRings.empty()){
+    // The way in starts about as far back along the side as it is deep, at most half way to its corner
+    const std::vector<long long>& a = ring[k];
+    double side = hypot(sx - a[0], sy - a[1]);
+    double back = fmin(side / 2, m), ux = 0, uy = 0;
+    if (side > 0){ ux = (sx - a[0]) / side; uy = (sy - a[1]) / side; }
+    lapPath.push_back({ llround(sx - back * ux - in * m * uy), llround(sy - back * uy + in * m * ux) });
+  }
+  lapStartX = llround(sx);
+  lapStartY = llround(sy);
+  lapPath.push_back({ lapStartX, lapStartY });
+  for (size_t j = 1; j < n; j++) lapPath.push_back(ring[(k + j) % n]);
+  if (lap < (int)lapRings.size()){
+    // Corner k moved m inside both its sides (mitre); a needle tip stays where it is
+    const std::vector<long long>& p = ring[(k + n - 1) % n];
+    const std::vector<long long>& c = ring[k];
+    const std::vector<long long>& d = ring[(k + 1) % n];
+    double l1 = hypot((double)(c[0] - p[0]), (double)(c[1] - p[1]));
+    double l2 = hypot((double)(d[0] - c[0]), (double)(d[1] - c[1]));
+    double n1x = -in * (c[1] - p[1]) / l1, n1y = in * (c[0] - p[0]) / l1;
+    double n2x = -in * (d[1] - c[1]) / l2, n2y = in * (d[0] - c[0]) / l2;
+    double den = 1.0 + n1x * n2x + n1y * n2y;
+    if (l1 > 0 && l2 > 0 && den > 0.1){
+      lapPath.push_back({ llround(c[0] + m * (n1x + n2x) / den), llround(c[1] + m * (n1y + n2y) / den) });
+    } else {
+      lapPath.push_back(c);
+    }
+  } else {
+    lapPath.push_back(ring[k]);
+    lapPath.push_back(ring[(k + 1) % n]);
+    lapEndVertex = (int)((k + 1) % n);
+  }
+}
+
 std::vector<std::vector<std::vector<long long>>> intersectionPaths; //Collections of points where infill intersects terrain and outer outline
 
 long long terrainMinX;
@@ -458,6 +560,7 @@ std::vector<double> AlgorithmNextPoint(){
   if (algorithmDone) {
     return std::vector<double>();  // signals end-of-mow to controller
   }
+  bool onLapRing = false;
 
   long long NextX = 0;
   long long NextY = 0;
@@ -597,22 +700,32 @@ std::vector<double> AlgorithmNextPoint(){
     }
     if (algorithmMode == "OUTLINE"){
       nextTool = NAV_TOOL_ON;
-      
-      algorithmCurrentPoint++;
-      
-      if (algorithmCurrentPoint >= extOutlines.at(0).size()){
-        algorithmCurrentPoint = 0;
-        
-        //Start seeking first infill start
-        algorithmMode = "SEEK";
-        algorithmInfillIndex = 0;
-        if (intersectionPaths.empty()){
-          algorithmTarget = "BASE";  // nothing to infill (area narrower than one lane)
+
+      if (lapPath.empty()) StartLap(0);
+      // The way in to the first lap is not on its ring, and the legs to and from the moved-in
+      // corner a lap ends on slant away from the outline: no edge beside them
+      onLapRing = algorithmLap < (int)lapRings.size() && !(algorithmLap == 0 && lapPathIndex == 0) &&
+                  lapPathIndex + 2 < lapPath.size();
+      NextX = lapPath.at(lapPathIndex).at(0);
+      NextY = lapPath.at(lapPathIndex).at(1);
+      lapPathIndex++;
+
+      if (lapPathIndex == lapPath.size()){
+        if (algorithmLap < (int)lapRings.size()){
+          algorithmLap++;
+          StartLap(algorithmLap);
+        }
+        else {
+          //Start seeking first infill start
+          algorithmMode = "SEEK";
+          algorithmCurrentOutline = 0;
+          algorithmCurrentPoint = lapEndVertex;
+          algorithmInfillIndex = 0;
+          if (intersectionPaths.empty()){
+            algorithmTarget = "BASE";  // nothing to infill (area narrower than one lane)
+          }
         }
       }
-      
-      NextX = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(0);
-      NextY = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(1);
     }
   }
   if (algorithmTarget == "BASE"){
@@ -738,18 +851,15 @@ std::vector<double> AlgorithmNextPoint(){
   targetPointLon = NextX;
   targetPointLat = NextY;
   
-  // A leg between neighbouring points of one outline runs along it: the mower must not swing
-  // out on the outline's side. Counter-clockwise, the inside is on the left going up the
-  // indices; outside the outer outline and inside an island is where the mower must not go.
+  // A leg from a point of a lap closer to the outline than MOWER_TURN_INSET runs along the outline:
+  // the mower must not swing out on its side. Laps go up the indices; counter-clockwise the
+  // inside is on their left. Everything planned on extOutlines keeps MOWER_TURN_INSET, where any
+  // turn stays inside.
   int edge = 0;
-  if (lastOutline == algorithmCurrentOutline && lastPoint >= 0){
-    long long n = extOutlines.at(algorithmCurrentOutline).size();
-    int dir = algorithmCurrentPoint == (lastPoint + 1) % n ? 1 : lastPoint == (algorithmCurrentPoint + 1) % n ? -1 : 0;
-    int ccw = SignedArea(extOutlines.at(algorithmCurrentOutline)) > 0 ? 1 : -1;
-    edge = dir * ccw * (algorithmCurrentOutline == 0 ? -1 : 1);
+  if (lastOnLapRing){
+    edge = SignedArea(outlines.at(0)) > 0 ? -1 : 1;
   }
-  lastOutline = algorithmCurrentOutline;
-  lastPoint = algorithmCurrentPoint;
+  lastOnLapRing = onLapRing;
 
   std::vector<double> returnList;
   returnList.push_back((double)NextX / 100.0);
@@ -772,6 +882,13 @@ void AlgorithmAbort(bool full_abort){
     
     if (algorithmMode == "OUTLINE"){
       algorithmMode = "SEEK";
+      // The way back runs on extOutlines[0]: join it where the lap is
+      if (!lapPath.empty()){
+        const std::vector<long long>& p = lapPath.at(lapPathIndex > 0 ? lapPathIndex - 1 : 0);
+        algorithmCurrentOutline = 0;
+        algorithmCurrentPoint = NearestPoint(extOutlines.at(0), p[0], p[1]);
+        algorithmLap = (int)lapRings.size();
+      }
     }
     else if (algorithmMode == "INFILL"){
       //End of infill
@@ -838,8 +955,10 @@ void AlgorithmReset() {
   targetPointLon = 0;
   targetPointLat = 0;
   nextTool = NAV_TOOL_KEEP;
-  lastOutline = -1;
-  lastPoint = -1;
+  lastOnLapRing = false;
+  algorithmLap = 0;
+  lapPath.clear();
+  lapPathIndex = 0;
 }
 
 void AlgorithmCaptureStart(){

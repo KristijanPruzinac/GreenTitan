@@ -49,7 +49,7 @@ static uint32_t teleport_deadline = 0;
 static double   teleport_target_x = 0;
 static double   teleport_target_y = 0;
 
-static NavPath    path;
+static NavPath&   path = *new NavPath();   // on the heap: static DRAM is full
 static NavTracker tracker;
 static bool       turning = false;      // on the spot: path start, a sharp corner, or far off heading
 static float      last_curvature = 0.0f;

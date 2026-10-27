@@ -46,6 +46,7 @@ void NavPath::warn_swing(int i) {
     float reach = 0.0f;
     if (b.edge == outer) reach = tail;
     if (i + 1 < count_ && nodes_[i + 1].edge == outer) reach = fmaxf(reach, front);
+    if (b.cut) reach -= turn_margin();
     float beyond = reach - w - cfg_->edge_clearance;
     if (beyond > 0.005f) cfg_->on_body_swing(b.x, b.y, beyond);
 }
@@ -220,8 +221,75 @@ bool NavPath::push(const NavWaypoint& wp, double axle_x, double axle_y) {
     // The previous waypoint is now a corner. Its curve depends on the corner after it (they
     // share a leg), so until that is known it is a stop; the corner before it is decided now.
     stop_corner(count_ - 2);
+    if (!nodes_[count_ - 3].fixed) cut_corner(count_ - 2);
     if (count_ >= 4 && !nodes_[count_ - 3].fixed) classify(count_ - 3);
     return true;
+}
+
+// How far inside its edge legs a corner has to be for a turn on the spot to keep the body inside
+// the clearance: the turn sweeps a circle of the body corner farthest from the axle.
+float NavPath::turn_margin() const {
+    const float w = cfg_->half_width;
+    return fmaxf(hypotf(cfg_->rear_overhang, w), hypotf(cfg_->front_overhang, w)) - w;
+}
+
+// Corner i along an edge on its outer side, where the edge curve can't fit (legs too short, e.g.
+// a small lawn, or close to a reversal): no forward turn there keeps the casters in, so the corner
+// moves inward by turn_margin from both legs and the robot turns there. Decided before the corner
+// before it, whose turn then ends on the moved leg. The corner's tip is left uncut. A tip too
+// narrow for that (the move back along a leg about as long as the leg) stays and is reported, and
+// so does the first corner: the robot is already on its leg, and turning onto a moved one would
+// swing it out too.
+void NavPath::cut_corner(int i) {
+    Node& b = nodes_[i];
+    const Node& a = nodes_[i - 1];
+    const Node& c = nodes_[i + 1];
+    if (b.cut || edge_n_ == 0 || i < 2) return;
+    float h_in  = atan2f((float)(b.y - a.y), (float)(b.x - a.x));
+    float h_out = atan2f((float)(c.y - b.y), (float)(c.x - b.x));
+    float turn = wrapf(h_out - h_in), at = fabsf(turn);
+    const float w = cfg_->half_width;
+    if (b.edge != (turn > 0.0f ? -1 : 1)) return;
+    if (body_swing(turn, 0.0f, cfg_->rear_overhang, w) - w <= cfg_->edge_swing) return;   // a gentle bend
+    // Room for the edge curve: the incoming leg less what the corner before takes of it (a gentle
+    // bend before it would be folded into the leg, see classify)
+    float len_in  = (float)hypot(b.x - a.x, b.y - a.y);
+    float len_out = (float)hypot(c.x - b.x, c.y - b.y);
+    float room_in = len_in;
+    {
+        const Node& p = nodes_[i - 2];
+        float ta = wrapf(h_in - atan2f((float)(a.y - p.y), (float)(a.x - p.x))), aa = fabsf(ta);
+        if (a.edge == b.edge && seg_dist(p.x, p.y, b.x, b.y, a.x, a.y) <= cfg_->path_tolerance) {
+            room_in = (float)hypot(b.x - p.x, b.y - p.y) - (p.fixed ? p.trim_out : 0.0f);
+        } else if (aa >= 0.01f) {
+            float d, out, inset, h, taken = 0.0f;
+            if (a.edge == (ta > 0.0f ? -1 : 1) && edge_fit(i - 1, ta, &d, &out, &inset, &h)) taken = out;
+            else if (aa <= cfg_->max_rounded_turn) taken = cfg_->corner_radius * tanf(aa / 2.0f);
+            room_in -= taken;
+        }
+    }
+    float d, out, inset, h;
+    if (edge_fit(i, turn, &d, &out, &inset, &h) && d <= room_in && out <= len_out) return;
+    // The point turn_margin inside both legs
+    float sg = turn > 0.0f ? 1.0f : -1.0f;
+    float n1x = -sinf(h_in) * sg, n1y = cosf(h_in) * sg, n2x = -sinf(h_out) * sg, n2y = cosf(h_out) * sg;
+    float den = 1.0f + n1x * n2x + n1y * n2y;
+    if (den < 0.1f) return;
+    float m = turn_margin();
+    float dx = m * (n1x + n2x) / den, dy = m * (n1y + n2y) / den;
+    if (m * tanf(at / 2.0f) > fminf(len_in, len_out) - cfg_->path_tolerance) return;   // back along each leg
+    b.x += dx;
+    b.y += dy;
+    b.cut = true;
+    // A corner before it that ends a leg off the edge (the way onto a lap) would now turn further
+    // inward right at the edge and swing out: it moves in with this one, the leg staying parallel
+    Node& pa = nodes_[i - 1];
+    if (pa.edge != b.edge && !pa.fixed) {
+        pa.x += m * n1x;
+        pa.y += m * n1y;
+        stop_corner(i - 1);
+    }
+    stop_corner(i);
 }
 
 bool NavPath::can_merge_last(const NavWaypoint& wp) const {
@@ -263,7 +331,7 @@ void NavPath::classify(int i) {
     // An edge corner needs a long straight run-in, and a recorded edge is rarely straight: a
     // gentle bend just before it (within path_tolerance of the line past it) joins its incoming
     // leg.
-    while (i >= 2) {
+    while (i >= 2 && !nodes_[i].cut) {
         const Node& p = nodes_[i - 2];
         const Node& a = nodes_[i - 1];
         const Node& b = nodes_[i];
@@ -317,7 +385,8 @@ void NavPath::classify(int i) {
     float tail = body_swing(b.turn, round ? r : 0.0f, cfg_->rear_overhang, cfg_->half_width);
     // The robot is on the first leg: the curve has to start ahead of it
     if (i == 1) room_in = fminf(room_in, (float)hypot(b.x - axle_x_, b.y - axle_y_));
-    if (b.edge == outer && tail - cfg_->half_width > cfg_->edge_swing && edge_corner(i, room_in, room_out)) {
+    // An edge curve may use all of the next leg: the corner after it was planned with that (cut_corner)
+    if (b.edge == outer && !b.cut && tail - cfg_->half_width > cfg_->edge_swing && edge_corner(i, room_in, len_out)) {
         // decided
     } else if (round) {
         b.kind = K_ROUND;
@@ -336,28 +405,35 @@ void NavPath::classify(int i) {
 // tool on the axle.
 bool NavPath::edge_corner(int i, float room_in, float room_out) {
     Node& b = nodes_[i];
-    float turn = fabsf(b.turn);
-    if (edge_n_ == 0 || cfg_->tool_offset > 1e-3f || sinf(turn) < NAV_EDGE_MIN_SIN) return false;
-    float ex, ey;
-    float h = edge_end(turn, &ex, &ey);
-    // Turning the rest on the spot swings the front out over an edge along the next leg: end the
-    // curve that much (beyond edge_swing) inside that leg
-    float inset = 0.0f;
-    if (i + 1 < count_ && nodes_[i + 1].edge == (b.turn > 0.0f ? -1 : 1))
-        inset = fmaxf(0.0f, body_swing(turn - h, 0.0f, cfg_->front_overhang, cfg_->half_width) -
-                            cfg_->half_width - cfg_->edge_swing);
-    // End point on the line `inset` inside the next leg: ey = out sin + inset cos,
-    // ex = d + out cos - inset sin
-    float out = (ey - inset * cosf(turn)) / sinf(turn);
-    float d = ex - out * cosf(turn) + inset * sinf(turn);
-    if (d < 0.0f || d > room_in || out < 0.0f || out > room_out) return false;
+    float d, out, inset, h;
+    if (!edge_fit(i, b.turn, &d, &out, &inset, &h) || d > room_in || out > room_out) return false;
     b.kind = K_EDGE;
     b.trim_in = d;
     b.trim_out = out;
     b.curvature = copysignf(1.0f, b.turn);
-    b.edge_pivot = h < turn - 0.01f;
+    b.edge_pivot = h < fabsf(b.turn) - 0.01f;
     b.edge_inset = inset;
     return true;
+}
+
+// Where the edge curve for corner i (turning by `turn`) starts before it (d) and ends after it
+// (out), and the heading h it turns before the rest is on the spot. False if it can't be driven.
+bool NavPath::edge_fit(int i, float turn, float* d, float* out, float* inset, float* h) const {
+    float at = fabsf(turn);
+    if (edge_n_ == 0 || cfg_->tool_offset > 1e-3f || sinf(at) < NAV_EDGE_MIN_SIN) return false;
+    float ex, ey;
+    *h = edge_end(at, &ex, &ey);
+    // Turning the rest on the spot swings the front out over an edge along the next leg: end the
+    // curve that much (beyond edge_swing) inside that leg
+    *inset = 0.0f;
+    if (i + 1 < count_ && nodes_[i + 1].edge == (turn > 0.0f ? -1 : 1))
+        *inset = fmaxf(0.0f, body_swing(at - *h, 0.0f, cfg_->front_overhang, cfg_->half_width) -
+                             cfg_->half_width - cfg_->edge_swing);
+    // End point on the line `inset` inside the next leg: ey = out sin + inset cos,
+    // ex = d + out cos - inset sin
+    *out = (ey - *inset * cosf(at)) / sinf(at);
+    *d = ex - *out * cosf(at) + *inset * sinf(at);
+    return *d >= 0.0f && *out >= 0.0f;
 }
 
 int NavPath::build() {

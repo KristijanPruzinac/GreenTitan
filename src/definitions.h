@@ -96,6 +96,11 @@ typedef struct {
 // the inner outlines. Turns swing the overhangs further out; the motion task warns where.
 #define MOWER_EDGE_CLEARANCE              0.05f  // m
 #define MOWER_EDGE_INSET                  (MOWER_HALF_WIDTH + MOWER_EDGE_CLEARANCE)
+// Infill rows and their turns keep this from every outline: there the body can turn on the spot
+// in any direction (it sweeps a circle of its farthest corner) and stays inside the clearance.
+// The strip between the first outline lap and it is mowed by further laps.
+#define MOWER_TURN_INSET                  (fmaxf(hypotf(MOWER_REAR_OVERHANG, MOWER_HALF_WIDTH), \
+                                                 hypotf(MOWER_FRONT_OVERHANG, MOWER_HALF_WIDTH)) + MOWER_EDGE_CLEARANCE)
 // Corners along an edge are driven so that the rear swings out at most this past the half
 // width; the rest of the clearance is for tracking error
 #define MOTION_EDGE_SWING                 0.02f  // m
