@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>greentitan_sim</name>
+  <version>0.1.0</version>
+  <description>GreenTitan mower on top of sim_env: mower model, lawn world and hardware-in-the-loop launch for the ESP32 firmware.</description>
+  <maintainer email="kikomali2517@gmail.com">kristijan</maintainer>
+  <license>GPL-3.0-only</license>
+
+  <exec_depend>sim_env</exec_depend>
+  <exec_depend>robot_package</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

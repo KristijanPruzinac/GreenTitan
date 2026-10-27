@@ -1,0 +1,22 @@
+# Generic example world: gently rolling ground with small bumps and a flat spawn pad.
+world:
+  name: example
+  physics: {engine: dart, step: 0.001, real_time_factor: 1.0}
+  origin: {latitude: 0.0, longitude: 0.0, altitude: 0.0}
+
+terrain:
+  type: mesh
+  tile_size: 5.0
+  size: [20.0, 20.0]
+  resolution: 0.05
+  seed: 1
+  friction: {mu: 0.8}
+  layers:
+    - {wavelength: 5.0, amplitude: 0.04}
+    - {wavelength: 0.5, amplitude: 0.006}
+  features:
+    - {type: random_mounds, count: 15, radius: [0.1, 0.25], height: [0.03, 0.08]}
+    - {type: flatten, position: [0.0, 0.0], radius: 1.0}
+
+objects:
+  - {name: box_1, shape: {box: [1.0, 1.0, 0.5]}, position: [4.0, 2.0], color: [0.6, 0.4, 0.2]}

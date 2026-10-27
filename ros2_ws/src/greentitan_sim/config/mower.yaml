@@ -1,0 +1,59 @@
+# GreenTitan Mower V3 for sim_env, wired for hardware-in-the-loop with the ESP32 firmware.
+# Robot frame: origin = midpoint of the drive axle on the ground, x forward (towards the big
+# drive wheels = front), y left, z up.
+# Dimensions: Fusion "Mower V3" v23 body bounding boxes + the 2026-10-26 wheel move (+54.5 mm per
+# side). Values marked "est." are estimates; replace them with measurements (docs/HARDWARE.md §8).
+robot:
+  name: greentitan
+  type: wheeled
+  body:
+    - {name: frame, shape: {box: [0.400, 0.240, 0.020]}, position: [-0.1125, 0.0, 0.119], mass: 0.8, color: [0.7, 0.7, 0.72]}
+    - {name: drive_left, shape: {box: [0.057, 0.137, 0.057]}, position: [0.0, 0.092, 0.0755], mass: 2.2, color: [0.15, 0.15, 0.15]}
+    - {name: drive_right, shape: {box: [0.057, 0.137, 0.057]}, position: [0.0, -0.092, 0.0755], mass: 2.2, color: [0.15, 0.15, 0.15]}
+    - {name: blade_motor, shape: {cylinder: [0.045, 0.100]}, position: [-0.180, 0.0, 0.122], mass: 1.4, color: [0.3, 0.3, 0.3]}
+    - {name: blade, shape: {cylinder: [0.100, 0.010]}, position: [-0.180, 0.0, 0.067], mass: 0.3, friction: {mu: 0.3}, color: [0.8, 0.8, 0.8]}  # est. diameter
+    - {name: battery, shape: {box: [0.115, 0.080, 0.075]}, position: [-0.080, 0.0, 0.170], mass: 0.7, collide: false, color: [0.1, 0.5, 0.1]}       # est. position
+    - {name: electronics, shape: {box: [0.120, 0.160, 0.050]}, position: [-0.260, 0.0, 0.155], mass: 0.8, collide: false, color: [0.2, 0.2, 0.6]}  # est.
+    - {name: cover, shape: {box: [0.480, 0.300, 0.140]}, position: [-0.120, 0.0, 0.220], mass: 1.5, friction: {mu: 0.4}, color: [0.85, 0.45, 0.1]}  # est. envelope
+  wheels:
+    - {name: left,  position: [0.0,  0.18235, 0.0749], radius: 0.0749, width: 0.0375, mass: 0.35, driven: true, friction: {mu: 0.5}}   # plastic on grass, est.
+    - {name: right, position: [0.0, -0.18235, 0.0749], radius: 0.0749, width: 0.0375, mass: 0.35, driven: true, friction: {mu: 0.5}}
+    - {name: caster_left,  position: [-0.3845,  0.1359, 0.0306], radius: 0.0306, mass: 0.1, caster: true, friction: {mu: 0.08}}
+    - {name: caster_right, position: [-0.3845, -0.1359, 0.0306], radius: 0.0306, mass: 0.1, caster: true, friction: {mu: 0.08}}
+  # 23HS32 (~2.4 Nm holding, ~1.3 Nm pull-out at low speed on 18 V, est.) x 10:1 MG23 x ~0.9
+  actuators: {mode: servo, max_torque: 12.0}
+  sensors:
+    # MPU6050, est. position in the electronics bay; mounted upside down (matches IMU_INVERT=true)
+    - {type: imu, name: imu, position: [-0.25, 0.0, 0.13], rpy: [3.14159265, 0.0, 0.0], rate: 200}
+    # Phone rear camera looking forward (needs rendering; enable when testing vision):
+    # - {type: camera, name: phone_cam, position: [-0.05, 0.0, 0.40], rpy: [0, 0.35, 0], rate: 10, width: 640, height: 480, hfov: 1.2}
+  ground_truth: {rate: 50}
+  spawn: {position: [0.0, 0.0], yaw: 0.0, clearance: 0.01}
+
+devices:
+  # u-blox C94-M8P rover: antenna above the blade motor, on the centreline. Height est.
+  - model: gnss
+    name: gnss
+    antenna_position: [-0.180, 0.0, 0.28]
+    rate: 5.0
+    latency: 0.04
+    initial_state: fix
+    outputs: {ubx_topic: hil/gnss_ubx, fix_topic: sim/gnss/fix, vel_topic: ''}
+  # MPU6050 as configured by the firmware: +-4 g, +-500 dps, DLPF 10 Hz. The firmware samples it
+  # at 10 Hz, so 50 Hz over the link is plenty.
+  - model: imu
+    name: imu
+    input: imu
+    output_topic: hil/imu
+    lpf_hz: 10
+    output_rate: 20        # firmware reads at 10 Hz; higher rates crowd the micro-ROS input buffers
+    gyro: {range: 8.727, resolution: 0.000266}
+    accel: {range: 39.23, resolution: 0.0012}
+  # DM542T + 23HS32 + MG23-G10. microsteps must match the driver DIP switches (HARDWARE.md §8).
+  # max_step_rate: the firmware toggles STEP once per 1 kHz motor-task tick.
+  - model: stepper
+    name: stepper
+    input_topic: hil/stepper_rate
+    motors:
+      - {joint: left_joint,  steps_per_rev: 200, microsteps: 1, gear_ratio: 10, sign: 1, max_step_rate: 500}
+      - {joint: right_joint, steps_per_rev: 200, microsteps: 1, gear_ratio: 10, sign: 1, max_step_rate: 500}

@@ -1,0 +1,13 @@
+# The same mower without firmware: drive it with cmd_vel (teleop_twist_keyboard) and read the
+# device outputs as plain ROS messages. Useful for checking the model and the terrain.
+extends: mower.yaml
+
+devices:
+  - {model: diff_drive, name: drive, cmd_topic: cmd_vel, left: [left], right: [right]}
+  - {model: imu, name: imu, input: imu, output_topic: imu/data, lpf_hz: 10}
+  - model: gnss
+    name: gnss
+    antenna_position: [-0.180, 0.0, 0.28]
+    rate: 5.0
+    initial_state: fix
+    outputs: {fix_topic: gnss/fix, vel_topic: gnss/vel}

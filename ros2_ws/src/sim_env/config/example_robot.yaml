@@ -1,0 +1,25 @@
+# Generic example: a small differential-drive rover with one rear ball caster and an IMU.
+robot:
+  name: rover
+  type: wheeled
+  body:
+    - {name: chassis, shape: {box: [0.40, 0.26, 0.10]}, position: [-0.08, 0.0, 0.10], mass: 4.0, color: [0.2, 0.4, 0.8]}
+  wheels:
+    - {name: left,  position: [0.0,  0.16, 0.06], radius: 0.06, width: 0.03, mass: 0.3, driven: true}
+    - {name: right, position: [0.0, -0.16, 0.06], radius: 0.06, width: 0.03, mass: 0.3, driven: true}
+    - {name: caster, position: [-0.24, 0.0, 0.025], radius: 0.025, mass: 0.05, caster: true}
+  actuators: {mode: servo, max_torque: 3.0}
+  sensors:
+    - {type: imu, name: imu, position: [0.0, 0.0, 0.12], rate: 100}
+  ground_truth: {rate: 50}
+  spawn: {position: [0.0, 0.0], yaw: 0.0, clearance: 0.01}
+
+devices:
+  - {model: diff_drive, name: drive, cmd_topic: cmd_vel, left: [left], right: [right]}
+  - {model: imu, name: imu, input: imu, output_topic: imu/data}
+  - model: gnss
+    name: gnss
+    antenna_position: [0.0, 0.0, 0.2]
+    rate: 5.0
+    initial_state: fix
+    outputs: {fix_topic: gnss/fix, vel_topic: gnss/vel}
