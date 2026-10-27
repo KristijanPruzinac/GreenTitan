@@ -372,9 +372,10 @@ void gps_topic_callback(dds_callback_context_t* context) {
     // - The antenna (base_link) sits GNSS_ANTENNA_BEHIND_AXLE behind the axle, so in a turn it
     //   also moves sideways by w x r. That part is removed with the gyro rate at the GPS epoch;
     //   the current rate is wrong whenever a turn starts or stops within the fix's latency.
-    // - Backwards travel (braking bounce, slide, reverse) is told apart from forwards by the
-    //   current yaw estimate, so it confirms the heading instead of flipping it. While the EKF's
-    //   yaw is still unknown (boot), the sign of the wheel command decides instead.
+    // - Forwards or backwards is the sign of the wheel step rates (a sign only, never odometry).
+    //   Wheels stopped (coasting, a bounce after braking): nothing is fused, the gyro holds the
+    //   heading. Not the yaw estimate: a flipped estimate would then confirm itself for good.
+    //   Wheels and motion disagreeing (pushed back, a forward->reverse change) fail the gate below.
     // - The yaw variance is what the velocity uncertainty gives, (sigma / speed)^2, so slow driving
     //   counts little. sigma combines the GPS sAcc and the lever-arm error from the gyro rate
     //   changing between samples. Below 3 sigma the direction is noise and nothing is fused.
@@ -393,13 +394,9 @@ void gps_topic_callback(dds_callback_context_t* context) {
     if (s_acc > 0 && axle_speed > 3.0 * sigma) {
         double travel = atan2(axle_n, axle_e);
         int dir = 0;                                                   // +1 forwards, -1 backwards
-        if (fused_yaw_var < (M_PI / 2) * (M_PI / 2)) {
-            dir = cos(travel - fused_yaw_for_twist) >= 0 ? 1 : -1;
-        } else {
-            float left, right;
-            motor_get_step_rates(&left, &right);
-            if (left + right > 0) dir = 1; else if (left + right < 0) dir = -1;
-        }
+        float left, right;
+        motor_get_step_rates(&left, &right);                           // ramped rates: where the wheels turn now
+        if (left + right > 0) dir = 1; else if (left + right < 0) dir = -1;
         if (dir != 0) {
             yaw_meas = normalize_angle(dir > 0 ? travel : travel + M_PI);
             yaw_var = (sigma / axle_speed) * (sigma / axle_speed);
