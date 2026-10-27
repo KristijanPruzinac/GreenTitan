@@ -17,7 +17,7 @@ extern bool CONFIG_DATUM;
 extern bool CONFIG_PATH;
 extern int GPS_ACC_THRESHOLD;
 
-extern HardwareSerial SerialDebug;
+#include "../debug/debug_serial.h"
 extern volatile bool TASKS_STARTED;
 
 void controller_task(void* parameter);

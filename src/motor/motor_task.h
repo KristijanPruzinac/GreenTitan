@@ -10,11 +10,12 @@
 
 #include <ContinuousStepper.h>
 
-extern HardwareSerial SerialDebug;
+#include "../debug/debug_serial.h"
 
 extern bool ENABLE_MOTORS;
 
 bool init_motors();
+void motor_get_step_rates(float* left, float* right);  // current steps/s (HIL output)
 
 void motor_task(void* parameter);
 

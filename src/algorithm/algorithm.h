@@ -12,7 +12,7 @@
 #include <vector>
 #include <math.h>
 
-extern HardwareSerial SerialDebug;
+#include "../debug/debug_serial.h"
 
 extern int MOWER_OVERLAP;
 extern int MAX_DEVIATION;

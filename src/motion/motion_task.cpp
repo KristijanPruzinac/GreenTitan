@@ -83,8 +83,12 @@ static double   teleport_target_y = 0;
 
 static bool rotate_only_active = false;
 
+static uint32_t last_pose_ms  = 0;
+static bool     pose_stale    = false;
+
 static void motion_start(double p_start_x, double p_start_y, double p_end_x, double p_end_y) {
     mode    = MOVING;
+    last_pose_ms = millis();   // grace period until the first pose arrives
     start_x = p_start_x;
     start_y = p_start_y;
     end_x   = p_end_x;
@@ -112,6 +116,11 @@ static void pose_updated_callback(dds_callback_context_t* context) {
     yaw = data->yaw;
     linear_vel = data->vx;
     rotation_vel = data->omega;
+    last_pose_ms = millis();
+    if (pose_stale) {
+        pose_stale = false;
+        SerialDebug.printf("[MOTION] Pose resumed\r\n");
+    }
     
     if (mode == MOVING) {
         float line_angle = AngleBetweenPoints(start_x, start_y, end_x, end_y);
@@ -282,6 +291,15 @@ void motion_task(void* parameter) {
             DDS_TAKE_MUTEX(&thread_context);
 
             // ------- THREAD LOOP CODE START -------
+
+            // Pose watchdog: without fresh poses the last MOTOR_MOVE would keep running.
+            // Stop the wheels but stay in MOVING, so the next pose resumes line following.
+            if (mode == MOVING && !pose_stale && (millis() - last_pose_ms) > MOTION_POSE_TIMEOUT_MS) {
+                pose_stale = true;
+                motor_data_t stop = { MOTOR_STOP, 0.0f, 0.0f };
+                DDS_PUBLISH("/motor", stop);
+                SerialDebug.printf("[MOTION] Pose timeout, motors stopped\r\n");
+            }
 
             if (teleport_active && (int32_t)(millis() - teleport_deadline) >= 0) {
                 teleport_active = false;

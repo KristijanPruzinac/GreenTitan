@@ -13,7 +13,7 @@
 #include "esp_dds.h"
 #include "esp_timer.h"
 
-extern HardwareSerial SerialDebug;
+#include "../debug/debug_serial.h"
 extern volatile bool TASKS_STARTED;
 
 extern bool ENABLE_GPS;

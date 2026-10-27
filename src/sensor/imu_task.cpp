@@ -1,4 +1,5 @@
 #include "imu_task.h"
+#include "../hil/hil.h"
 
 //Calibration
 static double gyro_x_offset = 0;
@@ -17,10 +18,11 @@ static sensors_event_t imu_acc, imu_gyro, imu_temp;
 static Adafruit_MPU6050 mpu;
 
 bool init_imu(){
-  if (SIMULATION_ENABLED){
+  if (SIMULATION_ENABLED) {
     calibration_completed = true;
     return true;
   }
+  if (HIL_ENABLED) return true;
 
   if (!mpu.begin()) {
     return false;
@@ -29,50 +31,42 @@ bool init_imu(){
   mpu.setAccelerometerRange(MPU6050_RANGE_4_G);
   mpu.setGyroRange(MPU6050_RANGE_500_DEG);
   mpu.setFilterBandwidth(MPU6050_BAND_10_HZ);
-  calibration_completed = true;
+  return true;
+}
+
+// Gyro bias from the first samples at rest. Runs on the same imu_read() stream in every
+// build (real, HIL), so the firmware sees identical behaviour. Accel is not offset: that
+// would also remove gravity and tilt.
+#define IMU_CALIBRATION_SAMPLES  (3 * IMU_UPDATE_FREQUENCY)   // 3 s
+#define IMU_CALIBRATION_MAX_STD  0.01                         // rad/s; above this the mower moved
+
+static bool imu_calibrate_step(){
+  static int n = 0;
+  static double sum[3], sum_sq[3];
+  double g[3] = { imu_gyro.gyro.x, imu_gyro.gyro.y, imu_gyro.gyro.z };
+  for (int i = 0; i < 3; i++) { sum[i] += g[i]; sum_sq[i] += g[i] * g[i]; }
+  if (++n < IMU_CALIBRATION_SAMPLES) return false;
+
+  double mean[3], max_std = 0;
+  for (int i = 0; i < 3; i++) {
+    mean[i] = sum[i] / n;
+    max_std = fmax(max_std, sqrt(fmax(sum_sq[i] / n - mean[i] * mean[i], 0.0)));
+    sum[i] = sum_sq[i] = 0;
+  }
+  n = 0;
+  if (max_std > IMU_CALIBRATION_MAX_STD) {
+    SerialDebug.printf("[IMU] Moving during gyro calibration (std %.3f rad/s), retrying\r\n", max_std);
+    return false;
+  }
+  gyro_x_offset = mean[0];
+  gyro_y_offset = mean[1];
+  gyro_z_offset = mean[2];
+  SerialDebug.printf("[IMU] Gyro bias %.4f %.4f %.4f rad/s\r\n", mean[0], mean[1], mean[2]);
   return true;
 }
 
 void imu_calibrate(){
-  if (SIMULATION_ENABLED) return;
-
-  //Init temp values
-  double gyro_x = 0;
-  double gyro_y = 0;
-  double gyro_z = 0;
-
-  double acc_x = 0;
-  double acc_y = 0;
-  double acc_z = 0;
-
-  //Read calibration data for 6s
-  int sample_size = 40;
-  int sample_delay = 150;
-  for (int i = 0; i < sample_size; i++){
-    mpu.getEvent(&imu_acc, &imu_gyro, &imu_temp);
-
-    gyro_x += imu_gyro.gyro.x;
-    gyro_y += imu_gyro.gyro.y;
-    gyro_z += imu_gyro.gyro.z;
-
-    acc_x += imu_acc.acceleration.x;
-    acc_y += imu_acc.acceleration.y;
-    acc_z += imu_acc.acceleration.z;
-
-    delay(sample_delay);
-  }
-
-  //Divide to get average value
-  gyro_x_offset = gyro_x / sample_size;
-  gyro_y_offset = gyro_y / sample_size;
-  gyro_z_offset = gyro_z / sample_size;
-
-  acc_x_offset = acc_x / sample_size;
-  acc_y_offset = acc_y / sample_size;
-  acc_z_offset = acc_z / sample_size;
-
-  //TODO: Check Mower is not moving during this time
-  calibration_completed = true;
+  calibration_completed = false;
 }
 
 static bool imu_read(){
@@ -86,7 +80,17 @@ static bool imu_read(){
       return true;
   }
 
-  if (!calibration_completed) return false;
+  if (HIL_ENABLED) {
+      hil_imu_sample_t s;
+      if (!hil_imu_get(&s)) return false;
+      imu_acc.acceleration.x = s.acc_x;
+      imu_acc.acceleration.y = s.acc_y;
+      imu_acc.acceleration.z = s.acc_z;
+      imu_gyro.gyro.x = s.gyro_x;
+      imu_gyro.gyro.y = s.gyro_y;
+      imu_gyro.gyro.z = s.gyro_z;
+      return true;
+  }
 
   mpu.getEvent(&imu_acc, &imu_gyro, &imu_temp);
 
@@ -128,7 +132,11 @@ void imu_task(void* parameter) {
 
             // ------- THREAD LOOP CODE START -------
 
-            if (imu_read()){
+            bool have_sample = imu_read();
+            if (have_sample && !calibration_completed) {
+              calibration_completed = imu_calibrate_step();
+            }
+            else if (have_sample){
               double gz;
               if (IMU_INVERT){
                 gz = -(imu_gyro.gyro.z - gyro_z_offset);

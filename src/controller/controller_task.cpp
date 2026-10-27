@@ -236,8 +236,7 @@ static void handle_obstacle() {
 
     SerialDebug.printf("[CTRL] Obstacle hit — skipping line\r\n");
     stop_motors();
-    AlgorithmAbort(false);
-    go_to_next_algorithm_point();    // continue from next point
+    AlgorithmAbort(false);           // already sends the next target
 }
 
 static void handle_rain() {

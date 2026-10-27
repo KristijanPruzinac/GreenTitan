@@ -14,7 +14,7 @@
 
 #include "../algorithm/algorithm.h"
 
-extern HardwareSerial SerialDebug;
+#include "../debug/debug_serial.h"
 extern volatile bool TASKS_STARTED;
 
 extern bool pending_path_publish;

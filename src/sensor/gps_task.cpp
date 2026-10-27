@@ -1,14 +1,20 @@
 #include "gps_task.h"
+#include "../hil/hil.h"
 
 static HardwareSerial SerialGPS(2);
 
+// Receiver byte source: the UART, or the simulator stream in HIL builds
+static int gps_available() { return HIL_ENABLED ? hil_gnss_available() : SerialGPS.available(); }
+static int gps_read_byte() { return HIL_ENABLED ? hil_gnss_read() : SerialGPS.read(); }
+
 //GPS is outputing UBX NAV PVT messages
 const unsigned char UBX_HEADER[] = { 0xB5, 0x62 };
+#define UBX_CLASS_NAV  0x01
+#define UBX_ID_NAV_PVT 0x07
+#define UBX_MAX_PAYLOAD 100
 
+// NAV-PVT payload, first 84 bytes (same layout on M8/M9/F9, which send 92)
 struct NAV_PVT {
-  unsigned char cls;
-  unsigned char id;
-  unsigned short len;
   unsigned long iTOW;          // GPS time of week of the navigation epoch (ms)
   
   unsigned short year;         // Year (UTC) 
@@ -43,15 +49,43 @@ struct NAV_PVT {
   short reserved2;             // Reserved
   unsigned long reserved3;     // Reserved
 };
+static_assert(sizeof(NAV_PVT) == 84, "NAV_PVT layout");
 
 NAV_PVT pvt;
 
-static void calcChecksum(unsigned char* CK) {
-  memset(CK, 0, 2);
-  for (int i = 0; i < (int)sizeof(NAV_PVT); i++) {
-    CK[0] += ((unsigned char*)(&pvt))[i];
-    CK[1] += CK[0];
+// Feeds one byte to the UBX frame parser. Returns true when a checksum-valid NAV-PVT
+// frame has completed; only then is pvt overwritten.
+static bool ubx_parse(unsigned char c) {
+  static unsigned char frame[4 + UBX_MAX_PAYLOAD];   // cls, id, len (LE), payload
+  static int fpos = 0;
+  static unsigned short len = 0;
+  static unsigned char ck_a = 0, ck_b = 0;
+
+  if (fpos < 2) {
+    fpos = (c == UBX_HEADER[fpos]) ? fpos + 1 : (c == UBX_HEADER[0] ? 1 : 0);
+    ck_a = ck_b = 0;
+    return false;
   }
+  int i = fpos - 2;                // index into frame[]
+  if (i < 4 || i < 4 + len) {      // header + payload: checksummed
+    frame[i] = c;
+    ck_a += c; ck_b += ck_a;
+    fpos++;
+    if (i == 3) {
+      len = frame[2] | (frame[3] << 8);
+      if (len > UBX_MAX_PAYLOAD) fpos = 0;   // too long for us (or garbage)
+    }
+    return false;
+  }
+  if (i == 4 + len) {              // CK_A
+    if (c != ck_a) fpos = 0; else fpos++;
+    return false;
+  }
+  fpos = 0;                        // CK_B
+  if (c != ck_b) return false;
+  if (frame[0] != UBX_CLASS_NAV || frame[1] != UBX_ID_NAV_PVT || len < sizeof(NAV_PVT)) return false;
+  memcpy(&pvt, &frame[4], sizeof(NAV_PVT));
+  return true;
 }
 
 static void gps_read() {
@@ -84,45 +118,13 @@ static void gps_read() {
     return;
   }
 
-  static int fpos = 0;
-  static unsigned char checksum[2];
-  const int payloadSize = sizeof(NAV_PVT);
-
-  while ( SerialGPS.available() ) {
-    byte c = SerialGPS.read();
-    if ( fpos < 2 ) {
-      if ( c == UBX_HEADER[fpos] )
-        fpos++;
-      else
-        fpos = 0;
-    }
-    else {      
-      if ( (fpos-2) < payloadSize )
-        ((unsigned char*)(&pvt))[fpos-2] = c;
-
-      fpos++;
-
-      if ( fpos == (payloadSize+2) ) {
-        calcChecksum(checksum);
-      }
-      else if ( fpos == (payloadSize+3) ) {
-        if ( c != checksum[0] )
-          fpos = 0;
-      }
-      else if ( fpos == (payloadSize+4) ) {
-        fpos = 0;
-        if ( c == checksum[1] ) {
-          break; // returnVal = true;
-        }
-      }
-      else if ( fpos > (payloadSize+4) ) {
-        fpos = 0;
-      }
-    }
+  bool new_frame = false;
+  while ( gps_available() ) {
+    if ( ubx_parse(gps_read_byte()) ) new_frame = true;
   }
 
-  //Publish GPS data if accuracy is valid
-  if (pvt.hAcc > 0 && pvt.fixType >= 3) { // 3 = 3D fix, 4 = GNSS+DeadReckoning
+  //Publish GPS data once per new valid frame
+  if (new_frame && pvt.hAcc > 0 && pvt.fixType >= 3) { // 3 = 3D fix, 4 = GNSS+DeadReckoning
     double heading_deg = (double)pvt.heading / 1e5;
     double heading_rad = heading_deg * M_PI / 180.0;
 
@@ -164,6 +166,7 @@ static void gps_read() {
 
 bool init_gps(){
   if (SIMULATION_ENABLED) return true;
+  if (HIL_ENABLED) { hil_init(); return true; }  // stream only fills once the executor spins
 
   SerialGPS.begin(GPS_BAUDRATE, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
   SerialGPS.setTimeout(COMMUNICATION_TIMEOUT);

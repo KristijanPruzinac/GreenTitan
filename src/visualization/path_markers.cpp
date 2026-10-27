@@ -2,7 +2,7 @@
 
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){} }
 
-extern HardwareSerial SerialDebug;
+#include "../debug/debug_serial.h"
 
 #define MAX_PATH_DATA_DOUBLES  64
 

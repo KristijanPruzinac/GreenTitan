@@ -6,6 +6,15 @@
 #define HARDCODED_DATUM_AND_PATH false
 #define PRINT_BT_COMMANDS false
 
+// Hardware-in-the-loop: sensors and motors talk to the simulator over micro-ROS (env esp32dev_hil)
+#ifndef HIL_ENABLED
+#define HIL_ENABLED 0
+#endif
+// Mirror the debug console over micro-ROS (esp/log, esp/console)
+#ifndef DEBUG_OVER_ROS
+#define DEBUG_OVER_ROS 0
+#endif
+
 #define MOTION_TELEPORT_DELAY_MS  1000
 
 //DEBUG
@@ -78,6 +87,7 @@ typedef struct {
 #define MOTION_HEADING_ERROR_MIN_SPEED    0.26f  // ~15° - 50% speed here
 #define MOTION_MIN_SPEED_SCALE            0.5f
 #define MOTION_HEADING_ERROR_ROTATE_ONLY  0.52f  // ~30° - rotate only above
+#define MOTION_POSE_TIMEOUT_MS            500    // stop driving if /fused_pose (10 Hz) goes quiet
 
 //Datum capture
 #define DATUM_CAPTURE_DRIVE_DURATION_MS  800
@@ -112,8 +122,11 @@ typedef struct {
 #define MOTOR_A_DIR_PIN 32
 
 #define MOTOR_STEPS_PER_REV 200
-#define WHEEL_RADIUS 0.075f
-#define WHEEL_BASE 0.28f
+#define MOTOR_MICROSTEPS 1      // must match the DM542T DIP setting
+#define MOTOR_GEAR_RATIO 10     // MG23-G10
+#define MOTOR_STEPS_PER_WHEEL_REV (MOTOR_STEPS_PER_REV * MOTOR_MICROSTEPS * MOTOR_GEAR_RATIO)
+#define WHEEL_RADIUS 0.0749f    // Mower V3 CAD, not yet measured
+#define WHEEL_BASE 0.3647f      // Mower V3 CAD track, not yet measured
 #define MAX_LINEAR_VEL  0.5f
 #define MAX_ANGULAR_VEL 1.0f
 

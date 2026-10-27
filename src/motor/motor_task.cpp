@@ -6,7 +6,7 @@ static dds_thread_context_t thread_context;
 ContinuousStepper<StepperDriver> motorA;
 ContinuousStepper<StepperDriver> motorB;
 
-static double MOTOR_METERS_PER_STEP = 2 * PI * WHEEL_RADIUS / MOTOR_STEPS_PER_REV;
+static double MOTOR_METERS_PER_STEP = 2 * PI * WHEEL_RADIUS / MOTOR_STEPS_PER_WHEEL_REV;
 
 double odom_x = 0;
 double odom_y = 0;
@@ -36,6 +36,11 @@ bool init_motors() {
   motorB.setAcceleration(MOTOR_ACCELERATION);
 
   return true;
+}
+
+void motor_get_step_rates(float* left, float* right) {
+  *left = motorA.speed();
+  *right = motorB.speed();
 }
 
 static void motor_stop() {
@@ -88,8 +93,8 @@ static void motor_move_vel(double linear_vel, double angular_vel) {
     double left_rotational_speed = left_speed / WHEEL_RADIUS;
     double right_rotational_speed = right_speed / WHEEL_RADIUS;
 
-    double left_rotational_speed_steps = left_rotational_speed * MOTOR_STEPS_PER_REV;
-    double right_rotational_speed_steps = right_rotational_speed * MOTOR_STEPS_PER_REV;
+    double left_rotational_speed_steps = left_rotational_speed / (2 * PI) * MOTOR_STEPS_PER_WHEEL_REV;
+    double right_rotational_speed_steps = right_rotational_speed / (2 * PI) * MOTOR_STEPS_PER_WHEEL_REV;
     
     if (SIMULATION_ENABLED) {
         sim_left_speed = left_speed;

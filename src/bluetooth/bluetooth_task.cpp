@@ -84,7 +84,7 @@ static void handle_message(String MessageGroup, String ActionGroup, String DataG
         }
         if (ActionGroup == "START") {
             controller_signal_t signal = { SIGNAL_START_MOWING };
-            dds_result_t result = DDS_PUBLISH("/controllemotorr/signal", signal);
+            dds_result_t result = DDS_PUBLISH("/controller/signal", signal);
             if (result != DDS_SUCCESS) {
                 bt_send("MOWER/START/FAIL");
             } else {
