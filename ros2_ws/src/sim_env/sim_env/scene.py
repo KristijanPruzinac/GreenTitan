@@ -18,11 +18,13 @@ def _bridge_entries(iface, world_name):
     t = iface['topics']
     entries = [
         {'ros_topic_name': '/clock', 'gz_topic_name': f'/world/{world_name}/clock',
-         'ros_type_name': 'rosgraph_msgs/msg/Clock', 'gz_type_name': 'gz.msgs.Clock', 'direction': 'GZ_TO_ROS'},
+         'ros_type_name': 'rosgraph_msgs/msg/Clock', 'gz_type_name': 'gz.msgs.Clock', 'direction': 'GZ_TO_ROS',
+         'lazy': True},  # physics rate; only bridged while something uses sim time
         {'ros_topic_name': t['ground_truth'], 'gz_topic_name': t['ground_truth'],
          'ros_type_name': 'nav_msgs/msg/Odometry', 'gz_type_name': 'gz.msgs.Odometry', 'direction': 'GZ_TO_ROS'},
         {'ros_topic_name': t['joint_states'], 'gz_topic_name': t['joint_states'],
-         'ros_type_name': 'sensor_msgs/msg/JointState', 'gz_type_name': 'gz.msgs.Model', 'direction': 'GZ_TO_ROS'},
+         'ros_type_name': 'sensor_msgs/msg/JointState', 'gz_type_name': 'gz.msgs.Model', 'direction': 'GZ_TO_ROS',
+         'lazy': True},
     ]
     for j in iface['joints']:
         entries.append({'ros_topic_name': t['joint_cmd'](j), 'gz_topic_name': t['joint_cmd'](j),

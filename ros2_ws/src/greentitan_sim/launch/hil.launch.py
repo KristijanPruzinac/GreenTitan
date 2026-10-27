@@ -21,7 +21,9 @@ def _setup(context):
     arg = lambda name: LaunchConfiguration(name).perform(context)  # noqa: E731
     actions = [IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('sim_env'), 'launch', 'sim.launch.py')),
-        launch_arguments={'world': arg('world'), 'robot': arg('robot'), 'gui': arg('gui')}.items())]
+        # wall time: the firmware and the EKF run on it anyway, and /clock at ~1 kHz starved the agent
+        launch_arguments={'world': arg('world'), 'robot': arg('robot'), 'gui': arg('gui'),
+                          'sim_time': 'false'}.items())]
 
     if arg('agent') == 'true':
         device = arg('device')

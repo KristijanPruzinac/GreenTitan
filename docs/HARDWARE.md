@@ -30,7 +30,7 @@ Current design (2026-10-26):
 - **Drivers:** 2× **DM542T** (STEP/DIR).
   - Check the supply voltage: DM542T drivers are typically rated about 20–50 VDC, and an 18 V pack runs about 16–20 V. Torque at speed also drops at low voltage.
   - The microstep DIP setting must match the firmware's steps/rev.
-- **Speed budget:** at the firmware's software step-rate cap (about 500 steps/s), 10:1 gearing at full step gives only about 0.12 m/s at the wheel. Hardware step generation is needed (see ARCHITECTURE Known issues #1–2).
+- **Speed budget:** STEP comes from the ESP32 LEDC hardware since 2026-10-27 (ARCHITECTURE Known issue #1), so there's no firmware step-rate cap. At full step, 0.3 m/s is ~1275 steps/s (≈380 motor rpm), and the 0.5 m/s limit is ~2125 steps/s (≈640 rpm), where the 23HS32's torque is well down.
 - StepperOnline STEP models download from `files.omc-stepperonline.com/<model>.STEP`.
 
 ### Geometry used by firmware and sim (from Mower V3 CAD, 2026-10-27; not yet measured)
@@ -134,6 +134,7 @@ These are what the software must survive:
 - [ ] Cut the 23HS32 shafts to ~12–13 mm, assemble the motor + gearbox + bracket, and test-fit.
 - [ ] Verify DM542T supply voltage against the 18 V Einhell pack. Choose and record the microstep setting.
 - [ ] Measure and record the Mower V3 wheel radius and wheel base for the firmware.
+- [ ] Bring-up checks for the firmware constants (`src/definitions.h`): the gear ratio is exactly 10:1 (mark the wheel and count 10 motor turns), `MOTOR_MICROSTEPS` matches the DM542T DIP, both wheels turn forward on `w` (stepper wiring sign), and the STEP pulses look clean on a scope at 100 and 2000 steps/s.
 - [ ] Record where the MPU6050 is mounted and which way it faces, and confirm `IMU_INVERT`.
 - [ ] Battery voltage divider for GPIO36, and a rain sensor on GPIO39 (or the phone's camera or other sensors).
 - [ ] Bump/obstacle sensing (phone accelerometer and cameras are candidates).

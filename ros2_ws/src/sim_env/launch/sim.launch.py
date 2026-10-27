@@ -53,6 +53,7 @@ def _setup(context):
     world_file = LaunchConfiguration('world').perform(context)
     robot_file = LaunchConfiguration('robot').perform(context)
     gui = LaunchConfiguration('gui').perform(context).lower() == 'true'
+    sim_time = LaunchConfiguration('sim_time').perform(context).lower() == 'true'
     s = scene_builder.build(world_file, robot_file)
     x, y, z, _, _, yaw = s['spawn']
 
@@ -65,9 +66,9 @@ def _setup(context):
              arguments=['-world', s['world_name'], '-file', s['robot_sdf'], '-name', s['robot_name'],
                         '-x', str(x), '-y', str(y), '-z', str(z), '-Y', str(yaw)]),
         Node(package='ros_gz_bridge', executable='parameter_bridge', name='sim_bridge', output='screen',
-             parameters=[{'config_file': s['bridge_yaml'], 'use_sim_time': True}]),
+             parameters=[{'config_file': s['bridge_yaml'], 'use_sim_time': sim_time}]),
     ]
-    return actions + device_nodes(s)
+    return actions + device_nodes(s, sim_time)
 
 
 def generate_launch_description():
@@ -75,6 +76,9 @@ def generate_launch_description():
         DeclareLaunchArgument('world', description='world YAML'),
         DeclareLaunchArgument('robot', description='robot YAML'),
         DeclareLaunchArgument('gui', default_value='false', description='start the Gazebo GUI'),
+        # false: nodes run on wall time and /clock is not bridged (it runs at the physics rate,
+        # ~1 kHz, and costs each Python node most of a core). Only valid while the sim runs at RTF 1.
+        DeclareLaunchArgument('sim_time', default_value='true', description='use /clock in the sim nodes'),
         # gz-transport defaults to the WSL/LAN interface; loopback keeps discovery reliable and local.
         SetEnvironmentVariable('GZ_IP', os.environ.get('GZ_IP', '127.0.0.1')),
         OpaqueFunction(function=_setup),

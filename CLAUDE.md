@@ -50,7 +50,7 @@ ros2_ws/src/robot_package/   ROS 2 (ament_python) package
   robot_package/path_visualizer.py
 ros2_ws/src/sim_env/     generic Gazebo sim: YAML world/robot → SDF, device models (gnss, imu, stepper)
 ros2_ws/src/greentitan_sim/  mower + lawn configs, hil.launch.py, console tool
-ros2_ws/build|install|log   colcon output (committed by mistake; don't edit)
+ros2_ws/build|install|log   colcon output (gitignored)
 tools/android/           phone provisioning (adb debloat, Termux, camera over adb)
 cad/                     Python scripts that drive Fusion 360 / render studies (roof, canopy, cowl, ...)
 outputs/                 generated CAD exports/renders (mostly gitignored)
@@ -76,7 +76,7 @@ cd ros2_ws && colcon build --packages-select robot_package && source install/set
 ros2 launch robot_package robot.launch.xml
 ```
 
-Simulation, hardware-in-the-loop (WSL2 Ubuntu 24.04 or Linux, Jazzy + Gazebo Harmonic; setup: `ros2_ws/src/sim_env/scripts/install_ubuntu.sh`). Build colcon outside the repo, because `ros2_ws/build|install|log` are tracked:
+Simulation, hardware-in-the-loop (WSL2 Ubuntu 24.04 or Linux, Jazzy + Gazebo Harmonic; setup: `ros2_ws/src/sim_env/scripts/install_ubuntu.sh`). Build colcon outside the repo (the Windows checkout is slow from WSL):
 ```bash
 colcon --log-base ~/.cache/greentitan_ws/log build --symlink-install   --build-base ~/.cache/greentitan_ws/build --install-base ~/.cache/greentitan_ws/install
 source ~/.cache/greentitan_ws/install/setup.bash

@@ -50,10 +50,10 @@ devices:
     gyro: {range: 8.727, resolution: 0.000266}
     accel: {range: 39.23, resolution: 0.0012}
   # DM542T + 23HS32 + MG23-G10. microsteps must match the driver DIP switches (HARDWARE.md §8).
-  # max_step_rate: the firmware toggles STEP once per 1 kHz motor-task tick.
+  # No max_step_rate: STEP comes from LEDC hardware (2026-10-27), the firmware clamps speed itself.
   - model: stepper
     name: stepper
     input_topic: hil/stepper_rate
     motors:
-      - {joint: left_joint,  steps_per_rev: 200, microsteps: 1, gear_ratio: 10, sign: 1, max_step_rate: 500}
-      - {joint: right_joint, steps_per_rev: 200, microsteps: 1, gear_ratio: 10, sign: 1, max_step_rate: 500}
+      - {joint: left_joint,  steps_per_rev: 200, microsteps: 1, gear_ratio: 10, sign: 1}
+      - {joint: right_joint, steps_per_rev: 200, microsteps: 1, gear_ratio: 10, sign: 1}

@@ -69,7 +69,7 @@ The algorithm isn't a task. Its functions run inside controller_task (`Algorithm
 | Topic | Type | Dir | Frame | Notes |
 |---|---|---|---|---|
 | `gps/odom` | nav_msgs/Odometry | ESP→host | `odom` / child `base_link` | ENU metres from datum; yaw = GPS heading-of-motion; twist = **world-frame** east/north velocity |
-| `imu/data` | sensor_msgs/Imu | ESP→host | `imu_link` | orientation_covariance[0] = -1 (no orientation); gyro var 0.01, accel var 0.1 |
+| `imu/data` | sensor_msgs/Imu | ESP→host | `imu_link` | **Best effort** (2026-10-27), like the EKF subscription. orientation_covariance[0] = -1 (no orientation); gyro var 0.01, accel var 0.1 |
 | `esp/datum` | sensor_msgs/NavSatFix | ESP→host | – | Datum lat/lon. Published once; nothing consumes it since `datum_relay` was removed (2026-06-11) |
 | `algo/path_data` | std_msgs/Float64MultiArray | ESP→host | – | Packed outlines + scan lines, max 64 doubles |
 | `/odometry/filtered/global` | nav_msgs/Odometry | host→ESP | – | EKF output (remapped from `/odometry/filtered`) |
@@ -83,9 +83,9 @@ The algorithm isn't a task. Its functions run inside controller_task (`Algorithm
 
 ## 3. Boot sequence (`setup()`)
 
-1. Start SerialDebug, `dds_init()`, then micro-ROS over `Serial` (921600). **Block until the agent is pinged.** Create the publishers and the subscriber, then `sync_time()`. The clock comes from the agent once at boot and is never resynced. On failure the board calls `error()` and hangs.
+1. Start SerialDebug, `dds_init()`, then micro-ROS over `Serial` (921600). **Block until the agent is pinged.** Create the publishers and the subscriber, then `sync_time()`. The clock comes from the agent once at boot and is never resynced. On failure the board calls `error()` and hangs. After boot, `ros_link_check()` in the main loop pings the agent once per second. After 3 misses it destroys all micro-ROS entities and keeps the loop and the DDS tasks running. When the agent answers again it re-runs `init_micro_ros()` and republishes the path (2026-10-27). The motors stop through the motion pose timeout (Known issue #3) while the link is down.
 2. You get 1.5 s to press `p` on the debug console, which clears the saved datum.
-3. `init_peripherals()`: IMU, GPS, motors, BT, Preferences. **The first failure `return`s and skips everything after it**, configuration init included.
+3. `init_peripherals()`: IMU, GPS, motors, BT, Preferences. Each one that fails is disabled on its own; the rest still start.
 4. `LoadConfiguration()`. If nothing is saved, defaults are written. If a path is stored, it is replanned and queued for publishing.
 5. If `HARDCODED_DATUM_AND_PATH` is set, a 2×2 m test field with a round island is installed.
 6. Start the tasks, then controller_task. After 1.5 s it sets `TASKS_STARTED`, and sensors start publishing internally.
@@ -237,6 +237,10 @@ Findings that shaped the models:
 - DART heightmap collision is broken in Harmonic (robot climbs 1 mm/s, invisible walls). Terrain is tiled OBJ meshes (with vertex normals; DART crashes without them).
 - Wheel joints use JointController velocity mode with an effort cap (stepper-like: holds speed until torque runs out). Force-PID chatters with small wheel inertia.
 - Casters are fixed low-friction spheres; ball-joint casters drift.
+- HIL runs the sim nodes on wall time (`sim.launch.py sim_time:=false`); `/clock` and `joint_states` are lazy bridges. `/clock` comes at the physics rate (~1 kHz), and each Python device node spent ~70% of a core on it. That starved the micro-ROS agent, so reliable publishes stalled and the firmware loop fell to ~2 Hz. Wall time is only right while Gazebo runs at RTF 1.
+- Main loop over the WSL relay (2026-10-27): ~13 Hz instead of 100 Hz while `imu/data` was reliable, because every reliable publish waits for the agent's ack. Now ~24 Hz, with `gps/odom` 5 Hz, `imu/data` 10 Hz and the EKF 8–9 Hz. The remaining blocking publishes are `gps/odom` (Odometry is too large for a best-effort frame) and `esp/log`. A zero session timeout on `esp/log` made it stop for good once the reliable stream backed up, so it was reverted.
+- Inbound messages are still dropped sometimes (console keys), when bursts overflow the micro-ROS input buffers. Test scripts confirm each key via `esp/log`.
+- Mission test (2026-10-27): drove a ~2 m square, recorded it with `c o p … e`, then pressed `t`. Mowing started and followed line segments for 150 s without finishing. The mower went up to ~0.4 m outside the recorded outline near one corner, probably overshoot in the line-end turns; not analysed yet. Agent kill → `[ROS] Agent lost` → `[ROS] Agent reconnected` ~10 s later, with all streams back at normal rates.
 
 **HIL build vs real build.** `HIL_ENABLED` changes only the byte/sample sources below; tasks, rates, parsers, control and topics are the same code.
 
@@ -246,7 +250,7 @@ Findings that shaped the models:
 | `init_gps()` | waits ≤1 s for any valid frame, else disables GPS | returns true at once (stream only fills after the executor spins) | Real boot can disable GPS if the receiver is silent; HIL can't |
 | IMU sample | MPU6050 over I2C, DLPF 10 Hz | `hil/imu` (sim models DLPF, ranges, noise); latest sample taken at the same 10 Hz | Real I2C errors not modelled |
 | Gyro calibration | first 3 s of samples, at rest | same code on the HIL samples | None |
-| Steppers | ContinuousStepper drives STEP/DIR | same, still running; `speed()` is also published | Sim applies the 500 steps/s cap (Known issue #1); real missed steps/stall are not modelled beyond the torque cap |
+| Steppers | ContinuousStepper ramp, STEP pulses from LEDC | same, still running; `speed()` is also published | Real missed steps/stall are not modelled beyond the torque cap |
 | Stepper wiring sign | real wiring | assumed +1 both sides | Check on hardware |
 | Debug console | UART1 | also mirrored to `esp/log` / `esp/console` (`DEBUG_OVER_ROS`) | Extra ~400 B publishes per 10 ms tick when there is output |
 | Datum | saved or `HARDCODED_DATUM_AND_PATH` | same; lawn origin is 45.5 / 18.0 to match the hardcoded datum | – |
@@ -279,8 +283,9 @@ Stamps on sensor messages come from the ESP32 clock, which is synced to the agen
 Ordered roughly by impact. Fix them inside the existing architecture.
 
 1. **Stepper step rate cap.** ContinuousStepper's software ticker toggles STEP once per `loop()` call, and `motor_task` calls it at 1 kHz. That gives **at most ~500 steps/s**, quantized to 1 ms periods. The 10:1 gearboxes make this much worse: at full step (200/rev), wheel speed tops out at about 0.25 rev/s, roughly 0.12 m/s with r = 75 mm. Microstepping on the DM542T reduces it further. Moving to hardware step generation fixes it, for example ContinuousStepper's oscillator ticker on LEDC, or FastAccelStepper on the ESP32 RMT/MCPWM.
+   - **Fixed 2026-10-27:** `motor_task.cpp` uses `OscillatorTicker<LedcOscillator>`, so STEP is a 50 % LEDC square wave (channels 0 and 2, separate timers, 8-bit). `loop()` at 1 kHz now only runs the acceleration ramp. `MOTOR_ACCELERATION` was scaled ×10 for the gearbox (150 → 1500 steps/s², still ~0.35 m/s² at the wheel). HIL: 0 → 1275 steps/s (0.3 m/s) in ~1 s; the sim's `max_step_rate` cap was removed. *Watch:* the ramp updates once per step period but at most every 1 ms, so above 1000 steps/s the effective acceleration drops (half at 2000 steps/s). Below 20 steps/s the output is off. Pulses have not been checked with a scope, and a speed change re-configures the LEDC timer, which can shorten one pulse during ramps. 0.5 m/s is ~2125 full steps/s (≈640 motor rpm), where the 23HS32's torque is well down, especially at low supply voltage. In HIL, the board's GPIO19/26 now output real pulses.
 2. **Wheel-speed conversion.** `motor_move_vel` computes steps/s as `rad/s × MOTOR_STEPS_PER_REV`. That is missing `/2π`, ignores the DM542T microstep setting and has no gear ratio. Odometry uses `steps × 2πr/200`, which is inconsistent with it. Add `GEAR_RATIO` and `MICROSTEPS` constants and fix the formula. Re-measure `WHEEL_RADIUS` and `WHEEL_BASE` for Mower V3, where the wheels moved out 54.5 mm per side.
-   - **Fixed 2026-10-27:** steps/s = rad/s / 2π × `MOTOR_STEPS_PER_WHEEL_REV` (200 × `MOTOR_MICROSTEPS` 1 × `MOTOR_GEAR_RATIO` 10), odometry uses the same constant. `WHEEL_RADIUS` 0.0749, `WHEEL_BASE` 0.3647 from CAD (not measured). *Watch:* commanded step rates are ~1.6× higher than before (0.3 m/s → ~1270 steps/s vs 800), both above the #1 cap, so the mower drives at ≤0.12 m/s until #1 is fixed. `MOTOR_MICROSTEPS` must match the DM542T DIP switches, or speed is off by that factor. Turn rate now matches the command (the old 0.28 base made turns ~23% slow), so the heading PID effectively has more gain.
+   - **Fixed 2026-10-27:** steps/s = rad/s / 2π × `MOTOR_STEPS_PER_WHEEL_REV` (200 × `MOTOR_MICROSTEPS` 1 × `MOTOR_GEAR_RATIO` 10), odometry uses the same constant. `WHEEL_RADIUS` 0.0749, `WHEEL_BASE` 0.3647 from CAD (not measured). *Watch:* commanded step rates are ~1.6× higher than before (0.3 m/s → ~1270 steps/s vs 800). `MOTOR_GEAR_RATIO` 10 is the catalogue value of the MG23-G10 and hasn't been checked on the part. `MOTOR_MICROSTEPS` must match the DM542T DIP switches, or speed is off by that factor. Turn rate now matches the command (the old 0.28 base made turns ~23% slow), so the heading PID effectively has more gain.
 3. **No pose timeout.** If `/fused_pose` stops (host or link down), motion_task stops updating, but the last `MOTOR_MOVE` keeps running. Add a watchdog that stops the motors.
    - **Fixed 2026-10-27:** motion_task stops the motors if no `/fused_pose` for `MOTION_POSE_TIMEOUT_MS` (500 ms) while MOVING, stays MOVING, and resumes on the next pose. *Watch:* an EKF slower than 2 Hz, or a long micro-ROS hiccup, now causes stop/start jerks; teleport mode is unaffected (not MOVING).
 4. **GPS yaw front/back ambiguity**, and **twist published in the world frame as if it were the body frame** (section 5).
@@ -300,9 +305,10 @@ Ordered roughly by impact. Fix them inside the existing architecture.
 13. `algo/path_data` is capped at 64 doubles, so real fields are silently not visualized.
 14. `SIMULATION_ENABLED` path is broken (section 11).
 15. Clock sync happens only at boot, so long runs drift against host time.
-16. Repo hygiene: `ros2_ws/build`, `install` and `log` are committed. `package.xml` dependencies are incomplete.
+16. Repo hygiene: `robot_package/package.xml` dependencies are incomplete. (`ros2_ws/build|install|log` untracked 2026-10-27.)
 17. `GPS_ACC_THRESHOLD` is still at the 3000 mm debug value.
 18. **espressif32 platform pinned to 6.13.0 (2026-10-27).** Platform 8.x breaks `micro_ros_platformio` (CCFLAGS become lists). Unpin when micro_ros_platformio supports it.
+19. **Mower leaves the outline in HIL (seen 2026-10-27).** In the first full HIL mission it went up to ~0.4 m past a recorded outline corner. Check the line-end turns and the planner's outline offset against ground truth before field tests.
 
 ## 15. Planned direction (proposed, not yet decided unless dated)
 
