@@ -182,13 +182,14 @@ void init_micro_ros(){
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, NavSatFix),
         "esp/datum"));
 
-    // IMU publisher
-    RCCHECK(rclc_publisher_init_default(
+    // IMU publisher: best effort like the EKF subscription. A reliable publish waits for the
+    // agent's ack (one serial round-trip each), which stalled this loop.
+    RCCHECK(rclc_publisher_init_best_effort(
         &imu_publisher, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
         "imu/data"));
 
-    // GPS publisher
+    // GPS publisher: stays reliable, Odometry (~700 B) doesn't fit a best-effort frame
     RCCHECK(rclc_publisher_init_default(
         &gps_publisher, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
@@ -493,6 +494,62 @@ void hil_ros_tick() {
             RCSOFTCHECK(rcl_publish(&log_publisher, &log_msg, NULL));
         }
     }
+}
+
+// Tear down every micro-ROS entity without waiting for the (gone) agent
+static void destroy_micro_ros() {
+    rmw_context_t* rmw_context = rcl_context_get_rmw_context(&support.context);
+    (void)rmw_uros_set_context_entity_destroy_session_timeout(rmw_context, 0);
+
+    RCSOFTCHECK(rcl_publisher_fini(&datum_publisher, &node));
+    RCSOFTCHECK(rcl_publisher_fini(&imu_publisher, &node));
+    RCSOFTCHECK(rcl_publisher_fini(&gps_publisher, &node));
+    RCSOFTCHECK(rcl_publisher_fini(&path_data_publisher, &node));
+    RCSOFTCHECK(rcl_subscription_fini(&fused_pose_subscriber, &node));
+    if (HIL_ENABLED) {
+        RCSOFTCHECK(rcl_subscription_fini(&hil_gnss_subscriber, &node));
+        RCSOFTCHECK(rcl_subscription_fini(&hil_imu_subscriber, &node));
+        RCSOFTCHECK(rcl_publisher_fini(&hil_stepper_publisher, &node));
+    }
+    if (DEBUG_OVER_ROS) {
+        RCSOFTCHECK(rcl_subscription_fini(&console_subscriber, &node));
+        RCSOFTCHECK(rcl_publisher_fini(&log_publisher, &node));
+    }
+    RCSOFTCHECK(rclc_executor_fini(&executor));
+    RCSOFTCHECK(rcl_node_fini(&node));
+    RCSOFTCHECK(rclc_support_fini(&support));
+}
+
+// Agent watchdog, called every loop tick. Pings once per second; after 3 misses the
+// entities are destroyed and recreated as soon as the agent answers again (agent or
+// host restart, cable pulled). Returns true while the link is up.
+#define ROS_PING_PERIOD_MS 1000
+#define ROS_PING_MISSES    3
+static bool ros_link_check() {
+    static bool connected = true;   // setup() only returns once the agent answered
+    static int misses = 0;
+    static unsigned long last_ping = 0;
+
+    unsigned long now = millis();
+    if (now - last_ping < ROS_PING_PERIOD_MS) return connected;
+    last_ping = now;
+
+    bool alive = rmw_uros_ping_agent(100, 1) == RMW_RET_OK;
+    if (connected) {
+        misses = alive ? 0 : misses + 1;
+        if (misses >= ROS_PING_MISSES) {
+            SerialDebug.println("[ROS] Agent lost, waiting for it");
+            destroy_micro_ros();
+            connected = false;
+        }
+    } else if (alive) {
+        init_micro_ros();
+        connected = true;
+        misses = 0;
+        if (CONFIG_PATH) pending_path_publish = true;   // the new host side has no path yet
+        SerialDebug.println("[ROS] Agent reconnected");
+    }
+    return connected;
 }
 
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
@@ -909,8 +966,10 @@ void loop() {
                 }
             }
 
-            hil_ros_tick();
-            RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
+            if (ros_link_check()) {
+                hil_ros_tick();
+                RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
+            }
 
             DDS_PROCESS_THREAD_MESSAGES(&thread_context);
             DDS_GIVE_MUTEX(&thread_context);

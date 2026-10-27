@@ -9,6 +9,7 @@
 #include "esp_timer.h"
 
 #include <ContinuousStepper.h>
+#include <ContinuousStepper/Tickers/OscillatorTicker.hpp>
 
 #include "../debug/debug_serial.h"
 

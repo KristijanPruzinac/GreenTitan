@@ -2,9 +2,48 @@
 
 static dds_thread_context_t thread_context;
 
+// STEP pulses come from the LEDC peripheral, not from loop(): the software ticker
+// toggled STEP once per 1 kHz loop() and topped out at ~500 steps/s.
+// loop() still runs the acceleration ramp, once per step period but at most every 1 ms.
+class LedcOscillator {
+public:
+  void init(uint8_t pin) {
+    channel_ = next_channel_;
+    next_channel_ += 2;            // channels 0, 2 -> separate LEDC timers
+    ledcSetup(channel_, 1000, 8);
+    ledcAttachPin(pin, channel_);
+    ledcWrite(channel_, 0);
+  }
+
+  void start(frequency_t frequency) {
+    if (frequency != frequency_) {
+      ledcChangeFrequency(channel_, frequency, 8);
+      frequency_ = frequency;
+    }
+    if (!active_) {
+      ledcWrite(channel_, 128);    // 50 % duty
+      active_ = true;
+    }
+  }
+
+  void stop() {
+    ledcWrite(channel_, 0);
+    active_ = false;
+  }
+
+  frequency_t minFrequency() const { return 20; }  // below this the motor just stops
+
+private:
+  static uint8_t next_channel_;
+  uint8_t channel_ = 0;
+  frequency_t frequency_ = 0;
+  bool active_ = false;
+};
+uint8_t LedcOscillator::next_channel_ = 0;
+
 // Create the stepper motor objects
-ContinuousStepper<StepperDriver> motorA;
-ContinuousStepper<StepperDriver> motorB;
+ContinuousStepper<StepperDriver, OscillatorTicker<LedcOscillator>> motorA;
+ContinuousStepper<StepperDriver, OscillatorTicker<LedcOscillator>> motorB;
 
 static double MOTOR_METERS_PER_STEP = 2 * PI * WHEEL_RADIUS / MOTOR_STEPS_PER_WHEEL_REV;
 

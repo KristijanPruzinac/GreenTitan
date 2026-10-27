@@ -131,7 +131,7 @@ typedef struct {
 #define MAX_ANGULAR_VEL 1.0f
 
 #define MOTOR_MAX_SPEED 200
-#define MOTOR_ACCELERATION 150
+#define MOTOR_ACCELERATION 1500 // steps/s^2 at the motor, ~0.35 m/s^2 at the wheel (150 before the 10:1 gearbox)
 
 // Manual mode
 #define MANUAL_LINEAR_SPEED   0.3f
