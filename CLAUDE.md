@@ -42,10 +42,14 @@ src/                     ESP32 firmware (PlatformIO, env esp32dev)
   configuration/         NVS Preferences persistence
   visualization/         packs the planned path into a Float64MultiArray for RViz
   simulation/            sim_task (scripted motor pattern, not started anywhere)
+  hil/                   HIL byte/sample sources (env esp32dev_hil only)
+  debug/                 DebugSerial: UART1 console, optionally mirrored to esp/log + esp/console
 ros2_ws/src/robot_package/   ROS 2 (ament_python) package
   config/ekf.yaml        THE localization config
   launch/robot.launch.xml   static TFs + ekf_node + path_visualizer
   robot_package/path_visualizer.py
+ros2_ws/src/sim_env/     generic Gazebo sim: YAML world/robot → SDF, device models (gnss, imu, stepper)
+ros2_ws/src/greentitan_sim/  mower + lawn configs, hil.launch.py, console tool
 ros2_ws/build|install|log   colcon output (committed by mistake; don't edit)
 tools/android/           phone provisioning (adb debloat, Termux, camera over adb)
 cad/                     Python scripts that drive Fusion 360 / render studies (roof, canopy, cowl, ...)
@@ -71,6 +75,18 @@ source /opt/ros/jazzy/setup.bash
 cd ros2_ws && colcon build --packages-select robot_package && source install/setup.bash
 ros2 launch robot_package robot.launch.xml
 ```
+
+Simulation, hardware-in-the-loop (WSL2 Ubuntu 24.04 or Linux, Jazzy + Gazebo Harmonic; setup: `ros2_ws/src/sim_env/scripts/install_ubuntu.sh`). Build colcon outside the repo, because `ros2_ws/build|install|log` are tracked:
+```bash
+colcon --log-base ~/.cache/greentitan_ws/log build --symlink-install   --build-base ~/.cache/greentitan_ws/build --install-base ~/.cache/greentitan_ws/install
+source ~/.cache/greentitan_ws/install/setup.bash
+pio run -e esp32dev_hil -t upload                                  # firmware with HIL sources
+ros2 launch greentitan_sim hil.launch.py device:=/dev/ttyUSB0       # Linux
+# WSL2: on Windows `python ros2_ws/src/sim_env/scripts/serial_tcp_bridge.py COM10 --host <wsl ip>` (not localhost: its forwarder jams after a reconnect), then in WSL:
+GZ_IP=127.0.0.1 ros2 launch greentitan_sim hil.launch.py gui:=true
+ros2 run greentitan_sim console                                     # debug console over ROS
+```
+Without firmware: `hil.launch.py robot:=<share>/config/mower_teleop.yaml agent:=false` and drive with `teleop_twist_keyboard`. HIL-vs-real differences are listed in ARCHITECTURE §11.
 
 There are no automated tests. The `test/` folders only hold the PlatformIO and ament templates.
 

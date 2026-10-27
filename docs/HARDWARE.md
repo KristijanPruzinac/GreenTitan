@@ -33,6 +33,18 @@ Current design (2026-10-26):
 - **Speed budget:** at the firmware's software step-rate cap (about 500 steps/s), 10:1 gearing at full step gives only about 0.12 m/s at the wheel. Hardware step generation is needed (see ARCHITECTURE Known issues #1–2).
 - StepperOnline STEP models download from `files.omc-stepperonline.com/<model>.STEP`.
 
+### Geometry used by firmware and sim (from Mower V3 CAD, 2026-10-27; not yet measured)
+
+Origin: midpoint between the drive wheel centres, x forward (big-wheel end), y left.
+
+| Item | Value |
+|---|---|
+| Drive wheel radius | 74.9 mm (`WHEEL_RADIUS`) |
+| Track (wheel centre to centre) | 364.7 mm (`WHEEL_BASE`) |
+| Casters | x −384.5 mm, y ±135.9 mm, r 30.6 mm |
+| GNSS antenna | x −180 mm, z 280 mm (est.) |
+| IMU (MPU6050) | x −250 mm, z 130 mm, mounted upside down (`IMU_INVERT`) |
+
 ## 3. Electronics
 
 | Part | Role | Notes |

@@ -43,7 +43,7 @@ The ESP32 owns everything that acts: mission logic, the planner, motion control 
 |---|---|---|---|---|
 | `loop()` in main.cpp (bridge + console) | 10 ms | 3072 | `/datum/set`, `/imu`, `/gps` | ROS topics, `/fused_pose`, `/motor` (manual), `/controller/signal` (console) |
 | `motor_task` | 1 ms (1 kHz) | 2048 | `/motor`, `/sim/pose_set` | – |
-| `imu_task` | 100 ms | 2048 | – | `/imu` |
+| `imu_task` | 100 ms | 4096 | – | `/imu` |
 | `gps_task` | 200 ms | 2816 | – | `/gps` |
 | `motion_task` | 100 ms (logic runs per pose) | 2816 | `/fused_pose`, `/motion/command` | `/motor`, `/controller/signal` |
 | `controller_task` | 200 ms | 4096 | `/controller/signal`, `/gps` | `/motor`, `/motion/command`, `/datum/set` |
@@ -73,6 +73,11 @@ The algorithm isn't a task. Its functions run inside controller_task (`Algorithm
 | `esp/datum` | sensor_msgs/NavSatFix | ESP→host | – | Datum lat/lon. Published once; nothing consumes it since `datum_relay` was removed (2026-06-11) |
 | `algo/path_data` | std_msgs/Float64MultiArray | ESP→host | – | Packed outlines + scan lines, max 64 doubles |
 | `/odometry/filtered/global` | nav_msgs/Odometry | host→ESP | – | EKF output (remapped from `/odometry/filtered`) |
+| `hil/gnss_ubx` | std_msgs/UInt8MultiArray | host→ESP | – | **HIL build only.** Raw UBX bytes from the simulated receiver; replaces UART2 |
+| `hil/imu` | sensor_msgs/Imu | host→ESP | – | **HIL build only.** Simulated MPU6050 sample; replaces I2C |
+| `hil/stepper_rate` | std_msgs/Float32MultiArray | ESP→host | – | **HIL build only.** [left, right] `ContinuousStepper::speed()` in steps/s, 100 Hz |
+| `esp/log` | std_msgs/String | ESP→host | – | `DEBUG_OVER_ROS` only. Everything printed to `SerialDebug` |
+| `esp/console` | std_msgs/String | host→ESP | – | `DEBUG_OVER_ROS` only. Keys fed to the debug console as if typed on UART1 |
 
 **Gating:** IMU and GPS reach ROS only after the datum has been published (`datum_published`). If no datum is saved, the EKF gets nothing and there is no fused pose.
 
@@ -217,7 +222,34 @@ The planner state is strings (`algorithmTarget`, `algorithmMode`) plus indices i
 
 Earlier 2D ROS simulations had trouble with global coordinates and couldn't model terrain (tilt, bumps, slip).
 
-**Requirement for any new simulator:** it replaces only the drivers, meaning the producers of `/gps` and `/imu` and the consumer of `/motor`, or equivalently the ROS sensor topics. Everything else runs unchanged. See Planned direction.
+**Requirement for any new simulator:** it replaces only the drivers, meaning the producers of `/gps` and `/imu` and the consumer of `/motor`, or equivalently the ROS sensor topics. Everything else runs unchanged.
+
+### Gazebo hardware-in-the-loop (2026-10-27)
+
+Two ROS packages in `ros2_ws/src`:
+
+- **`sim_env`**: generic and robot-agnostic. YAML world (procedural terrain: FFT noise layers, slopes, mounds, flat pads; objects; GNSS degradation zones) and YAML robot (body parts, wheels, sensors, device models) are turned into SDF at launch, cached in `~/.cache/sim_env/scenes/`. Device models are ROS nodes that turn Gazebo ground truth into what a real part would output: `gnss` (RTK fix/float/single Markov states, correlated bias, latency, UBX NAV-PVT bytes), `imu` (bias, drift, noise density, scale error, DLPF, range clipping, quantisation), `stepper` (steps/s → wheel rad/s through microsteps and gearbox, rate cap, command timeout), `diff_drive`.
+- **`greentitan_sim`**: only config and launch for this mower: `config/mower.yaml` (Mower V3 geometry, masses marked *est.*), `config/lawn.yaml`, `launch/hil.launch.py`, and the `console` tool.
+
+Data flow: Gazebo → `gnss`/`imu` device nodes → `hil/gnss_ubx`, `hil/imu` → micro-ROS → firmware (`env:esp32dev_hil`) → `hil/stepper_rate` → `stepper` node → Gazebo joints. The EKF and everything downstream are the normal ones.
+
+Findings that shaped the models:
+- DART heightmap collision is broken in Harmonic (robot climbs 1 mm/s, invisible walls). Terrain is tiled OBJ meshes (with vertex normals; DART crashes without them).
+- Wheel joints use JointController velocity mode with an effort cap (stepper-like: holds speed until torque runs out). Force-PID chatters with small wheel inertia.
+- Casters are fixed low-friction spheres; ball-joint casters drift.
+
+**HIL build vs real build.** `HIL_ENABLED` changes only the byte/sample sources below; tasks, rates, parsers, control and topics are the same code.
+
+| Area | Real (`esp32dev`) | HIL (`esp32dev_hil`) | Effect |
+|---|---|---|---|
+| GNSS bytes | UART2 at 19200 | `hil/gnss_ubx` into a StreamBuffer, read by the same `ubx_parse()` | None on parsing. No UART framing errors or baud limit in HIL |
+| `init_gps()` | waits ≤1 s for any valid frame, else disables GPS | returns true at once (stream only fills after the executor spins) | Real boot can disable GPS if the receiver is silent; HIL can't |
+| IMU sample | MPU6050 over I2C, DLPF 10 Hz | `hil/imu` (sim models DLPF, ranges, noise); latest sample taken at the same 10 Hz | Real I2C errors not modelled |
+| Gyro calibration | first 3 s of samples, at rest | same code on the HIL samples | None |
+| Steppers | ContinuousStepper drives STEP/DIR | same, still running; `speed()` is also published | Sim applies the 500 steps/s cap (Known issue #1); real missed steps/stall are not modelled beyond the torque cap |
+| Stepper wiring sign | real wiring | assumed +1 both sides | Check on hardware |
+| Debug console | UART1 | also mirrored to `esp/log` / `esp/console` (`DEBUG_OVER_ROS`) | Extra ~400 B publishes per 10 ms tick when there is output |
+| Datum | saved or `HARDCODED_DATUM_AND_PATH` | same; lawn origin is 45.5 / 18.0 to match the hardcoded datum | – |
 
 ## 12. ROS 2 package (`ros2_ws/src/robot_package`)
 
@@ -248,14 +280,21 @@ Ordered roughly by impact. Fix them inside the existing architecture.
 
 1. **Stepper step rate cap.** ContinuousStepper's software ticker toggles STEP once per `loop()` call, and `motor_task` calls it at 1 kHz. That gives **at most ~500 steps/s**, quantized to 1 ms periods. The 10:1 gearboxes make this much worse: at full step (200/rev), wheel speed tops out at about 0.25 rev/s, roughly 0.12 m/s with r = 75 mm. Microstepping on the DM542T reduces it further. Moving to hardware step generation fixes it, for example ContinuousStepper's oscillator ticker on LEDC, or FastAccelStepper on the ESP32 RMT/MCPWM.
 2. **Wheel-speed conversion.** `motor_move_vel` computes steps/s as `rad/s × MOTOR_STEPS_PER_REV`. That is missing `/2π`, ignores the DM542T microstep setting and has no gear ratio. Odometry uses `steps × 2πr/200`, which is inconsistent with it. Add `GEAR_RATIO` and `MICROSTEPS` constants and fix the formula. Re-measure `WHEEL_RADIUS` and `WHEEL_BASE` for Mower V3, where the wheels moved out 54.5 mm per side.
+   - **Fixed 2026-10-27:** steps/s = rad/s / 2π × `MOTOR_STEPS_PER_WHEEL_REV` (200 × `MOTOR_MICROSTEPS` 1 × `MOTOR_GEAR_RATIO` 10), odometry uses the same constant. `WHEEL_RADIUS` 0.0749, `WHEEL_BASE` 0.3647 from CAD (not measured). *Watch:* commanded step rates are ~1.6× higher than before (0.3 m/s → ~1270 steps/s vs 800), both above the #1 cap, so the mower drives at ≤0.12 m/s until #1 is fixed. `MOTOR_MICROSTEPS` must match the DM542T DIP switches, or speed is off by that factor. Turn rate now matches the command (the old 0.28 base made turns ~23% slow), so the heading PID effectively has more gain.
 3. **No pose timeout.** If `/fused_pose` stops (host or link down), motion_task stops updating, but the last `MOTOR_MOVE` keeps running. Add a watchdog that stops the motors.
+   - **Fixed 2026-10-27:** motion_task stops the motors if no `/fused_pose` for `MOTION_POSE_TIMEOUT_MS` (500 ms) while MOVING, stays MOVING, and resumes on the next pose. *Watch:* an EKF slower than 2 Hz, or a long micro-ROS hiccup, now causes stop/start jerks; teleport mode is unaffected (not MOVING).
 4. **GPS yaw front/back ambiguity**, and **twist published in the world frame as if it were the body frame** (section 5).
 5. **GPS parser publishes stale or partial data.** `gps_read()` writes bytes straight into the global `pvt` while parsing. It then publishes `pvt` every 200 ms tick with a fresh timestamp, whether or not a new frame was completed and checksum-verified that tick. Parse into a buffer, and publish only on a valid new frame.
+   - **Fixed 2026-10-27:** `ubx_parse()` checks sync, class/id, length (≤100) and the checksum, and copies into `pvt` only on a complete valid NAV-PVT; `/gps` publishes only after a new frame. The old struct expected the 84-byte (M6) payload; M8/M9/F9 send 92, so the checksum **never** matched before and every publish was built from whatever bytes were last written. Any payload ≥84 is accepted now. *Watch:* if the receiver is set to output something other than NAV-PVT, nothing is published anymore (before, garbage was); GPS can now publish at < 5 Hz when frames straddle poll ticks, and `init_gps()` only succeeds on a valid frame.
 6. **BT `MOWER/START` is broken.** It publishes to the misspelled topic `"/controllemotorr/signal"`.
+   - **Fixed 2026-10-27:** topic is `/controller/signal`. *Watch:* BT START now actually starts mowing.
 7. **Return-to-base and docking are empty** (`go_to_base`, `go_to_base_exit`). Rain and low battery only stop the mower. Battery (GPIO36) and rain (GPIO39) are never read.
 8. **Obstacle handling probably skips a waypoint.** `AlgorithmAbort()` already calls `AlgorithmNextPoint()` and sends a target, and then `handle_obstacle()` calls `go_to_next_algorithm_point()` again.
+   - **Fixed 2026-10-27:** `handle_obstacle()` no longer calls `go_to_next_algorithm_point()`. *Watch:* if `AlgorithmAbort` is called while the target is already BASE it sends nothing, so the mower stops and waits (it used to get the next point). `AlgorithmAbort` still calls `.at(0)` on the next point without checking for the end of the mission.
 9. **Gyro bias is never calibrated** (`imu_calibrate()` is unused). The accel offsets are also 0, so `acc_z` includes gravity.
+   - **Fixed 2026-10-27 (gyro only):** imu_task averages the first 3 s of samples (30 at 10 Hz) into the gyro offsets and publishes nothing until done; it restarts the window if any axis std > 0.01 rad/s (mower moving). Accel offsets stay 0, so `acc_z` still includes gravity (intended). *Watch:* the mower must be still for 3 s after boot; vibration on the bench can keep it retrying (logged as `[IMU] Moving during gyro calibration`). `GYRO_DEADBAND` (0.04 rad/s) was hiding a large part of the bias before and may be lowerable now. The calibration log's float `printf` overflowed the 2048-byte IMUTask stack (panic seen in HIL), so the stack is now 4096.
 10. `init_peripherals()` early `return` on failure skips the remaining peripherals and Preferences init.
+   - **Fixed 2026-10-27:** each peripheral is tried and disabled on its own. *Watch:* e.g. with a dead IMU the motors and BT now come up and the mower can drive.
 11. `DATUM_CAPTURE_ACTIVE` is never set, and the "drive to capture datum" constants are unused. Datum capture is instant.
 12. Planner leftovers: the `1.109` line-spacing factor from degree coordinates, `lon/lat` naming, `int` casts in `AlgorithmGetPathString`.
 13. `algo/path_data` is capped at 64 doubles, so real fields are silently not visualized.
@@ -263,6 +302,7 @@ Ordered roughly by impact. Fix them inside the existing architecture.
 15. Clock sync happens only at boot, so long runs drift against host time.
 16. Repo hygiene: `ros2_ws/build`, `install` and `log` are committed. `package.xml` dependencies are incomplete.
 17. `GPS_ACC_THRESHOLD` is still at the 3000 mm debug value.
+18. **espressif32 platform pinned to 6.13.0 (2026-10-27).** Platform 8.x breaks `micro_ros_platformio` (CCFLAGS become lists). Unpin when micro_ros_platformio supports it.
 
 ## 15. Planned direction (proposed, not yet decided unless dated)
 
@@ -273,12 +313,5 @@ Ordered roughly by impact. Fix them inside the existing architecture.
 
   See `HARDWARE.md` § Phone.
 - **Heading gate** for the front/back ambiguity (section 5). Use commanded-vs-GPS speed mismatch for slip/stall/"hit something" detection, not for localization.
-- **Simulation:** Gazebo (Harmonic) on a PC with:
-  - a field heightmap
-  - the diff-drive mower with gearbox speed limits and wheel slip
-  - an IMU on the chassis
-  - NavSat at the real datum
-  - both cameras
-
-  Run it hardware-in-the-loop: the real ESP32 firmware, with only the sensor and motor drivers swapped for sim I/O. Gazebo's Gaussian GPS noise doesn't reproduce RTK behaviour (correlated drift, float/fix jumps). So tune the filter with **rosbags recorded in the field**, and record a bag on every field test.
+- **Simulation (implemented 2026-10-27, section 11):** Gazebo Harmonic HIL with procedural mesh terrain, the mower with gearbox/step-rate limits, MPU6050 and RTK GNSS device models at the real datum. Cameras are supported by `sim_env` but not yet on the mower. Gaussian-plus-Markov GNSS noise is still not field RTK behaviour, so keep tuning the filter with **rosbags recorded in the field**, and record a bag on every field test.
 - **Cameras:** molehill, obstacle and person detection first (a small TFLite model). The A12 (Helio P35) is likely too weak for real-time visual SLAM. Visual "return home around obstacles" comes later, possibly off-board.
