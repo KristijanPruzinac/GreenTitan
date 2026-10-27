@@ -213,9 +213,6 @@ static void pose_updated_callback(dds_callback_context_t* context) {
         double along_to_go = seg_len > 1e-3
             ? ((end_x - x) * seg_dx + (end_y - y) * seg_dy) / seg_len
             : distance_to_goal;
-        // The fused pose is ~0.35 s old when it arrives (HIL: 10 cm behind ground truth at
-        // 0.3 m/s), so brake for where the mower is now. linear_vel is the EKF's GPS velocity.
-        along_to_go -= fmaxf(linear_vel, 0.0f) * MOTION_POSE_LATENCY_S;
         if (along_to_go < 0.0) along_to_go = 0.0;
         float base_speed = fminf(MOTION_FORWARD_SPEED_NORMAL,
                                  sqrtf(2.0f * MOTION_GOAL_DECEL * (float)along_to_go));

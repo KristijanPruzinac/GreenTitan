@@ -52,7 +52,7 @@ typedef struct {
 #define GYRO_SCL_PIN 22
 
 #define GYRO_DEADBAND 0.04f
-#define GPS_YAW_MAX_TURN_RATE 0.15f   // rad/s: GPS heading is fused only below this gyro rate
+#define GNSS_ANTENNA_BEHIND_AXLE 0.180f   // m, antenna (base_link) behind the wheel axle, Mower V3 CAD
 
 typedef struct {
     float acc_x;
@@ -95,7 +95,6 @@ typedef struct {
 #define MOTION_MIN_SPEED_SCALE            0.5f
 #define MOTION_HEADING_ERROR_ROTATE_ONLY  0.52f  // ~30° - rotate only above
 #define MOTION_POSE_TIMEOUT_MS            500    // stop driving if /fused_pose (10 Hz) goes quiet
-#define MOTION_POSE_LATENCY_S             0.35f  // s, age of /fused_pose on arrival (HIL 2026-10-27)
 #define MOTION_STALL_DIST                0.10f  // m: driving forward but moved less than this ...
 #define MOTION_STALL_TIME_MS              4000   // ... for this long = stalled (obstacle signal)
 #define MOTION_ROTATE_TIMEOUT_MS          10000  // rotate-only longer than this = stalled (180 deg ~3.5 s)

@@ -88,6 +88,17 @@ static bool ubx_parse(unsigned char c) {
   return true;
 }
 
+// Seconds since 1970-01-01 UTC (days-from-civil, proleptic Gregorian)
+static int64_t utc_to_epoch(int y, int m, int d, int hh, int mm, int ss) {
+  y -= m <= 2;
+  int era = y / 400;
+  int yoe = y - era * 400;
+  int doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+  int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  int64_t days = (int64_t)era * 146097 + doe - 719468;
+  return days * 86400 + hh * 3600 + mm * 60 + ss;
+}
+
 static void gps_read() {
   if (SIMULATION_ENABLED) {
     // Simulated GPS – generate realistic heading and speed based on simulated odometry
@@ -146,8 +157,15 @@ static void gps_read() {
         .vel_accuracy = (double)pvt.sAcc / 1000.0,   // same as speed accuracy
     };
 
+    // Stamp with the receiver's epoch time (UTC), not the arrival time: the solution is
+    // output latency + poll period old, and the EKF replays it at the right moment.
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
+    if ((pvt.valid & 0x07) == 0x07) {   // validDate | validTime | fullyResolved
+      int64_t t = utc_to_epoch(pvt.year, pvt.month, pvt.day, pvt.hour, pvt.minute, pvt.second) * 1000000000LL + pvt.nano;
+      ts.tv_sec = t / 1000000000LL;
+      ts.tv_nsec = t % 1000000000LL;
+    }
     gpsData.timestamp_sec = ts.tv_sec;
     gpsData.timestamp_nsec = ts.tv_nsec;
 

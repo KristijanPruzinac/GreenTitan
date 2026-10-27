@@ -264,7 +264,34 @@ void datum_set_callback(dds_callback_context_t* context) {
     datum_publish_count = 0;
 }
 
-static float recent_turn_rate = 0.0f;   // rad/s, see the GPS yaw gate
+// Recent gyro z samples (rad/s) with their stamps, so the GPS yaw can use the turn rate at the
+// GPS epoch (the fix arrives ~0.2 s late). 16 samples at 10 Hz cover the EKF's 1 s history.
+#define GYRO_HISTORY 16
+static struct { double t; float gz; } gyro_hist[GYRO_HISTORY];
+static int gyro_hist_n = 0, gyro_hist_head = 0;   // head = next slot to write
+
+// Gyro z at time t, interpolated. *spread = change between the two samples around t: how far the
+// true rate can be off there (0 in a steady turn, large where a turn starts or stops).
+static float gyro_z_at(double t, float* spread) {
+    *spread = 0.0f;
+    if (gyro_hist_n == 0) return 0.0f;
+    int newest = (gyro_hist_head + GYRO_HISTORY - 1) % GYRO_HISTORY;
+    int prev = (newest + GYRO_HISTORY - 1) % GYRO_HISTORY;
+    if (t >= gyro_hist[newest].t) {
+        if (gyro_hist_n > 1) *spread = fabsf(gyro_hist[newest].gz - gyro_hist[prev].gz);
+        return gyro_hist[newest].gz;
+    }
+    for (int k = 1; k < gyro_hist_n; k++) {
+        int a = (newest + GYRO_HISTORY - k) % GYRO_HISTORY;      // older sample
+        int b = (a + 1) % GYRO_HISTORY;
+        if (t >= gyro_hist[a].t) {
+            double f = (t - gyro_hist[a].t) / (gyro_hist[b].t - gyro_hist[a].t);
+            *spread = fabsf(gyro_hist[b].gz - gyro_hist[a].gz);
+            return gyro_hist[a].gz + f * (gyro_hist[b].gz - gyro_hist[a].gz);
+        }
+    }
+    return gyro_hist[(gyro_hist_head + GYRO_HISTORY - gyro_hist_n) % GYRO_HISTORY].gz;   // oldest
+}
 
 void imu_topic_callback(dds_callback_context_t* context) {
     IMU_data_t* data = (IMU_data_t*)context->message_data.data;
@@ -296,11 +323,19 @@ void imu_topic_callback(dds_callback_context_t* context) {
 
     RCSOFTCHECK(rcl_publish(&imu_publisher, &imu_msg, NULL));
 
-    // Recent turn rate for the GPS yaw gate: peak |gyro z| that decays over ~0.5 s (10 Hz IMU)
-    recent_turn_rate = fmaxf(fabsf(data->gyro_z), recent_turn_rate * 0.7f);
+    double t = data->timestamp_sec + data->timestamp_nsec * 1e-9;
+    int newest = (gyro_hist_head + GYRO_HISTORY - 1) % GYRO_HISTORY;
+    if (gyro_hist_n == 0 || t > gyro_hist[newest].t) {           // keep stamps strictly increasing
+        gyro_hist[gyro_hist_head].t = t;
+        gyro_hist[gyro_hist_head].gz = data->gyro_z;
+        gyro_hist_head = (gyro_hist_head + 1) % GYRO_HISTORY;
+        if (gyro_hist_n < GYRO_HISTORY) gyro_hist_n++;
+    }
 }
 
 static float fused_yaw_for_twist = 0.0f;   // latest EKF yaw; both callbacks run in the loop task
+static double fused_yaw_stamp = 0.0;       // its stamp (s)
+static double fused_yaw_var = 1e6;         // its variance from the EKF; large = yaw not known yet
 static double fused_x_last = 0.0, fused_y_last = 0.0;   // latest EKF position (console line test)
 static bool fused_pose_seen = false;
 
@@ -323,13 +358,6 @@ void gps_topic_callback(dds_callback_context_t* context) {
     gps_msg.pose.pose.position.y = y_north;
     gps_msg.pose.pose.position.z = 0.0;
 
-    // Convert yaw to quaternion (Z axis only, 2D)
-    double half = data->heading * 0.5;
-    gps_msg.pose.pose.orientation.x = 0.0;
-    gps_msg.pose.pose.orientation.y = 0.0;
-    gps_msg.pose.pose.orientation.z = sin(half);
-    gps_msg.pose.pose.orientation.w = cos(half);
-
     // Pose covariance (6x6, row-major: x, y, z, roll, pitch, yaw)
     // Only fill diagonals we care about; leave the rest at zero.
     double pos_var = (double)data->accuracy * (double)data->accuracy;
@@ -339,16 +367,57 @@ void gps_topic_callback(dds_callback_context_t* context) {
     gps_msg.pose.covariance[21] = 1e6;          // roll
     gps_msg.pose.covariance[28] = 1e6;          // pitch
 
-    // Yaw covariance — gate on speed, garbage at low speeds. 0.2 m/s (was 0.3 until 2026-10-27,
-    // which equalled the 0.3 m/s cruise speed, so GPS yaw was almost never fused). The antenna
-    // sits ~0.18 m behind the wheel axle, so while turning it moves sideways to the body
-    // (0.18 m/s in a 1 rad/s pivot): only accept GPS yaw while the gyro says nearly straight.
-    if (data->speed > 0.2 && recent_turn_rate < GPS_YAW_MAX_TURN_RATE &&
-        data->heading_accuracy > 0 && data->heading_accuracy < 1.0) {
-        gps_msg.pose.covariance[35] = data->heading_accuracy * data->heading_accuracy;
-    } else {
-        gps_msg.pose.covariance[35] = 1e6;      // ignore yaw measurement
+    // Yaw from the GPS velocity vector (2026-10-27). A diff-drive mower can't move sideways, so
+    // the wheel-axle velocity points along the body, forwards or backwards:
+    // - The antenna (base_link) sits GNSS_ANTENNA_BEHIND_AXLE behind the axle, so in a turn it
+    //   also moves sideways by w x r. That part is removed with the gyro rate at the GPS epoch;
+    //   the current rate is wrong whenever a turn starts or stops within the fix's latency.
+    // - Backwards travel (braking bounce, slide, reverse) is told apart from forwards by the
+    //   current yaw estimate, so it confirms the heading instead of flipping it. While the EKF's
+    //   yaw is still unknown (boot), the sign of the wheel command decides instead.
+    // - The yaw variance is what the velocity uncertainty gives, (sigma / speed)^2, so slow driving
+    //   counts little. sigma combines the GPS sAcc and the lever-arm error from the gyro rate
+    //   changing between samples. Below 3 sigma the direction is noise and nothing is fused.
+    float cy = cosf(fused_yaw_for_twist), sy = sinf(fused_yaw_for_twist);
+    float gyro_spread;
+    double lever = -GNSS_ANTENNA_BEHIND_AXLE *                          // body-left speed of the antenna
+                   gyro_z_at(data->timestamp_sec + data->timestamp_nsec * 1e-9, &gyro_spread);
+    double lever_err = GNSS_ANTENNA_BEHIND_AXLE * gyro_spread;
+    double axle_e = data->vel_east  + sy * lever;
+    double axle_n = data->vel_north - cy * lever;
+    double axle_speed = hypot(axle_e, axle_n);
+    double s_acc = data->vel_accuracy;
+    double sigma = hypot(s_acc, lever_err);
+    double yaw_var = 1e6;                                              // ignore yaw measurement
+    double yaw_meas = fused_yaw_for_twist;
+    if (s_acc > 0 && axle_speed > 3.0 * sigma) {
+        double travel = atan2(axle_n, axle_e);
+        int dir = 0;                                                   // +1 forwards, -1 backwards
+        if (fused_yaw_var < (M_PI / 2) * (M_PI / 2)) {
+            dir = cos(travel - fused_yaw_for_twist) >= 0 ? 1 : -1;
+        } else {
+            float left, right;
+            motor_get_step_rates(&left, &right);
+            if (left + right > 0) dir = 1; else if (left + right < 0) dir = -1;
+        }
+        if (dir != 0) {
+            yaw_meas = normalize_angle(dir > 0 ? travel : travel + M_PI);
+            yaw_var = (sigma / axle_speed) * (sigma / axle_speed);
+            // Outlier gate: the axle can still slide sideways (caster drag, wheel slip in a pivot).
+            // A yaw more than 3 sigma of the combined uncertainty away from the EKF's yaw at the
+            // GPS epoch is not fused. At boot the EKF's yaw variance is huge, so the first lock passes.
+            double gps_t = data->timestamp_sec + data->timestamp_nsec * 1e-9;
+            double yaw_then = fused_yaw_for_twist - gyro_z_at(gps_t, &gyro_spread) * (fused_yaw_stamp - gps_t);
+            double innov = angle_diff(yaw_meas, yaw_then);
+            if (innov * innov > 9.0 * (yaw_var + fused_yaw_var)) yaw_var = 1e6;
+        }
     }
+    gps_msg.pose.covariance[35] = yaw_var;
+    double half = yaw_meas * 0.5;
+    gps_msg.pose.pose.orientation.x = 0.0;
+    gps_msg.pose.pose.orientation.y = 0.0;
+    gps_msg.pose.pose.orientation.z = sin(half);
+    gps_msg.pose.pose.orientation.w = cos(half);
 
     // Twist: robot_localization reads it in child_frame_id (base_link), so the GPS east/north
     // velocity is rotated into the body frame with the current fused yaw. The EKF rotates it
@@ -356,7 +425,6 @@ void gps_topic_callback(dds_callback_context_t* context) {
     // that yaw is off; yaw itself is not corrected by this. (Until 2026-10-27 east/north went
     // in unrotated, so between fixes the EKF predicted motion in the wrong direction whenever
     // yaw was not ~0: at yaw 90 deg it moved west while the mower drove north.)
-    float cy = cosf(fused_yaw_for_twist), sy = sinf(fused_yaw_for_twist);
     gps_msg.twist.twist.linear.x =  cy * data->vel_east + sy * data->vel_north;   // forward
     gps_msg.twist.twist.linear.y = -sy * data->vel_east + cy * data->vel_north;   // left
     gps_msg.twist.twist.linear.z = 0.0;
@@ -391,17 +459,33 @@ void fused_pose_callback(const void* msgin) {
     float qw = (float)msg->pose.pose.orientation.w;
     float yaw = atan2f(2.0f * qw * qz, 1.0f - 2.0f * qz * qz);
     fused_yaw_for_twist = yaw;
+    fused_yaw_stamp = msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9;
+    fused_yaw_var = msg->pose.covariance[35];
     fused_x_last = x;
     fused_y_last = y;
     fused_pose_seen = true;
+
+    // The pose is the EKF state at its stamp, which is already old when it gets here (~0.06 s
+    // in HIL). Motion control needs the pose now, so predict it forward over the measured age
+    // with the EKF's own velocity (GPS + gyro, no wheel odometry). The clock is synced at boot.
+    float vx = (float)msg->twist.twist.linear.x, vy = (float)msg->twist.twist.linear.y;
+    float omega = (float)msg->twist.twist.angular.z;
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    double age = (now.tv_sec - (double)msg->header.stamp.sec) + (now.tv_nsec - (double)msg->header.stamp.nanosec) * 1e-9;
+    if (age > 0 && age < MOTION_POSE_TIMEOUT_MS / 1000.0) {           // otherwise the clock is off: no prediction
+        x += (cosf(yaw) * vx - sinf(yaw) * vy) * age;
+        y += (sinf(yaw) * vx + cosf(yaw) * vy) * age;
+        yaw += omega * age;
+    }
 
     // Package and publish internally via your DDS system
     fused_pose_data_t data = {
         .x     = x,
         .y     = y,
         .yaw   = normalize_angle(yaw),
-        .vx    = (float)msg->twist.twist.linear.x,
-        .omega = (float)msg->twist.twist.angular.z,
+        .vx    = vx,
+        .omega = omega,
     };
 
     if (TASKS_STARTED) {
@@ -935,6 +1019,18 @@ void loop() {
                 else if (c == 's') publish_manual_move(-MANUAL_LINEAR_SPEED,  0.0f);
                 else if (c == 'a') publish_manual_move( 0.0f,  MANUAL_ANGULAR_SPEED);
                 else if (c == 'd') publish_manual_move( 0.0f, -MANUAL_ANGULAR_SPEED);
+                else if (c == 'v') {   // "v<lin m/s>,<ang rad/s>\n": any manual motion, e.g. v0.2,-0.4
+                    char buf[24]; int len = 0;
+                    while (SerialDebug.available() && len < (int)sizeof(buf) - 1) {
+                        char ch = SerialDebug.read();
+                        if (ch == '\n' || ch == '\r') break;
+                        buf[len++] = ch;
+                    }
+                    buf[len] = '\0';
+                    float lin, ang;
+                    if (sscanf(buf, "%f,%f", &lin, &ang) == 2) publish_manual_move(lin, ang);
+                    else SerialDebug.println("[DEBUG] Usage: v<lin>,<ang>  e.g. v0.2,-0.4");
+                }
                 else if (c == ' ') {
                     if (MANUAL_MODE_ACTIVE) {
                         motor_data_t stop = { MOTOR_STOP, 0.0f, 0.0f };

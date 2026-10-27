@@ -121,7 +121,7 @@ Tooling in `cad/`:
 These are what the software must survive:
 - **RTK GPS:**
   - centimetre position with a fix, but noisy, with jumps and float/fix switches
-  - at standstill the velocity direction is random, so heading from GPS is only valid while clearly moving (firmware gate: 0.2 m/s and gyro below 0.15 rad/s, because the antenna sits ~0.18 m behind the wheel axle and moves sideways in turns)
+  - at standstill the velocity direction is random, so heading from GPS is only valid while clearly moving (the firmware fuses it only above 3·sAcc, weighted by (sAcc/speed)², and removes the sideways motion of the antenna, which sits ~0.18 m behind the wheel axle, with the gyro; see ARCHITECTURE §5)
   - GPS heading is the **direction of travel, not of the body**
 - **Wheels:** plastic on grass. They slip, especially on slopes, wet grass and turns in place. They stall against walls, and brushing an obstacle pushes the mower off its line. **Commanded motion is not odometry.**
 - **Terrain:** roughness tilts and shakes the chassis. This shows up in the gyro and accelerometer, and a 2D simulation can't reproduce it.

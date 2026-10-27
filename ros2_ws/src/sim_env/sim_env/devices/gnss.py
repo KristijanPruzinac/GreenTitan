@@ -76,7 +76,8 @@ class Gnss(DeviceNode):
         self.truth = None
         self.queue = collections.deque()
         self.last_epoch = None
-        self.utc0 = datetime.datetime.now(datetime.timezone.utc)
+        # UTC at clock time 0, so utc0 + now_s() is the epoch's UTC with sim time or wall time
+        self.utc0 = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=self.now_s())
 
         out = self.c('outputs', {})
         self.pub_fix = self._pub(NavSatFix, out.get('fix_topic', 'gnss/fix'))
