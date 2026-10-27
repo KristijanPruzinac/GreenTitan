@@ -1,2 +1,0 @@
-[console_scripts]
-path_visualizer = robot_package.path_visualizer:main

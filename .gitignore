@@ -19,3 +19,9 @@ outputs/spine_b/
 # phone tooling
 .env
 tools/android/apks/
+
+# ROS 2 / colcon build products
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+__pycache__/
