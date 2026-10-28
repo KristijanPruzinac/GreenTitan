@@ -153,6 +153,7 @@ typedef struct {
 #ifndef MICRO_ROS_DOMAIN_ID
 #define MICRO_ROS_DOMAIN_ID 0   // ROS domain of the micro-ROS node; HIL builds for parallel boards override it
 #endif
+#define CLOCK_SYNC_ATTEMPTS 10  // boot clock sync with the agent: the shortest round trip wins
 #define MOTION_UPDATE_FREQUENCY 10
 #define BATTERY_UPDATE_FREQUENCY 10
 #define IMU_UPDATE_FREQUENCY 10   // /imu messages (averaged over the samples in between)

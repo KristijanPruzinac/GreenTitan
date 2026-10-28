@@ -141,22 +141,31 @@ void error_loop() {
   }
 }
 
+// The agent's clock minus half the round trip is only right if both directions take equally
+// long. Over the bursty serial link they often don't, and a single sync was off by up to
+// +-0.2 s (HIL 2026-10-28). IMU messages carry this clock while GPS carries receiver time, so
+// the EKF put gyro and GPS out of order. Keep the attempt with the shortest round trip: its
+// error is at most half of it.
 bool sync_time()
 {
     const int timeout_ms = 1000;
-    if (rmw_uros_epoch_synchronized()) return true; // synchronized previously
-
-    if (RMW_RET_OK != rmw_uros_sync_session(timeout_ms)) return false; // not synchronized
-
-    if (rmw_uros_epoch_synchronized()) {
-        int64_t time_ns = rmw_uros_epoch_nanos();
-        timespec tp;
-        tp.tv_sec = time_ns / 1000000000;
-        tp.tv_nsec = time_ns % 1000000000;
-        clock_settime(CLOCK_REALTIME, &tp);
-        return true;
+    int64_t best_offset_ns = 0, best_rtt_us = INT64_MAX;
+    for (int i = 0; i < CLOCK_SYNC_ATTEMPTS; i++) {
+        int64_t t0 = esp_timer_get_time();
+        if (RMW_RET_OK != rmw_uros_sync_session(timeout_ms) || !rmw_uros_epoch_synchronized()) continue;
+        int64_t t1 = esp_timer_get_time();
+        int64_t offset_ns = rmw_uros_epoch_nanos() - esp_timer_get_time() * 1000;
+        if (t1 - t0 < best_rtt_us) { best_rtt_us = t1 - t0; best_offset_ns = offset_ns; }
     }
-    return false;
+    if (best_rtt_us == INT64_MAX) return false; // not synchronized
+
+    int64_t time_ns = esp_timer_get_time() * 1000 + best_offset_ns;
+    timespec tp;
+    tp.tv_sec = time_ns / 1000000000;
+    tp.tv_nsec = time_ns % 1000000000;
+    clock_settime(CLOCK_REALTIME, &tp);
+    SerialDebug.printf("[TIME] Synced, round trip %.0f ms (error < %.0f ms)\r\n", best_rtt_us * 1e-3, best_rtt_us * 0.5e-3);
+    return true;
 }
 
 void init_micro_ros(){
