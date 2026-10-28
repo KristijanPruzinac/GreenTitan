@@ -14,6 +14,9 @@
     <remap from="/odometry/filtered" to="/odometry/filtered/global"/>
   </node>
 
+  <!-- The EKF pose for the ESP32, compact (the 724-byte Odometry broke the micro-ROS link) -->
+  <node pkg="robot_package" exec="fused_pose_relay" name="fused_pose_relay" output="screen"/>
+
   <!-- Your custom nodes (path_visualizer) -->
   <node pkg="robot_package" exec="path_visualizer" name="path_visualizer" output="screen"/>
 </launch>

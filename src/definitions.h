@@ -4,7 +4,6 @@
 #define SIMULATION_ENABLED false
 #define MOTION_TELEPORT_MODE      false
 #define HARDCODED_DATUM_AND_PATH false
-#define PRINT_BT_COMMANDS false
 
 // Hardware-in-the-loop: sensors and motors talk to the simulator over micro-ROS (env esp32dev_hil)
 #ifndef HIL_ENABLED
@@ -101,6 +100,16 @@ typedef struct {
 // The strip between the first outline lap and it is mowed by further laps.
 #define MOWER_TURN_INSET                  (fmaxf(hypotf(MOWER_REAR_OVERHANG, MOWER_HALF_WIDTH), \
                                                  hypotf(MOWER_FRONT_OVERHANG, MOWER_HALF_WIDTH)) + MOWER_EDGE_CLEARANCE)
+// Coverage planner (src/algorithm, ARCHITECTURE §8). Rows and laps are at most MOWER_OVERLAP (cm,
+// settings) apart.
+#define PLANNER_MIN_ROW                   0.10   // m, shorter pieces of row are left out
+#define PLANNER_MARGIN                    0.02   // m, ways between pieces keep this far inside the turn zone
+// A lap corner turning away from the outline by more than this needs a straight run-in (NavPath's
+// edge corner); slants and steps between laps turn by at most this where the lap bends
+#define PLANNER_CORNER_TURN               0.35   // rad, ~20 deg
+#define PLANNER_LAP_JOIN                  1.2    // m, laps are joined this far from such corners and
+                                                 // step on to the next one inward over this length
+#define PLANNER_TOLERANCE                 0.01   // m, outlines simplified and curves approximated within this
 // Corners along an edge are driven so that the rear swings out at most this past the half
 // width; the rest of the clearance is for tracking error
 #define MOTION_EDGE_SWING                 0.02f  // m
@@ -319,7 +328,7 @@ typedef struct {
 } sim_pose_set_t;
 
 enum datum_capture_result {
-    DATUM_RESULT_NONE = 0,           // no capture completed yet, or already consumed by BT
+    DATUM_RESULT_NONE = 0,           // no capture completed yet, or already reported
     DATUM_RESULT_OK,
     DATUM_RESULT_FAIL_STATE,         // controller wasn't IDLE
     DATUM_RESULT_FAIL_ACCURACY,      // GPS accuracy degraded during drive

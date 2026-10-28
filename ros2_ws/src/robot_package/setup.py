@@ -30,6 +30,7 @@ setup(
     entry_points={
         'console_scripts': [
             'path_visualizer = robot_package.path_visualizer:main',
+            'fused_pose_relay = robot_package.fused_pose_relay:main',
         ],
     },
 )

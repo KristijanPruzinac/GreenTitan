@@ -1,0 +1,12 @@
+{
+  "name": "clipper2",
+  "version": "1.5.4",
+  "description": "Clipper2 polygon clipping and offsetting (Boost Software License, https://github.com/AngusJohnson/Clipper2), C++ library of release Clipper2_1.5.4 without the DLL export header. Patched: clipper.core.h includes <ostream> instead of <iostream>.",
+  "license": "BSL-1.0",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "flags": "-O2",
+    "unflags": "-Os"
+  }
+}

@@ -49,7 +49,7 @@ Origin: midpoint between the drive wheel centres, x forward (big-wheel end), y l
 
 | Part | Role | Notes |
 |---|---|---|
-| ESP32 devboard (esp32dev) | real-time controller | UART0 (USB) = micro-ROS link to the host; UART1 = debug console; Classic BT |
+| ESP32 devboard (esp32dev) | real-time controller | UART0 (USB) = micro-ROS link to the host; UART1 = debug console; no Bluetooth (the phone does the app link) |
 | u-blox **C94-M8P** (rover) | RTK GNSS | UBX NAV-PVT on UART2 at 19200. RTK corrections arrive over the board's UHF radio from a base unit. The receiver config isn't in this repo |
 | ANN-MS patch antenna | GNSS antenna | 5 m RG174 cable, kept as a coil (ID 70 / OD 98, bend radius ≥ ~25 mm) in printed guides. Ø100 ground plane on top, away from the drivers, buck and UHF whip |
 | C94 UHF whip | correction link | Folded inside the cover along the mower. No holes in the cover |

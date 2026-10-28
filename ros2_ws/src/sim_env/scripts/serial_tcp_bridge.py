@@ -39,6 +39,7 @@ def main():
             ser.dtr = ser.rts = False
             ser.open()
             sock = socket.create_connection((a.host, a.port), timeout=5)
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)   # small micro-ROS packets out at once
             sock.settimeout(0.05)
         except (OSError, serial.SerialException) as e:
             print(f'waiting ({e})')

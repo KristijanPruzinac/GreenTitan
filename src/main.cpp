@@ -30,7 +30,6 @@
 bool ENABLE_MOTORS = true;
 bool ENABLE_IMU = true;
 bool ENABLE_GPS = true;
-bool ENABLE_BLUETOOTH = true;
 
 bool ENABLE_MOTION = true;
 
@@ -92,9 +91,6 @@ volatile int      LAST_DATUM_CAPTURE_RESULT  = DATUM_RESULT_NONE;
 // Configuration
 #include "configuration/configuration.h"
 
-// Bluetooth
-#include "bluetooth/bluetooth_task.h"
-
 // Visualization
 #include "visualization/path_markers.h"
 
@@ -111,7 +107,9 @@ rcl_publisher_t path_data_publisher;
 
 sensor_msgs__msg__Imu imu_msg;
 nav_msgs__msg__Odometry gps_msg;
-nav_msgs__msg__Odometry fused_pose_msg;
+// EKF pose from fused_pose_relay (robot_package): [stamp_sec, stamp_nanosec, x, y, yaw, yaw_var, vx, vy, omega]
+std_msgs__msg__Float64MultiArray fused_pose_msg;
+static double fused_pose_buf[9];
 
 rclc_executor_t executor;
 rclc_support_t support;
@@ -122,8 +120,6 @@ rcl_node_t node;
 char gps_frame_id_buf[16];
 char gps_child_frame_id_buf[16];
 char imu_frame_id_buf[16];
-char fused_frame_id_buf[16];
-char fused_child_frame_id_buf[16];
 
 void fused_pose_callback(const void* msgin);
 void hil_ros_init();
@@ -195,11 +191,16 @@ void init_micro_ros(){
         ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
         "gps/odom"));
     
-    RCCHECK(rclc_subscription_init_default(
+    // Compact and best effort: the EKF's 724-byte Odometry does not fit the serial MTU, and the
+    // agent dropped the session when it could not split it (HIL 2026-10-28). An old pose is no use.
+    fused_pose_msg.data.data = fused_pose_buf;
+    fused_pose_msg.data.capacity = sizeof(fused_pose_buf) / sizeof(fused_pose_buf[0]);
+    fused_pose_msg.data.size = 0;
+    RCCHECK(rclc_subscription_init_best_effort(
         &fused_pose_subscriber,
         &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
-        "/odometry/filtered/global"));
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float64MultiArray),
+        "esp/fused_pose"));
 
     RCCHECK(rclc_publisher_init_default(
         &path_data_publisher, &node,
@@ -459,22 +460,16 @@ void gps_topic_callback(dds_callback_context_t* context) {
 }
 
 void fused_pose_callback(const void* msgin) {
-    const nav_msgs__msg__Odometry* msg =
-        (const nav_msgs__msg__Odometry*)msgin;
-
-    // Extract x, y
-    double x = (double)msg->pose.pose.position.x;
-    double y = (double)msg->pose.pose.position.y;
-
-    //SerialDebug.printf("Fused pose received: x=%.2f, y=%.2f\r\n", x, y);
-
-    // Quaternion → yaw (2D, so only z/w matter)
-    float qz = (float)msg->pose.pose.orientation.z;
-    float qw = (float)msg->pose.pose.orientation.w;
-    float yaw = atan2f(2.0f * qw * qz, 1.0f - 2.0f * qz * qz);
+    const std_msgs__msg__Float64MultiArray* msg = (const std_msgs__msg__Float64MultiArray*)msgin;
+    if (msg->data.size < 9) return;
+    const double* d = msg->data.data;
+    double stamp_sec = d[0], stamp_nsec = d[1];
+    double x = d[2];
+    double y = d[3];
+    float yaw = (float)d[4];
     fused_yaw_for_twist = yaw;
-    fused_yaw_stamp = msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9;
-    fused_yaw_var = msg->pose.covariance[35];
+    fused_yaw_stamp = stamp_sec + stamp_nsec * 1e-9;
+    fused_yaw_var = d[5];
     fused_x_last = x;
     fused_y_last = y;
     fused_pose_seen = true;
@@ -485,11 +480,11 @@ void fused_pose_callback(const void* msgin) {
     // The EKF's yaw also trails its own stamp by FUSED_YAW_LAG (its filtered yaw rate lags the
     // gyro), so the gyro turn starts that much earlier. Uncorrected, the ~0.3 s total made the
     // tracker weave +-20 cm in HIL (2026-10-27). The clock is synced at boot.
-    float vx = (float)msg->twist.twist.linear.x, vy = (float)msg->twist.twist.linear.y;
-    float omega = (float)msg->twist.twist.angular.z;   // passed on, not used for the prediction
+    float vx = (float)d[6], vy = (float)d[7];
+    float omega = (float)d[8];   // passed on, not used for the prediction
     struct timespec now;
     clock_gettime(CLOCK_REALTIME, &now);
-    double age = (now.tv_sec - (double)msg->header.stamp.sec) + (now.tv_nsec - (double)msg->header.stamp.nanosec) * 1e-9;
+    double age = (now.tv_sec - stamp_sec) + (now.tv_nsec - stamp_nsec) * 1e-9;
     if (age > 0 && age < MOTION_POSE_TIMEOUT_MS / 1000.0) {           // otherwise the clock is off: no prediction
         float turn = (float)gyro_turn_between(fused_yaw_stamp - FUSED_YAW_LAG, fused_yaw_stamp + age);
         yaw += turn;
@@ -694,7 +689,7 @@ static bool ros_link_check() {
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
 
 // Stack headroom report (console 'h'): FreeRTOS high-water mark per task, in bytes.
-static TaskHandle_t task_handles[6];   // motor, imu, gps, motion, bluetooth, controller
+static TaskHandle_t task_handles[5];   // motor, imu, gps, motion, controller
 static void print_task_report() {
     for (TaskHandle_t t : task_handles) {
         if (t) SerialDebug.printf("[SYS] %-14s stack free min %u B\r\n", pcTaskGetName(t), (unsigned)uxTaskGetStackHighWaterMark(t));
@@ -751,18 +746,6 @@ void init_freertos() {
             0
         );
     }
-
-    if (ENABLE_BLUETOOTH) {
-        xTaskCreatePinnedToCore(
-            bluetooth_task,
-            "BluetoothTask",
-            2816,
-            NULL,
-            1,
-            &task_handles[4],
-            0
-        );
-    }
 }
 
 void init_peripherals() {
@@ -790,13 +773,6 @@ void init_peripherals() {
         SerialDebug.println("[INIT] Motors OK");
     }
 
-    if (ENABLE_BLUETOOTH) {
-        if (!InitBluetooth()) {
-            SerialDebug.println("[INIT] Bluetooth failed, disabling");
-            ENABLE_BLUETOOTH = false;
-        }
-        SerialDebug.println("[INIT] Bluetooth OK");
-    }
 
     FileResult configResult = InitConfiguration();
     if (configResult != SUCCESS) {
@@ -821,22 +797,23 @@ static void init_test_path() {
 
     AlgorithmCaptureStart();
 
-    // Outline 0: outer perimeter (2m x 2m). Point 0 is the base.
+    // Outline 0: outer perimeter (3m x 3m). Point 0 is the base. A 0.6 m bush in the middle; on a
+    // 2 m lawn it would leave 0.7 m to the edge, too narrow for the body to turn in.
     AlgorithmCaptureNewOutline();
     AlgorithmCaptureSetNewPoint(0,   0);     // base / charging station
-    AlgorithmCaptureSetNewPoint(200, 0);
-    AlgorithmCaptureSetNewPoint(200, 200);
-    AlgorithmCaptureSetNewPoint(0,   200);
+    AlgorithmCaptureSetNewPoint(300, 0);
+    AlgorithmCaptureSetNewPoint(300, 300);
+    AlgorithmCaptureSetNewPoint(0,   300);
 
     AlgorithmCaptureNewOutline();
-    AlgorithmCaptureSetNewPoint(130, 100);
-    AlgorithmCaptureSetNewPoint(121, 121);
-    AlgorithmCaptureSetNewPoint(100, 130);
-    AlgorithmCaptureSetNewPoint(79,  121);
-    AlgorithmCaptureSetNewPoint(70,  100);
-    AlgorithmCaptureSetNewPoint(79,  79);
-    AlgorithmCaptureSetNewPoint(100, 70);
-    AlgorithmCaptureSetNewPoint(121, 79);
+    AlgorithmCaptureSetNewPoint(180, 150);
+    AlgorithmCaptureSetNewPoint(171, 171);
+    AlgorithmCaptureSetNewPoint(150, 180);
+    AlgorithmCaptureSetNewPoint(129, 171);
+    AlgorithmCaptureSetNewPoint(120, 150);
+    AlgorithmCaptureSetNewPoint(129, 129);
+    AlgorithmCaptureSetNewPoint(150, 120);
+    AlgorithmCaptureSetNewPoint(171, 129);
 
     if (AlgorithmCaptureEnd()) {
         SerialDebug.println("[TEST] Path generated successfully");
@@ -937,7 +914,7 @@ void setup() {
     SerialDebug.println("[BOOT] Starting FreeRTOS tasks...");
     init_freertos();
 
-    xTaskCreatePinnedToCore(controller_task, "ControllerTask", 4096, NULL, 1, &task_handles[5], 0);
+    xTaskCreatePinnedToCore(controller_task, "ControllerTask", 4096, NULL, 1, &task_handles[4], 0);
     SerialDebug.println("[BOOT] Controller task started");
 
     SerialDebug.println("[BOOT] Boot complete");

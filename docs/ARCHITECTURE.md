@@ -12,7 +12,7 @@ How the firmware and the ROS 2 side work, how they connect, and what is known to
                                               │ /fused_pose                                 │   │
             controller_task ◄─/controller/signal── motion_task ◄──/fused_pose               │   │
               │   ▲  (state machine)            │  (trajectory+MPC)                         │   │
-              │   └── bluetooth_task, serial console                                        │   │
+              │   └── serial console                                                        │   │
               ▼                                 ▼ /motor                                    │   │
           algorithm (planner) ──/motion/command─┘   motor_task ──STEP/DIR──► 2× DM542T       │   │
                                                           └──GPIO18──► blade relay          │   │
@@ -20,12 +20,12 @@ How the firmware and the ROS 2 side work, how they connect, and what is known to
                                                                                                 │
    ROS 2 host (RPi now, Android phone planned): micro-ROS agent ◄───────────────────────────────┘
       /gps/odom (nav_msgs/Odometry) ─┐
-      /imu/data (sensor_msgs/Imu)  ──┼─► robot_localization ekf_node ──► /odometry/filtered/global ──► back to ESP32
+      /imu/data (sensor_msgs/Imu)  ──┼─► robot_localization ekf_node ──► /odometry/filtered/global ──► fused_pose_relay ──► esp/fused_pose ──► ESP32
                                      │
       algo/path_data ──► path_visualizer ──► RViz markers
 ```
 
-The ESP32 owns everything that acts: mission logic, the planner, motion control and the motors. The host only estimates the pose. **If the host or the link dies, the mower stops getting pose updates, and motion_task stops issuing new motor commands.** The motors keep the last commanded speed, though, because there is no pose timeout (see Known issues).
+The ESP32 owns everything that acts: mission logic, the planner, motion control and the motors. The host only estimates the pose. **If the host or the link dies, the mower stops getting pose updates, and motion_task stops the wheels after `MOTION_POSE_TIMEOUT_MS`** (Known issue #3).
 
 ## 2. Firmware runtime model
 
@@ -46,21 +46,20 @@ The ESP32 owns everything that acts: mission logic, the planner, motion control 
 | `imu_task` | 100 ms | 4096 | – | `/imu` |
 | `gps_task` | 200 ms | 4096 | – | `/gps` |
 | `motion_task` | 100 ms (logic runs per pose) | 4096 | `/fused_pose`, `/motion/command` | `/motor`, `/controller/signal` |
-| `controller_task` | 200 ms | 4096 | `/controller/signal`, `/gps` | `/motor`, `/motion/command`, `/datum/set` |
-| `bluetooth_task` | 100 ms | 2816 | `/gps`, `/fused_pose` | `/controller/signal`, `/motor` |
+| `controller_task` | 200 ms | 4096 | `/controller/signal`, `/gps`, `/fused_pose` | `/motor`, `/motion/command`, `/datum/set` |
 
-The algorithm isn't a task. Its functions run inside controller_task (`AlgorithmNextPoint`), the BT task and the console (capture functions). It publishes `/motion/command` and `/motor` (blade on/off) directly.
+The algorithm isn't a task. Its functions run inside controller_task (`AlgorithmNextPoint`, and the robot position from `/fused_pose`) and the console (capture functions). It publishes `/motion/command` and `/motor` (blade on/off) directly.
 
 ### Internal topics (ESP-DDS)
 
 | Topic | Struct | Producers → consumers |
 |---|---|---|
-| `/gps` | `gps_data_t` | gps_task → bridge, controller, bluetooth |
+| `/gps` | `gps_data_t` | gps_task → bridge, controller |
 | `/imu` | `IMU_data_t` | imu_task → bridge |
-| `/fused_pose` | `fused_pose_data_t` (x, y, yaw, vx, omega) | bridge (from EKF), teleport mode → motion, bluetooth |
+| `/fused_pose` | `fused_pose_data_t` (x, y, yaw, vx, omega) | bridge (from EKF), teleport mode → motion, controller |
 | `/motor` | `motor_data_t` {instruction, linear_vel, angular_vel} | motion, controller, algorithm, manual → motor_task |
 | `/motion/command` | `motion_command_t` {mode, start xy, end xy} (metres) | algorithm, controller → motion |
-| `/controller/signal` | `controller_signal_t` | motion, BT, console → controller |
+| `/controller/signal` | `controller_signal_t` | motion, console → controller |
 | `/datum/set` | `datum_data_t` | controller → bridge |
 | `/sim/pose_set` | `sim_pose_set_t` | motion (teleport) → motor_task |
 
@@ -72,7 +71,7 @@ The algorithm isn't a task. Its functions run inside controller_task (`Algorithm
 | `imu/data` | sensor_msgs/Imu | ESP→host | `imu_link` | **Best effort** (2026-10-27), like the EKF subscription. orientation_covariance[0] = -1 (no orientation); gyro var 0.01, accel var 0.1 |
 | `esp/datum` | sensor_msgs/NavSatFix | ESP→host | – | Datum lat/lon. Published once; nothing consumes it since `datum_relay` was removed (2026-06-11) |
 | `algo/path_data` | std_msgs/Float64MultiArray | ESP→host | – | Packed outlines + scan lines, max 200 doubles (larger paths are sent truncated) |
-| `/odometry/filtered/global` | nav_msgs/Odometry | host→ESP | – | EKF output (remapped from `/odometry/filtered`) |
+| `esp/fused_pose` | std_msgs/Float64MultiArray | host→ESP | – | **Best effort.** EKF output (`/odometry/filtered/global`) reduced by `fused_pose_relay` to `[stamp_sec, stamp_nanosec, x, y, yaw, yaw_var, vx, vy, omega]` (body-frame twist). The full 724 B Odometry is larger than the 512 B MTU; the agent sometimes sent it on a stream that cannot fragment it ("serialization error") and dropped the session for 15–50 s (HIL 2026-10-28) |
 | `hil/gnss_ubx` | std_msgs/UInt8MultiArray | host→ESP | – | **HIL build only.** Raw UBX bytes from the simulated receiver; replaces UART2 |
 | `hil/imu` | sensor_msgs/Imu | host→ESP | – | **HIL build only.** Simulated MPU6050 sample; replaces I2C |
 | `hil/stepper_rate` | std_msgs/Float32MultiArray | ESP→host | – | **HIL build only.** [left, right] `ContinuousStepper::speed()` in steps/s, 100 Hz |
@@ -85,9 +84,9 @@ The algorithm isn't a task. Its functions run inside controller_task (`Algorithm
 
 1. Start SerialDebug, `dds_init()`, then micro-ROS over `Serial` (921600). **Block until the agent is pinged.** Create the publishers and the subscriber, then `sync_time()`. The clock comes from the agent once at boot and is never resynced. On failure the board calls `error()` and hangs. After boot, `ros_link_check()` in the main loop pings the agent once per second. After 3 misses it destroys all micro-ROS entities and keeps the loop and the DDS tasks running. When the agent answers again it re-runs `init_micro_ros()` and republishes the path (2026-10-27). The motors stop through the motion pose timeout (Known issue #3) while the link is down.
 2. You get 1.5 s to press `p` on the debug console, which clears the saved datum.
-3. `init_peripherals()`: IMU, GPS, motors, BT, Preferences. Each one that fails is disabled on its own; the rest still start.
+3. `init_peripherals()`: IMU, GPS, motors, Preferences. Each one that fails is disabled on its own; the rest still start.
 4. `LoadConfiguration()`. If nothing is saved, defaults are written. If a path is stored, it is replanned and queued for publishing.
-5. If `HARDCODED_DATUM_AND_PATH` is set, a 2×2 m test field with a round island is installed.
+5. If `HARDCODED_DATUM_AND_PATH` is set, a 3×3 m test field with a round island is installed.
 6. Start the tasks, then controller_task. After 1.5 s it sets `TASKS_STARTED`, and sensors start publishing internally.
 7. `loop()` publishes the datum, then the path markers, and from then on bridges sensors.
 
@@ -153,7 +152,7 @@ Since 2026-10-27 the mower follows a **smooth trajectory with model-predictive c
 - Motion sends `SIGNAL_MOTION_WANT_POINT` while the queue has room, at most one open request at a time, so a point never arrives to a full queue. `SIGNAL_MOTION_DONE` = stopped at the end of the queue.
 - The blade switches when the mower starts the leg the flag belongs to, not when the planner hands the point out.
 - `MOTION_PAUSE` stops and keeps the path, `MOTION_RESUME` turns back onto it and continues. `WAITING` stops and drops the path and any queued commands.
-- The planner therefore runs up to 7 points ahead of the mower. An obstacle skip (`AlgorithmAbort(false)`) skips the line being *planned*, which can be one after the line that was hit.
+- The planner therefore runs up to 7 points ahead of the mower. It books a piece as mowed only up to where the robot stopped (`AlgorithmStoppedAt`, §8).
 
 **Guards** (kept from before):
 - **Stall:** while driving (not turning on the spot), fused position moving less than `MOTION_STALL_DIST` 0.10 m in `MOTION_STALL_TIME_MS` 4 s, or turning on the spot longer than `MOTION_ROTATE_TIMEOUT_MS` 10 s → stop, drop the path, `SIGNAL_OBSTACLE`. Only the sign of the command is used. Found in HIL: high-centred on a 9 cm molehill. *Watch:* heavy slip on a slope below 2.5 cm/s counts as a stall.
@@ -168,47 +167,79 @@ States: `IDLE, MOWING, PAUSED, RETURNING_TO_BASE, ENTERING/LEAVING_CHARGING_STAT
 
 | Signal | Effect |
 |---|---|
-| `START_MOWING` | Only from IDLE/CHARGING, and needs datum + path. From IDLE the planner is reset (new mission). Seeds the planner with the current pose and requests the first point |
-| `MOTION_WANT_POINT` | MOWING: hand the motion queue the next planner point (with its blade flag) |
-| `MOTION_DONE` | MOWING: mission complete once the planner has no points left (else feed one). RETURNING: docked → CHARGING. LEAVING: back to MOWING |
-| `OBSTACLE` | MOWING: stop, `AlgorithmAbort(false)` (skip this line), then request the next point |
+| `START_MOWING` | Only from IDLE/CHARGING, and needs datum + path. From IDLE, or once everything is mowed, the planner is reset (new mission). Then `plan_from_here(MOW)` |
+| `MOTION_WANT_POINT` | MOWING or RETURNING: hand the motion queue the next planner waypoint (with its blade flag and edge side) |
+| `MOTION_DONE` | MOWING: once the planner has no waypoints left the lawn is mowed, so return to base. RETURNING: at the base; all mowed → IDLE ("Mowing complete"), else the docking stub → CHARGING |
+| `OBSTACLE` | Motion has stopped and dropped its path. MOWING: `plan_from_here(MOW, skip)` gives up the piece it was on. RETURNING: `plan_from_here(HOME)`, a new way home from where it stands |
 | `STOP_MOWING` | any mission state: motion stop, blade off, planner reset, IDLE (console `x`) |
-| `RAIN`, `LOW_BATTERY` | MOWING → `return_to_base()`, which stops the motors and calls `go_to_base()`. **That function is empty**, so the mower just stops |
-| `MANUAL_ON/OFF` | IDLE ↔ MANUAL. Manual moves time out after 500 ms (watchdogs in both main loop and BT task) |
+| `RAIN`, `LOW_BATTERY` | MOWING → `return_to_base()`: motion stop, blade off, `plan_from_here(HOME)` |
+| `BATTERY_CHARGED` | CHARGING → MOWING, `plan_from_here(MOW)`: mowing goes on where it stopped |
+| `MANUAL_ON/OFF` | IDLE ↔ MANUAL. Manual moves time out after 500 ms (watchdog in the main loop) |
 | `START_DATUM_CAPTURE` | IDLE and GPS hAcc ≤ `GPS_ACC_THRESHOLD`: the datum is set to the current fix, saved and published (instant, no drive) |
+
+`plan_from_here(goal, skip)` (2026-10-28) is the one way the controller talks to the planner. It tells the planner where the robot stopped (`AlgorithmStoppedAt`), sets the goal, seeds the next leg at the current pose and requests the first waypoint. The controller decides *what* to do (mow, go home, give up a piece), the planner decides *where* to go, and motion decides *how* to drive there. There is no docking yet: the base point stands in for the station, and `BATTERY_CHARGED` only comes from the console.
 
 Nothing produces `LOW_BATTERY`, `RAIN` or `BATTERY_CHARGED` except the console (`b` = rain). Battery and rain sensors are not read.
 
-## 8. Coverage planner (`algorithm.cpp`)
+## 8. Coverage planner (`src/algorithm`, rewritten 2026-10-28)
 
-**Input:** `outlines`, a list of polygons in cm.
-- `outlines[0]` is the outer boundary. Its **point 0 is the charging-station exit point** (the base).
-- `outlines[1..]` are islands: obstacles, beds, trees.
-- Points are recorded by driving the mower (manual mode) and capturing the current fused pose. You can do that over BT or from the console (`c` start, `o` new outline, `p` add point, `e` end).
+Three layers. Each one knows less about the mower than the one above it:
 
-**Planning** (`GenerateGcode`):
-0. **Edge clearance** (2026-10-27, hard limit): the mower body never leaves the lawn. Two offsets of the outlines (mitred, collapsed vertices dropped; an outer outline that collapses fails the plan, a vanished inner one is skipped):
-   - **Outline laps** keep `MOWER_EDGE_INSET` = half width 0.20 m + `MOWER_EDGE_CLEARANCE` 0.05 m from the outer outline. They run along the edge, and their corners are edge corners (§6) that keep the casters (0.415 m behind the axle) in.
-   - **The infill** (rows, the moves between them, the way around islands) runs on `planOutlines`, offset by `MOWER_TURN_INSET` = the body's farthest corner from the axle (hypot(0.415, 0.20) = 0.46 m) + the clearance = 0.51 m: outer outline inward, inner outlines outward. There the mower can turn on the spot in any direction and stay inside, so row ends, reversals and slanted edges need no special handling (2026-10-27; before that, rows ended 0.25 m in and every row end swung the casters about 12 cm past the edge).
-   - The strip between the two is mowed by extra laps (`lapRings`): from `MOWER_EDGE_INSET` inward in steps of at most a row spacing, then one lap on the infill outline (3 laps at the defaults: 0.25, 0.38, 0.51 m in). A turn on the spot on a lap would swing the body out, so laps are joined on a side, never at a corner (`StartLap`). The first lap starts in the middle of the longest side; the robot comes in at a slant from a point 0.26 m further in, where it may turn on the spot. Each lap on a `lapRing` ends on its last corner moved 0.26 m further in (safe to turn there), and the next lap starts beside where this one started, so the robot comes onto it at a slant from the inside, driving forward. The legs to and from that corner are not edge legs. The last lap ends on a corner for the infill seek to go on from. Islands get no laps: the infill keeps 0.51 m from them.
-1. Bounding box.
-2. `numOfLines = ceil(height / (MOWER_OVERLAP·1.109))`, giving horizontal (constant-y, east–west) scan lines. `MOWER_OVERLAP` = 15 means a line spacing of about 16.6 cm. The 1.109 factor is a leftover from degree coordinates.
-3. Nudge vertices that lie exactly on a scan line.
-4. Insert each line/edge intersection into the outlines (`extOutlines`).
-5. Per scan line, sort intersection references by x (`intersectionPaths`). Pairs (0,1), (2,3) and so on are mowable spans.
-6. **Skip-row order** (2026-10-27): a U-turn into the neighbouring row would need radius 8 cm, below what the blade can curve. Rows are visited k apart, k = ⌈2·`MOTION_MIN_CORNER_RADIUS`/spacing⌉ (3 at 16.6 cm, so 0.5 m apart, 0.25 m U-turn arcs). Every pass goes up; passes start at rows 0, k−1, …, 1 so the jump back down is long too (7 rows: 0,3,6,2,5,1,4).
+| File | Job | Knows |
+|---|---|---|
+| `lawn_map.*` | The lawn as polygons ([Clipper2](https://github.com/AngusJohnson/Clipper2), vendored in `lib/clipper2`, integer mm), its zones, the shortest way through the lawn | Only geometry and the insets it is built with |
+| `coverage.*` (`CoveragePlan`) | Cuts the lawn into pieces (laps, rows), remembers how much of each is mowed, hands out waypoints towards a goal | Footprint numbers from `CoverageConfig`; no motors, blade or messages |
+| `algorithm.*` | Mower glue: outline capture (cm), the NVS string, config from `definitions.h`, waypoints → `/motion/command` | The mower |
 
-**Execution** (`AlgorithmNextPoint`, one waypoint per `MOTION_WANT_POINT`, returned as {x, y, blade flag}; it no longer switches the blade itself). Target is `FORWARD` or `BASE`:
-- `OUTLINE`: drive the outline laps, outermost first, blade **on**. Legs of all but the last lap are marked as edge legs.
-- `SEEK`: follow the outline to the nearest end of the next scan line, choosing the shorter direction around. Blade **off**.
-- `INFILL`: drive the span, then jump or follow an island outline to the next span. Blade **on**.
-- When all lines are done, target = `BASE`: SEEK along the outline to point 0, then `MainChargingStart()` and `algorithmDone`.
-- `AlgorithmAbort(full)` switches to BASE. With `full=false` it returns to FORWARD at the next line. It only changes the planner state; the controller then asks for the next point.
-- Scan lines with no crossings or an odd number (a line grazing a vertex) are dropped after planning, because the infill walks crossings in pairs. If none remain, the mission is outline only.
-- The controller calls the planner inside `try/catch`: a `std::out_of_range` from a planner indexing bug stops the mower, turns the blade off and returns to IDLE (`[CTRL] Mission aborted (...)`) instead of rebooting the ESP.
-- Path capture (console `c o p e`, BT `MOWER/CAPTURE/*`) is refused while a mission runs, since the planner reads the same vectors from another task.
+**Input:** `outlines`, polygons in cm, recorded by driving the mower (console `c` start, `o` new outline, `p` add point, `e` end).
+- `outlines[0]` is the lawn boundary; its **point 0 is the base**. `outlines[1..]` are islands.
+- Outlines with fewer than 3 points are ignored.
+- The outlines are saved as text in NVS (`O\n`, then `x y\n` lines) and replanned on load.
 
-The planner state is strings (`algorithmTarget`, `algorithmMode`) plus indices into `extOutlines`/`intersectionPaths`. The path is saved as text (`O\n` then `x y\n` lines) in NVS and replanned on load.
+**Map** (`LawnMap::build`): the outlines are unioned and simplified within `PLANNER_TOLERANCE` (1 cm). Any orientation works, and crossings and overlaps are resolved. Islands closer together than 2·`MOWER_TURN_INSET` are joined (grown with round joins, then shrunk back with mitred ones): the body can't turn in a gap or notch that narrow, so it counts as solid. The map has two zones:
+- **Edge zone**, `MOWER_EDGE_INSET` = 0.25 m in (half width + 5 cm). An axle path here keeps the body just clear of every outline while driving along it.
+- **Turn zone**, `MOWER_TURN_INSET` = 0.51 m in (the farthest body corner + 5 cm). Turning on the spot anywhere in it keeps the body inside the lawn.
+
+`route(a, b)` finds the shortest way through the turn zone, keeping `PLANNER_MARGIN` (2 cm) inside it. It searches a visibility graph over the zone's inward-bending corners. If the turn zone doesn't connect the two points, the route goes through the edge zone and is marked unsafe (`safe = false`).
+
+**Pieces** (`CoveragePlan::build`):
+- **Laps** go round every outline, the outer boundary and the islands. The first lap runs at `MOWER_EDGE_INSET`, the next ones step inward by at most a row spacing, and the last runs on the turn-zone boundary. At the defaults that gives 3 laps, at 0.25, 0.38 and 0.51 m. The lap count follows from the mower width and the turn inset; it isn't a fixed number. Lap legs beside an outline are edge legs (§6 edge corners).
+- **Rows** fill the turn zone. They run east–west, `MOWER_OVERLAP` (15 cm) apart, and are cut by the zone. Pieces of row that join end to end are grouped into cells. Pieces shorter than `PLANNER_MIN_ROW` (10 cm) are dropped.
+  - Rows are visited skip-row: k = ⌈2·`MOTION_MIN_CORNER_RADIUS`/spacing⌉ apart, so the U-turns between them are arcs, not pivots.
+  - Row ends lie 1 cm (`PLANNER_TOLERANCE`) inside the turn zone, so they need no special care. Exactly on its edge, integer rounding put them outside, and every move between rows hopped 2 cm in and back out.
+
+**Joining and leaving a lap** (2026-10-28). Outside the turn zone the mower must never turn on the spot, so a lap is joined only at a spot where it can also be left once round (start = end).
+- **Where:** the spot must be clear of sharp corners, meaning corners that bend away from the outline by more than `PLANNER_CORNER_TURN` (0.35 rad). It sits at least `PLANNER_LAP_JOIN` (1.2 m) from them, or mid-way between them where the side is shorter.
+- **Slant:** a straight chord between the lap and the turn zone.
+  - It is gentle (turning ≤ 0.35 rad onto the lap) where there is room.
+  - It is steeper, down to 45°, only where the lap runs straight for long enough.
+  - The chord must stay inside that lap's own depth area and end in the turn zone.
+- **Leaving:** the chord off a lap runs on into the turn zone, up to `PLANNER_LAP_JOIN`. NavPath needs a leg after the corner that turns off the lap: a 0.2 m leg followed by a reversal made it pivot on the lap and swing 21 cm out (HIL lawn, 2026-10-28).
+- **Step:** only onto the lap right inside (one depth step away, not a lap round an island across the lawn). Project onto it and go forward along it by 1.2 m, down to the shortest chord that turns ≤ 0.35 rad at both ends. The landing point keeps the corner clearance of the lap it comes from. Steps are tried first, so the laps run one after another like a spiral.
+- **Order:** a lap that can't step on is left *before* the next piece is picked, so the next piece is chosen from where the leave ends. Before this fix (2026-10-28), it was chosen from the end of the lap, and the mower drove back past it with the blade off.
+- **Check:** a spot is used only if the lap can be left from it. This is checked recursively over the chain of steps (`exits`).
+
+**Mission state:** each piece keeps where its mowing began and how much of it is mowed. There are three goals:
+- `COVERAGE_MOW`: the next piece is a step on from the lap just done if there is one, else the nearest unfinished piece by route.
+- `COVERAGE_HOME`: leave the current lap, then route to the base with the blade off.
+- `COVERAGE_IDLE`: no waypoints.
+
+`stopped_at(x, y, skip)` books only what the robot actually reached, and the next waypoint starts from there. With `skip` it gives up the piece it was on (used for obstacles). Resuming a lap re-joins it at the last usable spot before where it stopped.
+
+**Dynamic routes** (2026-10-28): waypoints are planned only a few ahead of the robot (`queue_`), so the way home or to the next piece is always fresh.
+- `set_goal`, `stopped_at` and `replan()` (`AlgorithmReplan`) drop what is planned but not yet handed out. They then plan again from the robot's state on the current map.
+- When a constraint changes while driving (an obstacle, a no-go area), the map has to be updated and `replan()` called. Nothing else in the planner or the controller changes.
+- The map itself is still built once, from the recorded outlines (see §15).
+
+**Execution:** `AlgorithmNextPoint` gives one waypoint per `MOTION_WANT_POINT`, as {x, y, tool, edge}. Tool is the blade (`NAV_TOOL_ON`/`OFF`/`KEEP`); edge is the side an outline is on (§6).
+- Path capture is refused while a mission runs.
+- `algo/path_data` carries the lawn rings, the turn-zone rings and the rows (as 2-point scan lines) for RViz.
+
+**Native bench** (not in the repo): the same `coverage.cpp`/`lawn_map.cpp` plus NavPath, compiled on the PC and run on 11 lawns. It checks body clearance and coverage. Results on 2026-10-28:
+- Square, L-shape, neck, island near the edge, the 3 m test lawn with an island and the outline recorded in HIL: the body stays 0.3–1.5 cm inside the outline, and 99–99.7 % is mowed. The 2 m square stays 2.7 cm inside but only 82 % is mowed (§14 item 24).
+- Sharp tip: the body goes 0.5 cm past the outline, and 98.1 % is mowed.
+- Rain/home/resume tests on four lawns: everything was mowed, with no new swings.
+- The lawns that still swing out are covered in §14 item 24.
 
 ## 9. Persistence (`configuration.cpp`, ESP32 NVS Preferences)
 
@@ -219,12 +250,12 @@ The planner state is strings (`algorithmTarget`, `algorithmMode`) plus indices i
 
 ## 10. User interfaces
 
-**Bluetooth Classic SPP**, device name `GreenTitan`.
-- Message format: `Group/Action/Data`, terminated by `<`. The client app isn't in this repo. The file header says "port to Wi-Fi server" (TODO).
+**App commands: none on the ESP since 2026-10-28.** Bluetooth Classic took ~190 KB of heap and left too little for the planner (§13), so it was removed. **Proposed:** the phone takes the app link and passes the commands on over the USB micro-ROS link (e.g. a String topic pair). The old Classic-SPP protocol (`src/bluetooth/` up to commit 820e1ee) can be reused as is:
+- Message format: `Group/Action/Data`, terminated by `<`. The client app isn't in this repo.
 - `GPS/GET/ACCURACY`, `GPS/GET/POS` → current values
-- `GPS/CAPTURE/BASE` → `STARTED`, then `DONE` or `FAIL/{STATE,ACCURACY,BUSY,PUBLISH}`
-- `MOWER/START` (broken, see Known issues), `MOWER/MANUAL/ON|OFF`, `MOWER/MOVE/<lin>,<ang>` (values ÷3)
-- `MOWER/CAPTURE/START|OUTLINE|POINT|END`. POINT needs the datum and a fused pose.
+- `GPS/CAPTURE/BASE` → `STARTED`, then `DONE` or `FAIL/{STATE,ACCURACY,BUSY,PUBLISH}` (the controller leaves the result in `LAST_DATUM_CAPTURE_RESULT`)
+- `MOWER/START`, `MOWER/MANUAL/ON|OFF`, `MOWER/MOVE/<lin>,<ang>` (values ÷3)
+- `MOWER/CAPTURE/START|OUTLINE|POINT|END`. POINT needs the datum and a fused pose. Edits answer `FAIL/BUSY` unless IDLE or MANUAL.
 
 **Serial debug console** (UART1, 115200), keys:
 | Key | Action |
@@ -249,8 +280,7 @@ The planner state is strings (`algorithmTarget`, `algorithmMode`) plus indices i
 |---|---|---|
 | `SIMULATION_ENABLED` | motor_task integrates commanded speeds into a fake pose and drops 20% of updates as crude slip; gps/imu_task synthesize data from it | **Broken / legacy.** Sim GPS heading is `atan2` of the *position*, speed is nonsense, velocities are 0 |
 | `MOTION_TELEPORT_MODE` | motion jumps to each target after 1 s | Works. Used to verify the planner (2026-05) |
-| `HARDCODED_DATUM_AND_PATH` | 2×2 m test field with an island | Works |
-| `PRINT_BT_COMMANDS` | log BT traffic | – |
+| `HARDCODED_DATUM_AND_PATH` | 3×3 m test field with a 0.6 m island in the middle (2 m would leave 0.7 m beside the island, too narrow to turn in) | Works |
 
 `sim_task.cpp` (a scripted drive pattern) is never started.
 
@@ -274,6 +304,7 @@ Findings that shaped the models:
 - HIL runs the sim nodes on wall time (`sim.launch.py sim_time:=false`); `/clock` and `joint_states` are lazy bridges. `/clock` comes at the physics rate (~1 kHz), and each Python device node spent ~70% of a core on it. That starved the micro-ROS agent, so reliable publishes stalled and the firmware loop fell to ~2 Hz. Wall time is only right while Gazebo runs at RTF 1.
 - Main loop over the WSL relay (2026-10-27): ~13 Hz instead of 100 Hz while `imu/data` was reliable, because every reliable publish waits for the agent's ack. Now ~24 Hz, with `gps/odom` 5 Hz, `imu/data` 10 Hz and the EKF 8–9 Hz. The remaining blocking publishes are `gps/odom` (Odometry is too large for a best-effort frame) and `esp/log`. A zero session timeout on `esp/log` made it stop for good once the reliable stream backed up, so it was reverted.
 - Console keys on `esp/console` were dropped regularly. Cause: micro-ROS has one shared pool of `RMW_UXRCE_MAX_HISTORY` (default 4) received messages for all subscriptions, and `fused_pose` (10 Hz, 2 slots each), `hil/gnss_ubx` and `hil/imu` kept it full. Fixed 2026-10-27: `microros.meta` raises it to 10 (+12 kB RAM), and the loop runs a second zero-timeout `spin_some` per tick. The real build gets the same change (fewer subscriptions there).
+- Link stalls (2026-10-28), three causes. (1) socat without `nodelay`: Nagle plus delayed ACKs made every micro-ROS round trip ~70 ms; `hil.launch.py` and `serial_tcp_bridge.py` now set TCP_NODELAY. (2) The 724 B EKF Odometry broke the agent session (see `esp/fused_pose`). (3) A pose timeout every ~31.5 s for 0.8–0.9 s: the WSL2 clock ran 2.3 % fast (WSL slews it toward Windows time) and `systemd-timesyncd` stepped it back ~0.7 s at each 32 s poll, so every wall-time ROS timer (GNSS model, EKF output) paused. `install_ubuntu.sh` disables timesyncd under WSL. The phone host must slew its clock, not step it, for the same reason.
 - Mission test (2026-10-27): drove a ~2 m square, recorded it with `c o p … e`, then pressed `t`. The first run (Kp 0.8 gains, 0.5 m/s, L 0.3) weaved ±50° and left the outline by ~0.4 m. After the twist-frame, PID and braking fixes, a full mission (76 segments) finished in 373 s with "Mowing complete", and a second `t` started a new mission. Braking and line tracking are now tested with console `l` (one 1.5 m line straight ahead) instead of full missions; the results are in Known issue #19. Agent kill → `[ROS] Agent lost` → `[ROS] Agent reconnected` ~10 s later, with all streams back at normal rates.
 
 **HIL build vs real build.** `HIL_ENABLED` changes only the byte/sample sources below; tasks, rates, parsers, control and topics are the same code.
@@ -292,7 +323,7 @@ Findings that shaped the models:
 ## 12. ROS 2 package (`ros2_ws/src/robot_package`)
 
 - ament_python package.
-- `robot.launch.xml` starts the two identity static TFs, `ekf_node` with `config/ekf.yaml` (output remapped to `/odometry/filtered/global`), and `path_visualizer`.
+- `robot.launch.xml` starts the two identity static TFs, `ekf_node` with `config/ekf.yaml` (output remapped to `/odometry/filtered/global`), `fused_pose_relay` (→ `esp/fused_pose`), and `path_visualizer`.
 - `path_visualizer` unpacks `algo/path_data` into MarkerArrays in frame `odom`:
   - `algo/markers/outlines`
   - `algo/markers/infill`
@@ -309,7 +340,8 @@ Findings that shaped the models:
 | EKF and control loop | 10 Hz |
 | Stepper loop | 1 kHz software ticks |
 | micro-ROS | 921600 baud serial |
-| Heap (HIL build, 2026-10-27) | 147 KB free after micro-ROS; Bluetooth Classic takes ~78 KB, the tasks ~30 KB, the MPC ~7.7 KB; ~11 KB left. Bluetooth starts Classic-only (BLE controller memory released, +18 KB): before that the MPC setup ran out of heap and the ESP boot-looped |
+| Heap (HIL build, 2026-10-28) | 212 KB free at runtime without Bluetooth. With Bluetooth Classic only ~20 KB was free (largest block 13 KB) and building the plan ran out of memory: `operator new` threw and the ESP rebooted at capture end. The planner needs ~10 KB (3 m square) to ~40 KB (island lawns) while it builds (native bench). Out of memory now fails the capture (`[ALGO] Out of memory building the plan`) instead of rebooting |
+| Build (2026-10-28) | C++17 (`-std=gnu++17`, the Clipper2 headers need it). esp32dev: RAM 35.5 %, flash 54.0 %; esp32dev_hil: RAM 36.7 %, flash 54.2 % |
 
 Stamps on sensor messages come from the ESP32 clock, which is synced to the agent once at boot.
 
@@ -326,17 +358,15 @@ Ordered roughly by impact. Fix them inside the existing architecture.
 4. **GPS yaw front/back ambiguity** (section 5). The twist-frame half of this item was fixed 2026-10-27.
 5. **GPS parser publishes stale or partial data.** `gps_read()` writes bytes straight into the global `pvt` while parsing. It then publishes `pvt` every 200 ms tick with a fresh timestamp, whether or not a new frame was completed and checksum-verified that tick. Parse into a buffer, and publish only on a valid new frame.
    - **Fixed 2026-10-27:** `ubx_parse()` checks sync, class/id, length (≤100) and the checksum, and copies into `pvt` only on a complete valid NAV-PVT; `/gps` publishes only after a new frame. The old struct expected the 84-byte (M6) payload; M8/M9/F9 send 92, so the checksum **never** matched before and every publish was built from whatever bytes were last written. Any payload ≥84 is accepted now. *Watch:* if the receiver is set to output something other than NAV-PVT, nothing is published anymore (before, garbage was); GPS can now publish at < 5 Hz when frames straddle poll ticks, and `init_gps()` only succeeds on a valid frame.
-6. **BT `MOWER/START` is broken.** It publishes to the misspelled topic `"/controllemotorr/signal"`.
-   - **Fixed 2026-10-27:** topic is `/controller/signal`. *Watch:* BT START now actually starts mowing.
-7. **Return-to-base and docking are empty** (`go_to_base`, `go_to_base_exit`). Rain and low battery only stop the mower. Battery (GPIO36) and rain (GPIO39) are never read.
-8. **Obstacle handling skipped a waypoint and could crash.** `AlgorithmAbort()` called `AlgorithmNextPoint()` itself, then `.at(0)` on the result (throws at the end of the mission), stored metres into the cm `targetPoint` fields (wrong segment start for the next line), and `handle_obstacle()` asked for a point again.
-   - **Fixed 2026-10-27:** `AlgorithmAbort()` only switches planner state; `handle_obstacle()` then calls `go_to_next_algorithm_point()` once, which handles the end of the mission. *Watch:* an obstacle while already heading to BASE now moves on to the next BASE point instead of stopping.
+6. **BT `MOWER/START` was broken** (misspelled topic). Fixed 2026-10-27; Bluetooth is gone since 2026-10-28 (§10).
+7. **No docking.** Since 2026-10-28, rain and low battery drive home through the lawn with the blade off (§7, §8), and mowing resumes where it stopped. But the base point only stands in for the station: there is no docking and no charge detection. Battery (GPIO36) and rain (GPIO39) are never read.
+8. **Obstacles are not mapped.** An obstacle (console `k`) gives up the piece the mower was on, or re-plans the way home. The obstacle's position isn't added to the map, so the new way home can run into it again (§15).
 9. **Gyro bias is never calibrated** (`imu_calibrate()` is unused). The accel offsets are also 0, so `acc_z` includes gravity.
    - **Fixed 2026-10-27 (gyro only):** imu_task averages the first 3 s of samples (30 at 10 Hz) into the gyro offsets and publishes nothing until done; it restarts the window if any axis std > 0.01 rad/s (mower moving). Accel offsets stay 0, so `acc_z` still includes gravity (intended). *Watch:* the mower must be still for 3 s after boot. Since 2026-10-27 START, console `l` and motion_task refuse to drive until it is done (`imu_ready()`): a line test started during calibration kept the mower turning, so calibration restarted forever, `/imu/data` never came and the mower spun in place. A dead IMU therefore means no driving; vibration on the bench can keep it retrying (logged as `[IMU] Moving during gyro calibration`). `GYRO_DEADBAND` (0.04 rad/s) was hiding a large part of the bias before and may be lowerable now. The calibration log's float `printf` overflowed the 2048-byte IMUTask stack (panic seen in HIL), so the stack is now 4096.
 10. `init_peripherals()` early `return` on failure skips the remaining peripherals and Preferences init.
    - **Fixed 2026-10-27:** each peripheral is tried and disabled on its own. *Watch:* e.g. with a dead IMU the motors and BT now come up and the mower can drive.
 11. `DATUM_CAPTURE_ACTIVE` is never set, and the "drive to capture datum" constants are unused. Datum capture is instant.
-12. Planner leftovers: the `1.109` line-spacing factor from degree coordinates, `lon/lat` naming, `int` casts in `AlgorithmGetPathString`.
+12. Planner leftovers were removed with the 2026-10-28 rewrite (§8). The old GPS-degree versions remain as `*.bck`.
 13. `algo/path_data` was capped at 64 doubles, so real fields were silently not visualized.
    - **Fixed 2026-10-27:** cap 200 doubles (1.6 kB, one reliable message); a larger path is sent truncated (all outlines, then the scan lines that fit) and logged as `truncated`. *Watch:* a big lawn still shows only part of the infill in RViz.
 14. `SIMULATION_ENABLED` path is broken (section 11).
@@ -347,12 +377,16 @@ Ordered roughly by impact. Fix them inside the existing architecture.
 19. **Mower left the outline in HIL (seen 2026-10-27).** In the first full HIL mission it went up to ~0.4 m past a recorded outline corner, later up to 0.6 m. Causes: the twist in the wrong frame, the lateral loop as fast as the heading loop, and braking on the straight distance to the goal, which never gets small beside the line.
    - **Fixed 2026-10-27:** see sections 5 and 6 (body-frame twist, L 0.8, 0.3 m/s, along-track braking, axle-velocity GPS yaw with receiver-time stamps, stall check). Line test `l` (1.5 m, 0.3 m/s, flat part of the lawn): the mower stops 8–10 cm past the goal with ≤ 6 cm cross-track (ground truth), and the EKF ends within 0.3–2.4 cm of ground truth. Right after a reboot with a wrong EKF yaw, the first line takes ~13 s and ends ~35 cm off before GPS yaw locks. *Watch:* HIL has no slip and a perfect gyro; check stop distance and cross-track on grass.
 20. **Mission control could get stuck or crash (found 2026-10-27).** There was no way to stop a mission except power, a second START reused the finished planner state, paths could be edited (console or BT capture) while mowing, and an empty planner result threw from `.at(0)`.
-   - **Fixed 2026-10-27:** `STOP_MOWING` (console `x`) aborts to IDLE with motors and blade off; START from IDLE resets the planner; path edits are refused unless IDLE or MANUAL (BT answers `FAIL/BUSY`); scan lines with an odd crossing count are skipped; `AlgorithmNextPoint` is wrapped in try/catch and any exception aborts the mission to IDLE. Console `h` prints per-task stack headroom and heap; in HIL GPSTask had 584 B and MotionTask 816 B left of 2816, so both are 4096 now. *Watch:* an aborted mission starts over from the first line.
+   - **Fixed 2026-10-27:** `STOP_MOWING` (console `x`) aborts to IDLE with motors and blade off; START from IDLE resets the planner; path edits are refused unless IDLE or MANUAL; `AlgorithmNextPoint` is wrapped in try/catch and any exception aborts the mission to IDLE. Console `h` prints per-task stack headroom and heap; in HIL GPSTask had 584 B and MotionTask 816 B left of 2816, so both are 4096 now. *Watch:* an aborted mission (`x`) starts over.
 
 21. **Pose lag made the curved paths weave in HIL (fixed 2026-10-27).** The tracker steered on a heading ~0.3–0.4 s old: the EKF yaw trails its stamp by ~0.15 s (its yaw-rate state lagged the gyro), and the ESP only predicted over the stamp age (~0.06 s), with the EKF's noisy yaw rate. The result was a ±20 cm, ±50° weave once per row with ω pinned at the limit; the blade went up to 44 cm outside the outline. Replaying the logged HIL poses through NavPath/NavTracker reproduced the ESP's commands (correlation 0.93), and the native bench with 0.5 s of uncorrected lag reproduced the weave; MPC weights did not help. Fix: gyro-based prediction from `FUSED_YAW_LAG` before the stamp, and EKF yaw-rate process noise 0.5 (§5). HIL 1.2 m square after the fix: mission 66 s (was 117 s), EKF yaw error 4.3° rms (was 5.6°). The blade still goes up to 28 cm outside the outline; the worst point is the transit from the end of the outline drive to the first infill point, and the U-turns reach 5–10 cm past the edge. **Accuracy floor:** replaying the recorded HIL pose error (EKF yaw 4.3° rms; EKF position 1.9 cm rms lateral, 3.4 cm along) into the native bench reproduces the HIL wobble (blade off the ideal-pose path p95 6.3 cm bench vs 7.2 cm HIL); the MPC weights do not change it, the control heading takes it to 5.6 cm, and position error alone gives 4.8 cm. The tracker cannot be more accurate than the pose: better rows need a better position estimate, not control tuning. The outline crossing is now held off by the planner edge clearance (§8) and the axle-path change (§6), not yet run in HIL; the body swing in turns remains (item 24). Still open: measure `FUSED_YAW_LAG` on the real robot; the HIL mission test records its outline by manual driving, so runs differ in shape and are hard to compare.
 22. **Uncut corner triangles.** Arcs cut inside each corner (§6, ~9–12 cm at 90°), and a dropped short reversal leaves < 0.18 m. Lead-outs (§15) would cover them.
-23. **Bluetooth is Classic-only since 2026-10-27** (BLE memory released for the MPC heap, §13). Not yet tested with the phone app.
+23. **No app link on the ESP (2026-10-28).** Bluetooth was removed for heap (§13); datum and outline capture work only from the console until the phone link (§10, **proposed**) exists.
 24. **Body swing past the edge clearance in turns (found 2026-10-27, edge corners added 2026-10-27).** The axle sits near the front and the casters stick out 0.415 m behind it, so a plain turn swings the rear out: on an axle arc of radius r the outer rear corner reaches hypot(0.415, r + 0.20) − r beyond the leg (0.37 m at r = 0.22, 0.46 m turning on the spot), against 0.25 m of clearance. Handled now: the infill and its row ends keep 0.51 m from every outline, where any turn is safe (§8); lap corners use the edge-corner curve or, where it doesn't fit, a cut corner (§6); laps are joined on a side from the inside (§8). NavPath still reports every decided corner whose swing goes past the clearance on the edge side, as `[MOTION] Turn at (x, y): body swings N cm past the edge clearance`; what is left is needle tips (turn > ~170°). Gazebo HIL, 2 m lawn (2026-10-27): no swing reports, the laps stayed inside. The run's worst point, 11 cm past during the infill, came from a 20 cm / 0.4 rad EKF error, not the turn (the pose timeouts in HIL, see item 21). Cost: on a small lawn (sides under ~2.5 m) most lap corners are cut, so the outer strip near the corners is mowed less closely. Open: reversing (X-type turn, Mier et al. 2024) for tips and closer corners, once reverse driving exists.
+   - **Planner rewrite (2026-10-28, §8):** laps are now joined and left by slants and steps, never by turning on the spot outside the turn zone. Edge-side bends are rounded as wide as their legs allow, and cut at most `edge_swing`. On the native bench (§8), six of the 11 lawns keep the body inside. The other cases are physical limits:
+     - **Curved outlines** (blob lobes, notches around islands). On a left curve of radius R, the rear corner reaches √((R + 0.20)² + 0.415²), which is more than R + 0.25 for any R < 1.5 m. A lap at 0.25 m therefore swings 4–11 cm out on tight curves. **Proposed:** make the depth of the first lap follow the curvature (deeper where R < 1.5 m).
+     - **Lawns narrower than 2·`MOWER_TURN_INSET`** (1.02 m), such as a 1.2 m strip or the 2 m square with a 0.6 m island. They have no turn zone, or one that is broken up, so they can't be mowed without swinging out (bench: 10–23 cm). The planner logs `Lap N has no place to join and leave it`.
+     - **Small lawns:** on a 2 m square the laps are 1.5 m long, NavPath cuts their corners, and coverage drops to 83 %.
 
 ## 15. Planned direction (proposed, not yet decided unless dated)
 
@@ -363,6 +397,7 @@ Ordered roughly by impact. Fix them inside the existing architecture.
 
   See `HARDWARE.md` § Phone.
 - Use commanded-vs-GPS speed mismatch for slip/stall/"hit something" detection, not for localization.
+- **Dynamic map** (proposed; the planner side was ready 2026-10-28, §8). Obstacles that were hit, or that the cameras see, become temporary islands in a layer on top of the recorded outlines. The LawnMap is rebuilt from both, and `AlgorithmReplan()` re-routes from the next waypoint not yet handed out. The way home after rain then avoids them without any change in the controller. The same mechanism serves no-go areas and the later docking approach (a fixed last leg into the station).
 - **Navigation core: trajectory + MPC** (decided 2026-10-27; in the firmware since 2026-10-27, see §6. Still to do: edge constraints in the MPC, the safety filter, then the base/mower split). Goal: a reusable base navigation layer (reliable state, reliable motion along straight, curved or any path, never crossing known edges) that other ESP32/ROS robots can configure instead of rebuilding. The split stays as it is: the phone runs the EKF; everything below runs on the ESP32.
   - **Trajectory:** done, §6.
   - **Tracking: MPC with [TinyMPC](https://tinympc.org)** on the wheel axle. The model is written per metre of path, not per second: lateral error, heading error and curvature, input = rate of curvature change. That makes it linear and the same at every speed, so one precomputed solver serves the whole mission. Path curvature is fed forward; the MPC only corrects the deviation. Known edges become per-step limits on the lateral error (planned).

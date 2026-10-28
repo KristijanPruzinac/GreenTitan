@@ -30,6 +30,12 @@ sudo apt-get install -y \
   ros-$DISTRO-rviz2 ros-$DISTRO-teleop-twist-keyboard ros-dev-tools \
   python3-numpy python3-yaml python3-pil socat
 
+# WSL2 keeps its clock on the Windows host time itself. systemd-timesyncd fights it: every 32 s it
+# stepped the clock back ~0.7 s, and every ROS timer on wall time (sensor models, EKF) stalled that long.
+if grep -qi microsoft /proc/version; then
+  sudo systemctl disable --now systemd-timesyncd 2>/dev/null || true
+fi
+
 if [ "$HIL" = 1 ]; then
   # The micro-ROS agent is not on the ROS apt mirror, so build it once into ~/.local/share/sim_env.
   ws=${XDG_DATA_HOME:-$HOME/.local/share}/sim_env/uros_agent_ws

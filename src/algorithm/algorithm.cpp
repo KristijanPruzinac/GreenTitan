@@ -1,1077 +1,169 @@
 #include "algorithm.h"
+#include <new>
 
-// Position tracking
-static long long current_lon = 0;
-static long long current_lat = 0;
-static long long current_yaw = 0;
+static volatile long long current_x_cm = 0;
+static volatile long long current_y_cm = 0;
 
-//Prev
-static long long prevPointLon = 0;
-static long long prevPointLat = 0;
+// Where the leg handed out last starts and ends (the motion task tracks from one to the other)
+static double prev_x_m = 0, prev_y_m = 0;
+static double target_x_m = 0, target_y_m = 0;
 
-//Target
-static long long targetPointLon = 0;
-static long long targetPointLat = 0;
+static std::vector<std::vector<std::vector<long long>>> outlines;   // cm, as captured
+static CoveragePlan plan;
 
-bool algorithmDone = false;
-
-static long long GetLon(){
-  return current_lon;
+static void plan_log(const char* message) {
+    SerialDebug.printf("[PLAN] %s\r\n", message);
 }
 
-static long long GetLat(){
-  return current_lat;
-}
+static double now_x_m() { return current_x_cm / 100.0; }
+static double now_y_m() { return current_y_cm / 100.0; }
 
-// Blade state for the point being handed out. Points go to the motion queue ahead of the
-// mower, so the blade switches when the mower starts that leg (motion task), not here.
-static uint8_t nextTool = NAV_TOOL_KEEP;
-// The point handed out last was on an outline lap (lapRings), to tell legs that run along the
-// outline (see AlgorithmNextPoint)
-static bool lastOnLapRing = false;
-
-void AlgorithmMotionSetTargetPoint(double target_x_m, double target_y_m, uint8_t tool, int8_t edge) {
-  motion_command_t cmd = {
-    MOVING,
-    (double)prevPointLon / 100.0,
-    (double)prevPointLat / 100.0,
-    target_x_m,
-    target_y_m,
-    tool,
-    edge
-  };
-  dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
-  if (result != DDS_SUCCESS) {
-      SerialDebug.printf("[ALGO] Failed to send motion command: %d\r\n", result);
-  }
-}
-
-static void MainChargingStart(){
-  controller_signal_t cmd = { SIGNAL_MAIN_CHARGING_START };
-  dds_result_t result = DDS_PUBLISH("/controller/signal", cmd);
-  if (result != DDS_SUCCESS) {
-    SerialDebug.printf("[ALGO] Failed to send controller command: %d\r\n", result);
-  }
-}
-
-//Globals
-int numOfLines = 1;
-
-//Algorithm
-String algorithmTarget = "FORWARD"; // FORWARD, BASE
-String algorithmMode = "OUTLINE";
-// FORWARD: OUTLINE, SEEK, INFILL
-// BASE: INFILL, SEEK
-
-bool algorithmAbortFull = false;
-
-/*
-Explanation:
-OUTLINE - Mows outer outline
-SEEK - Searches for point aint outer outline where infill line starts
-INFILL - Mows infill line and inside outlines
-*/
-
-//Only in INFILL mode
-int algorithmInfillIndex;
-int algorithmInfillPoint;
-int algorithmInfillDirection;
-
-int algorithmCurrentOutline = 0;
-int algorithmCurrentPoint = 0;
-
-//Outlines - First point is the charging station exit point
-std::vector<std::vector<std::vector<long long>>> outlines;
-std::vector<std::vector<std::vector<long long>>> extOutlines; //Outlines with intersection points inserted
-std::vector<std::vector<std::vector<long long>>> planOutlines; //Outlines moved in by MOWER_TURN_INSET: what the infill is planned on
-// Outline laps before the infill, outermost first: the outer outline moved in by MOWER_EDGE_INSET,
-// then in steps of at most a row spacing up to (not including) MOWER_TURN_INSET. The last lap runs
-// on extOutlines[0].
-static std::vector<std::vector<std::vector<long long>>> lapRings;
-static int algorithmLap = 0;          // lap being mowed: lapRings index, lapRings.size() = extOutlines[0]
-static std::vector<std::vector<long long>> lapPath;   // points of the lap being mowed
-static size_t lapPathIndex = 0;       // next lapPath point to hand out
-static long long lapStartX = 0, lapStartY = 0;          // where the current lap joined its ring
-static int lapEndVertex = 0;          // last lap: extOutlines[0] vertex it ends on (SEEK goes on from there)
-
-// Polygon offset by d cm, positive = to the left of the edges (inside for a counter-clockwise
-// polygon). Mitred corners; a vertex whose neighbouring offset edge would flip direction (the
-// edge collapses) is dropped and the offset redone. Fine for the gentle concave corners of a
-// lawn; a narrow neck thinner than 2 d may still fold.
-static std::vector<std::vector<long long>> OffsetPolygon(std::vector<std::vector<long long>> poly, double d){
-  for (int attempt = 0; attempt < 64 && poly.size() >= 3; attempt++){
-    size_t n = poly.size();
-    std::vector<std::vector<long long>> out(n, std::vector<long long>(2));
-    for (size_t i = 0; i < n; i++){
-      const std::vector<long long>& a = poly[(i + n - 1) % n];
-      const std::vector<long long>& b = poly[i];
-      const std::vector<long long>& c = poly[(i + 1) % n];
-      double e1x = b[0] - a[0], e1y = b[1] - a[1], l1 = hypot(e1x, e1y);
-      double e2x = c[0] - b[0], e2y = c[1] - b[1], l2 = hypot(e2x, e2y);
-      if (l1 < 1e-9 || l2 < 1e-9){ out[i] = b; continue; }
-      double n1x = -e1y / l1, n1y = e1x / l1, n2x = -e2y / l2, n2y = e2x / l2;   // left normals
-      double den = 1.0 + n1x * n2x + n1y * n2y;
-      double mx = n1x + n2x, my = n1y + n2y;
-      if (den < 0.1){ mx = n2x; my = n2y; den = 1.0; }   // near reversal: no mitre spike
-      out[i][0] = (long long)llround(b[0] + d * mx / den);
-      out[i][1] = (long long)llround(b[1] + d * my / den);
-    }
-    int collapsed = -1;
-    for (size_t i = 0; i < n; i++){
-      size_t j = (i + 1) % n;
-      double ox = poly[j][0] - poly[i][0], oy = poly[j][1] - poly[i][1];
-      double nx = out[j][0] - out[i][0], ny = out[j][1] - out[i][1];
-      if (ox * nx + oy * ny <= 0){ collapsed = (int)j; break; }
-    }
-    if (collapsed < 0) return out;
-    poly.erase(poly.begin() + collapsed);
-  }
-  return std::vector<std::vector<long long>>();
-}
-
-static double SignedArea(const std::vector<std::vector<long long>>& poly){
-  double a = 0;
-  for (size_t i = 0; i < poly.size(); i++){
-    const std::vector<long long>& p = poly[i];
-    const std::vector<long long>& q = poly[(i + 1) % poly.size()];
-    a += (double)p[0] * q[1] - (double)q[0] * p[1];
-  }
-  return a / 2.0;
-}
-
-// The outlines are where the mower must not go (a wall, a bed). The laps along the outer outline
-// keep MOWER_EDGE_INSET from it (edge corners keep the body in, see ARCHITECTURE §6); the infill,
-// whose row ends turn every which way, keeps MOWER_TURN_INSET from all outlines: the outer
-// outline moves in, the inner ones (obstacles) move out.
-static bool BuildPlanOutlines(){
-  planOutlines.clear();
-  lapRings.clear();
-  double inward0 = SignedArea(outlines[0]) > 0 ? 1.0 : -1.0;
-  double gap = (MOWER_TURN_INSET - MOWER_EDGE_INSET) * 100.0;
-  int rings = gap > 0 ? (int)ceil(gap / fmax(1.0, (double)MOWER_OVERLAP)) : 0;
-  for (int j = 0; j < rings; j++){
-    std::vector<std::vector<long long>> ring = OffsetPolygon(outlines[0], inward0 * (MOWER_EDGE_INSET * 100.0 + gap * j / rings));
-    if (ring.size() < 3){
-      SerialDebug.printf("[ALGO] Outline too small for the %.2f m edge clearance\r\n", MOWER_EDGE_INSET);
-      return false;
-    }
-    lapRings.push_back(ring);
-  }
-  double d = MOWER_TURN_INSET * 100.0;
-  for (size_t o = 0; o < outlines.size(); o++){
-    double inward = SignedArea(outlines[o]) > 0 ? d : -d;     // left = inside when counter-clockwise
-    std::vector<std::vector<long long>> off = OffsetPolygon(outlines[o], o == 0 ? inward : -inward);
-    if (off.size() < 3){
-      if (o == 0){
-        SerialDebug.printf("[ALGO] Outline too small to turn %.2f m inside it\r\n", MOWER_TURN_INSET);
-        return false;
-      }
-      SerialDebug.printf("[ALGO] Inner outline %u vanished in the offset, skipped\r\n", (unsigned)o);
-      continue;
-    }
-    planOutlines.push_back(off);
-  }
-  return true;
-}
-static const std::vector<std::vector<long long>>& LapRing(int lap){
-  return lap < (int)lapRings.size() ? lapRings.at(lap) : extOutlines.at(0);
-}
-
-static int NearestPoint(const std::vector<std::vector<long long>>& ring, long long x, long long y){
-  int best = 0;
-  double best_d = 1e300;
-  for (size_t i = 0; i < ring.size(); i++){
-    double d = hypot((double)(ring[i][0] - x), (double)(ring[i][1] - y));
-    if (d < best_d){ best_d = d; best = (int)i; }
-  }
-  return best;
-}
-
-// Lap `lap`, joining its ring on a side, never at a corner: a turn on the spot closer to the
-// outline than MOWER_TURN_INSET swings the body out over it. The first lap starts in the middle of
-// the longest side, the robot coming in at a slant from a point MOWER_TURN_INSET inside, where it
-// may turn on the spot. A lap on a lapRing ends on its last corner moved in that much more, where
-// it may turn on the spot again; the next lap starts beside where this one started, so the robot
-// comes onto it at a slant from the inside, driving forward. The last lap (extOutlines[0], turning
-// anywhere is safe there) ends on a corner for SEEK to go on from.
-static void StartLap(int lap){
-  const std::vector<std::vector<long long>>& ring = LapRing(lap);
-  size_t n = ring.size(), k = 0;
-  double sx = 0, sy = 0, best = 0;
-  bool found = false;
-  for (size_t i = 0; i < n; i++){
-    const std::vector<long long>& a = ring[i];
-    const std::vector<long long>& b = ring[(i + 1) % n];
-    double dx = (double)(b[0] - a[0]), dy = (double)(b[1] - a[1]), l2 = dx * dx + dy * dy;
-    if (l2 <= 0) continue;
-    double px, py, score;
-    if (lap == 0){                                   // longest side, its middle
-      px = a[0] + dx / 2; py = a[1] + dy / 2; score = l2;
-    } else {                                         // nearest point to the last lap's start
-      double t = fmin(1.0, fmax(0.0, ((lapStartX - a[0]) * dx + (lapStartY - a[1]) * dy) / l2));
-      px = a[0] + t * dx; py = a[1] + t * dy;
-      score = -hypot(px - lapStartX, py - lapStartY);
-    }
-    if (!found || score > best){ found = true; best = score; k = i; sx = px; sy = py; }
-  }
-  double in = SignedArea(outlines[0]) > 0 ? 1.0 : -1.0;   // inside = left when counter-clockwise
-  double m = (MOWER_TURN_INSET - MOWER_EDGE_INSET) * 100.0;
-  lapPath.clear();
-  lapPathIndex = 0;
-  if (lap == 0 && !lapRings.empty()){
-    // The way in starts about as far back along the side as it is deep, at most half way to its corner
-    const std::vector<long long>& a = ring[k];
-    double side = hypot(sx - a[0], sy - a[1]);
-    double back = fmin(side / 2, m), ux = 0, uy = 0;
-    if (side > 0){ ux = (sx - a[0]) / side; uy = (sy - a[1]) / side; }
-    lapPath.push_back({ llround(sx - back * ux - in * m * uy), llround(sy - back * uy + in * m * ux) });
-  }
-  lapStartX = llround(sx);
-  lapStartY = llround(sy);
-  lapPath.push_back({ lapStartX, lapStartY });
-  for (size_t j = 1; j < n; j++) lapPath.push_back(ring[(k + j) % n]);
-  if (lap < (int)lapRings.size()){
-    // Corner k moved m inside both its sides (mitre); a needle tip stays where it is
-    const std::vector<long long>& p = ring[(k + n - 1) % n];
-    const std::vector<long long>& c = ring[k];
-    const std::vector<long long>& d = ring[(k + 1) % n];
-    double l1 = hypot((double)(c[0] - p[0]), (double)(c[1] - p[1]));
-    double l2 = hypot((double)(d[0] - c[0]), (double)(d[1] - c[1]));
-    double n1x = -in * (c[1] - p[1]) / l1, n1y = in * (c[0] - p[0]) / l1;
-    double n2x = -in * (d[1] - c[1]) / l2, n2y = in * (d[0] - c[0]) / l2;
-    double den = 1.0 + n1x * n2x + n1y * n2y;
-    if (l1 > 0 && l2 > 0 && den > 0.1){
-      lapPath.push_back({ llround(c[0] + m * (n1x + n2x) / den), llround(c[1] + m * (n1y + n2y) / den) });
-    } else {
-      lapPath.push_back(c);
-    }
-  } else {
-    lapPath.push_back(ring[k]);
-    lapPath.push_back(ring[(k + 1) % n]);
-    lapEndVertex = (int)((k + 1) % n);
-  }
-}
-
-std::vector<std::vector<std::vector<long long>>> intersectionPaths; //Collections of points where infill intersects terrain and outer outline
-
-long long terrainMinX;
-long long terrainMaxX;
-long long terrainMinY;
-long long terrainMaxY;
-
-void ClearOutlines(){
-  planOutlines.clear();
-  extOutlines.clear();
-  intersectionPaths.clear();
-}
-
-void FindTerrainBounds(){
-  //Find terrain bounds
-  terrainMinX = planOutlines.at(0).at(0).at(0);
-  terrainMaxX = planOutlines.at(0).at(0).at(0);
-  terrainMinY = planOutlines.at(0).at(0).at(1);
-  terrainMaxY = planOutlines.at(0).at(0).at(1);
-  
-  for (int i = 0; i < planOutlines.size(); i++){
-    for (int j = 0; j < planOutlines.at(i).size(); j++){
-      long long xVal = planOutlines.at(i).at(j).at(0);
-      long long yVal = planOutlines.at(i).at(j).at(1);
-      
-      if (xVal < terrainMinX){terrainMinX = xVal;}
-      if (yVal < terrainMinY){terrainMinY = yVal;}
-      
-      if (xVal > terrainMaxX){terrainMaxX = xVal;}
-      if (yVal > terrainMaxY){terrainMaxY = yVal;}
-    }
-  }
-  
-  numOfLines = ceil(abs(terrainMaxY - terrainMinY) / (MOWER_OVERLAP * 1.109)); //1.109 is gps latitude scaling factor
-}
-
-void ClearInterference(){
-  for (int i = 0; i < numOfLines; i++)
-  {
-    long long currentY = (long long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) / 2.0);
-    
-    for (int o = 0; o < planOutlines.size(); o++){
-      for (int p = 0; p < planOutlines.at(o).size(); p++){
-        if (planOutlines.at(o).at(p).at(1) == currentY){
-          planOutlines.at(o).at(p).at(1) = planOutlines.at(o).at(p).at(1) + 1;
-        }
-      }
-    }
-  }
-}
-
-bool FindOutlineIntersections(){
-  //Extend outlines with intersection points
-  for (int i = 0; i < planOutlines.size(); i++){
-    extOutlines.push_back( std::vector<std::vector<long long>>());
-
-    for (int j = 0; j < planOutlines.at(i).size(); j++){
-      extOutlines.back().push_back( std::vector<long long>());
-      
-      for (int k = 0; k < planOutlines.at(i).at(j).size(); k++){
-        extOutlines.back().back().push_back(planOutlines.at(i).at(j).at(k));
-      }
-    }
-  }
-
-  for (int i = 0; i < numOfLines; i++)
-  {
-    long long currentY = (long long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) / 2.0);
-    
-    //Traverse outlines and extend outlines with intersections
-    for (int o = 0; o < extOutlines.size(); o++){
-      
-      std::vector<std::vector<long long>> intersections;
-      // X1, Y1, NX, NY
-
-      //Find intersections for current outline
-      for (int p = 0; p < extOutlines.at(o).size(); p++){
-        long long p1X = extOutlines.at(o).at(p).at(0);
-        long long p1Y = extOutlines.at(o).at(p).at(1);
-
-        long long p2X, p2Y;
-        
-        //First-last case
-        if (p == extOutlines.at(o).size() - 1){
-          p2X = extOutlines.at(o).at(0).at(0);
-          p2Y = extOutlines.at(o).at(0).at(1);
-        }
-        else {
-          p2X = extOutlines.at(o).at(p + 1).at(0);
-          p2Y = extOutlines.at(o).at(p + 1).at(1);
-        }
-
-        //Check if lines intersect, and add intersection
-        if ((currentY >= p1Y && currentY <= p2Y) || (currentY <= p1Y && currentY >= p2Y))
-        {
-            intersections.push_back( std::vector<long long>());
-
-            long long thisX;
-
-            if (p1X != p2X)
-            {
-                thisX = (long long)((currentY - p1Y) / (double)(p2Y - p1Y) * (p2X - p1X) + p1X);
-            }
-            else { thisX = p1X; } //Vertical slope
-
-            // X1, Y1, NX, NY
-            intersections.at(intersections.size() - 1).push_back(p1X);
-            intersections.at(intersections.size() - 1).push_back(p1Y);
-            intersections.at(intersections.size() - 1).push_back(thisX);
-            intersections.at(intersections.size() - 1).push_back(currentY);
-        }
-      }
-
-      //Insert intersections into list
-      int p = 0;
-      while (p < extOutlines.at(o).size()){
-        long long p1X = extOutlines.at(o).at(p).at(0);
-        long long p1Y = extOutlines.at(o).at(p).at(1);
-        
-        //Check corresponding intersections
-        for (int it = 0; it < intersections.size(); it++){
-          
-          //If point is between these points, insert it into list
-          if ((intersections.at(it).at(0) == p1X) &&
-              (intersections.at(it).at(1) == p1Y))
-          {
-            std::vector<long long> appendList;
-            appendList.push_back(intersections.at(it).at(2));
-            appendList.push_back(intersections.at(it).at(3));
-
-            extOutlines.at(o).insert(extOutlines.at(o).begin() + p + 1, appendList);
-
-            p++;
-          }
-        }
-        
-        p++;
-      }
-    }
-  }
-
-  return true;
-}
-
-bool GeneratePaths(){
-  //Scan and find intersections
-  for (int i = 0; i < numOfLines; i++)
-  {
-    long long currentY = (long long) (terrainMinY + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) * i + abs(terrainMaxY - terrainMinY) / (double)(numOfLines) / 2.0);
-
-    intersectionPaths.push_back( std::vector<std::vector<long long>>());
-    
-    for (int o = 0; o < extOutlines.size(); o++){
-      for (int p = 0; p < extOutlines.at(o).size(); p++){
-        if (extOutlines.at(o).at(p).at(1) == currentY){
-          //O, P, NX
-          intersectionPaths.at(intersectionPaths.size() - 1).push_back( std::vector<long long>());
-          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((long long) o);
-          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((long long) p);
-          intersectionPaths.at(intersectionPaths.size() - 1).at(intersectionPaths.at(intersectionPaths.size() - 1).size() - 1).push_back((long long) extOutlines.at(o).at(p).at(0));
-        }
-      }
-    }
-  }
-  
-  //Sort by intitude
-  for (int d = 0; d < intersectionPaths.size(); d++){
-    ace_sorting::quickSortMiddle(intersectionPaths.at(d).data(), (uint16_t) intersectionPaths.at(d).size(), [](std::vector<long long> o1, std::vector<long long> o2) { return o1.at(2) < o2.at(2); });
-  }
-
-  // The infill walks each scan line in enter/leave pairs; a line without points or with an
-  // odd count (it grazed a vertex) would index past its end, so it is skipped.
-  for (int d = (int)intersectionPaths.size() - 1; d >= 0; d--){
-    size_t n = intersectionPaths.at(d).size();
-    if (n < 2 || n % 2 != 0){
-      SerialDebug.printf("[ALGO] Scan line %d skipped (%u crossings)\r\n", d, (unsigned)n);
-      intersectionPaths.erase(intersectionPaths.begin() + d);
-    }
-  }
-
-  // Skip-row order: going straight to the neighbouring row would need a U-turn tighter than the
-  // tool can curve (radius = half the row spacing). Rows k apart are at least two minimum radii
-  // apart, so each pass goes up every k-th row. Passes start at rows 0, k-1, ..., 1, so the jump
-  // from the top of one pass back to the start of the next is long too (k = 3: 0,3,6,2,5,1,4).
-  double spacing_cm = abs(terrainMaxY - terrainMinY) / (double)numOfLines;
-  int k = spacing_cm > 0 ? (int)ceil(2.0 * MOTION_MIN_CORNER_RADIUS * 100.0 / spacing_cm) : 1;
-  if (k > 1 && (int)intersectionPaths.size() > 1){
-    std::vector<std::vector<std::vector<long long>>> ordered;
-    int n = (int)intersectionPaths.size();
-    for (int pass = 0; pass < k; pass++){
-      int first = pass == 0 ? 0 : k - pass;
-      for (int row = first; row < n; row += k) ordered.push_back(intersectionPaths.at(row));
-    }
-    intersectionPaths.swap(ordered);
-  }
-
-  return true;
-}
-
-bool GenerateGcode(){
-  //Clean up
-  ClearOutlines();
-  //Error conditions
-  if (outlines.size() < 1){return false;}
-  if (outlines.at(0).size() <= 2){return false;}
-
-  // Validate all outlines have at least 3 points
-  for (size_t i = 0; i < outlines.size(); i++) {
-    if (outlines[i].size() < 3) {
-      SerialDebug.println("[ALGO] Error: In GenerateGCode, outline with less than 3 points detected");
-      return false;
-    }
-  }
-  
-  if (!BuildPlanOutlines()){return false;}
-  FindTerrainBounds();
-
-  //Here it gets stuck
-  ClearInterference(); //Makes sure no point in outlines is directly on infill Y (Patch for intersection check in FindOutlineIntersections)
-  if (!FindOutlineIntersections()){return false;}
-  if (!GeneratePaths()){return false;}
-
-  return true;
-}
-
-//negative - decreasing index
-//positive - increasing index
-
-//WARNING:
-/*
-OUTLINE MUST EXIST.
-OUTLINE NEEDS TO HAVE AT LEAST 2 POINTS.
-POINTS MUST BE IN OUTLINE
-*/
-int ShortestOutlinePath(int outline_index, int current_point, int target_point){
-  double path_length_inc = 0;
-  double path_length_dec = 0;
-  
-  int tmp_index;
-  
-  //Increasing
-  tmp_index = current_point;
-  
-  while (tmp_index != target_point) {
-    
-    //End of list
-    if (tmp_index == extOutlines.at(outline_index).size() - 1){
-      
-      path_length_inc += (double) sqrt(pow(extOutlines.at(outline_index).at(extOutlines.at(outline_index).size() - 1).at(0) - extOutlines.at(outline_index).at(0).at(0), 2) + pow(extOutlines.at(outline_index).at(extOutlines.at(outline_index).size() - 1).at(1) - extOutlines.at(outline_index).at(0).at(1), 2));
-      
-      tmp_index = 0;
-      continue;
-    }
-    
-    path_length_inc += (double) sqrt(pow(extOutlines.at(outline_index).at(tmp_index).at(0) - extOutlines.at(outline_index).at(tmp_index + 1).at(0), 2) + pow(extOutlines.at(outline_index).at(tmp_index).at(1) - extOutlines.at(outline_index).at(tmp_index + 1).at(1), 2));
-    tmp_index++;
-  }
-  
-  //Decreasing
-  tmp_index = current_point;
-  
-  while (tmp_index != target_point) {
-    
-    //End of list
-    if (tmp_index == 0){
-      
-      path_length_dec += (double) sqrt(pow(extOutlines.at(outline_index).at(extOutlines.at(outline_index).size() - 1).at(0) - extOutlines.at(outline_index).at(0).at(0), 2) + pow(extOutlines.at(outline_index).at(extOutlines.at(outline_index).size() - 1).at(1) - extOutlines.at(outline_index).at(0).at(1), 2));
-      
-      tmp_index = extOutlines.at(outline_index).size() - 1;
-      continue;
-    }
-    
-    path_length_dec += (double) sqrt(pow(extOutlines.at(outline_index).at(tmp_index).at(0) - extOutlines.at(outline_index).at(tmp_index - 1).at(0), 2) + pow(extOutlines.at(outline_index).at(tmp_index).at(1) - extOutlines.at(outline_index).at(tmp_index - 1).at(1), 2));
-    tmp_index--;
-  }
-  
-  if (path_length_inc < path_length_dec){
-    return (long long) ceil(path_length_inc);
-  }
-  else {
-    return (long long) -ceil(path_length_dec);
-  }
-}
-
-int OutlineTraverseInc(int outline_index, int current_point, int amount){
-  for (int i = 0; i < amount; i++){
-    current_point++;
-    
-    if (current_point >= extOutlines.at(outline_index).size()){current_point = 0;}
-  }
-  
-  return current_point;
-}
-
-int OutlineTraverseDec(int outline_index, int current_point, int amount){
-  for (int i = 0; i < amount; i++){
-    current_point--;
-    
-    if (current_point < 0){current_point = extOutlines.at(outline_index).size() - 1;}
-  }
-  
-  return current_point;
-}
-
-std::vector<double> AlgorithmNextPoint(){
-  if (algorithmDone) {
-    return std::vector<double>();  // signals end-of-mow to controller
-  }
-  bool onLapRing = false;
-
-  long long NextX = 0;
-  long long NextY = 0;
-  
-  if (algorithmTarget == "FORWARD"){
-    if (algorithmMode == "INFILL"){
-      nextTool = NAV_TOOL_ON;
-      
-      //End of infill
-      if (algorithmInfillDirection == 1 && algorithmInfillPoint == intersectionPaths.at(algorithmInfillIndex).size() - 1){
-        algorithmMode = "SEEK";
-        
-        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
-        
-        algorithmInfillIndex++;
-        
-        if (algorithmInfillIndex >= intersectionPaths.size()){
-          algorithmTarget = "BASE";
-          algorithmMode = "SEEK";
-          
-          algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex - 1).at(algorithmInfillPoint).at(0));
-          algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex - 1).at(algorithmInfillPoint).at(1));
-        }
-      }
-      else if (algorithmInfillDirection == 0 && algorithmInfillPoint == 0){
-        algorithmMode = "SEEK";
-        
-        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
-        
-        algorithmInfillIndex++;
-        
-        if (algorithmInfillIndex >= intersectionPaths.size()){
-          algorithmTarget = "BASE";
-          algorithmMode = "SEEK";
-          
-          algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex - 1).at(algorithmInfillPoint).at(0));
-          algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex - 1).at(algorithmInfillPoint).at(1));
-        }
-      }
-      else {
-        //Jump outlines
-        if ((algorithmInfillDirection == 1 && algorithmInfillPoint % 2 == 0) || (algorithmInfillDirection == 0 && algorithmInfillPoint % 2 == 1)){
-          if (algorithmInfillDirection == 1){
-            algorithmInfillPoint++;
-          }
-          else {
-            algorithmInfillPoint--;
-          }
-          
-          algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-          algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
-        }
-        //Traverse outline
-        else {
-          //Calculate distances
-          int shortestPath;
-          int nextInfillPoint;
-          
-          //Find next infill point
-          if (algorithmInfillDirection == 1){
-            nextInfillPoint = algorithmInfillPoint + 1;
-          }
-          else {
-            nextInfillPoint = algorithmInfillPoint - 1;
-          }
-          
-          //Find shortest path to the next infill point
-          shortestPath = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, (long long) (intersectionPaths.at(algorithmInfillIndex).at(nextInfillPoint).at(1)));
-          
-          //Traverse in shortest direction
-          if (shortestPath > 0){
-            algorithmCurrentPoint = OutlineTraverseInc(algorithmCurrentOutline, algorithmCurrentPoint, 1);
-          }
-          else {
-            algorithmCurrentPoint = OutlineTraverseDec(algorithmCurrentOutline, algorithmCurrentPoint, 1);
-          }
-          
-          //Reached continuation of infill
-          if (algorithmCurrentPoint == (long long) (intersectionPaths.at(algorithmInfillIndex).at(nextInfillPoint).at(1))){
-            if (algorithmInfillDirection == 1){
-              algorithmInfillPoint++;
-            }
-            else {
-              algorithmInfillPoint--;
-            }
-            
-            algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-            algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
-          }
-        }
-      }
-      
-      NextX = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(0);
-      NextY = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(1);
-    }
-    if (algorithmTarget == "FORWARD" && algorithmMode == "SEEK"){
-      nextTool = NAV_TOOL_OFF;
-      
-      //Calculate distances
-      int distInfillA = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, (long long) (intersectionPaths.at(algorithmInfillIndex).at(0).at(1)));
-      int distInfillB = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, (long long) (intersectionPaths.at(algorithmInfillIndex).at(intersectionPaths.at(algorithmInfillIndex).size() - 1).at(1)));
-      
-      int shortestPath;
-      
-      //Choose shortest path
-      if (abs(distInfillA) < abs(distInfillB)){
-        shortestPath = distInfillA;
-      }
-      else {
-        shortestPath = distInfillB;
-      }
-      
-      //Traverse in shortest direction
-      if (shortestPath > 0){
-        algorithmCurrentPoint = OutlineTraverseInc(algorithmCurrentOutline, algorithmCurrentPoint, 1);
-      }
-      else {
-        algorithmCurrentPoint = OutlineTraverseDec(algorithmCurrentOutline, algorithmCurrentPoint, 1);
-      }
-      
-      //If reached infill, switch mode
-      if (algorithmCurrentPoint == (long long) (intersectionPaths.at(algorithmInfillIndex).at(0).at(1))){
-        algorithmMode = "INFILL";
-        algorithmInfillPoint = 0;
-        algorithmInfillDirection = 1;
-      }
-      else if (algorithmCurrentPoint == (long long) (intersectionPaths.at(algorithmInfillIndex).at(intersectionPaths.at(algorithmInfillIndex).size() - 1).at(1))){
-        algorithmMode = "INFILL";
-        algorithmInfillPoint = intersectionPaths.at(algorithmInfillIndex).size() - 1;
-        algorithmInfillDirection = 0;
-      }
-      
-      NextX = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(0);
-      NextY = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(1);
-    }
-    if (algorithmMode == "OUTLINE"){
-      nextTool = NAV_TOOL_ON;
-
-      if (lapPath.empty()) StartLap(0);
-      // The way in to the first lap is not on its ring, and the legs to and from the moved-in
-      // corner a lap ends on slant away from the outline: no edge beside them
-      onLapRing = algorithmLap < (int)lapRings.size() && !(algorithmLap == 0 && lapPathIndex == 0) &&
-                  lapPathIndex + 2 < lapPath.size();
-      NextX = lapPath.at(lapPathIndex).at(0);
-      NextY = lapPath.at(lapPathIndex).at(1);
-      lapPathIndex++;
-
-      if (lapPathIndex == lapPath.size()){
-        if (algorithmLap < (int)lapRings.size()){
-          algorithmLap++;
-          StartLap(algorithmLap);
-        }
-        else {
-          //Start seeking first infill start
-          algorithmMode = "SEEK";
-          algorithmCurrentOutline = 0;
-          algorithmCurrentPoint = lapEndVertex;
-          algorithmInfillIndex = 0;
-          if (intersectionPaths.empty()){
-            algorithmTarget = "BASE";  // nothing to infill (area narrower than one lane)
-          }
-        }
-      }
-    }
-  }
-  if (algorithmTarget == "BASE"){
-    nextTool = NAV_TOOL_OFF;
-    
-    if (algorithmMode == "INFILL"){
-      //Jump outlines
-      if ((algorithmInfillDirection == 0 && algorithmInfillPoint % 2 == 0 && algorithmCurrentPoint == intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1)) || (algorithmInfillDirection == 1 && algorithmInfillPoint % 2 == 1 && algorithmCurrentPoint == intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1))){
-        if (algorithmInfillDirection == 1){
-          algorithmInfillPoint--;
-        }
-        else {
-          algorithmInfillPoint++;
-        }
-        
-        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
-      }
-      //Traverse outline
-      else {
-        //Jump outline skip
-        if ((algorithmInfillDirection == 0 && algorithmInfillPoint % 2 == 1 && algorithmCurrentPoint == intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1)) || (algorithmInfillDirection == 1 && algorithmInfillPoint % 2 == 0 && algorithmCurrentPoint == intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1))){
-          if (algorithmInfillDirection == 1){
-            algorithmInfillPoint--;
-          }
-          else {
-            algorithmInfillPoint++;
-          }
-        }
-        
-        //Reached continuation of infill
-        if (algorithmCurrentPoint == (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1))){
-          if (algorithmInfillDirection == 1){
-            algorithmInfillPoint--;
-          }
-          else {
-            algorithmInfillPoint++;
-          }
-          
-          algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-          algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
-        }
-        
-        //Calculate distances
-        int shortestPath;
-        
-        //Find shortest path to the next infill point
-        shortestPath = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1)));
-        
-        //Traverse in shortest direction
-        if (shortestPath > 0){
-          algorithmCurrentPoint = OutlineTraverseInc(algorithmCurrentOutline, algorithmCurrentPoint, 1);
-        }
-        else {
-          algorithmCurrentPoint = OutlineTraverseDec(algorithmCurrentOutline, algorithmCurrentPoint, 1);
-        }
-      }
-      
-      //End of infill
-      if (algorithmInfillDirection == 0 && algorithmInfillPoint == intersectionPaths.at(algorithmInfillIndex).size() - 1){
-        if (!algorithmAbortFull){
-          algorithmTarget = "FORWARD";
-        }
-        
-        algorithmMode = "SEEK";
-        
-        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
-        
-        algorithmInfillIndex++;
-        
-        if (algorithmInfillIndex >= intersectionPaths.size()){
-          algorithmAbortFull = true;
-        }
-      }
-      else if (algorithmInfillDirection == 1 && algorithmInfillPoint == 0){
-        if (!algorithmAbortFull){
-          algorithmTarget = "FORWARD";
-        }
-        
-        algorithmMode = "SEEK";
-        
-        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
-        
-        algorithmInfillIndex++;
-        
-        if (algorithmInfillIndex >= intersectionPaths.size()){
-          algorithmAbortFull = true;
-        }
-      }
-      
-      NextX = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(0);
-      NextY = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(1);
-    }
-    else if (algorithmMode == "SEEK"){
-      //If reached charging station exit point (only meaningful when returning to base)
-      if (algorithmTarget == "BASE" && algorithmCurrentPoint == 0){
-        MainChargingStart();
-        algorithmDone = true;
-        return std::vector<double>();  // bail immediately
-      }
-      
-      //Find shortest path to the charging station exit point
-      int shortestPath = ShortestOutlinePath(algorithmCurrentOutline, algorithmCurrentPoint, 0);
-      
-      //Traverse in shortest direction
-      if (shortestPath > 0){
-        algorithmCurrentPoint = OutlineTraverseInc(algorithmCurrentOutline, algorithmCurrentPoint, 1);
-      }
-      else {
-        algorithmCurrentPoint = OutlineTraverseDec(algorithmCurrentOutline, algorithmCurrentPoint, 1);
-      }
-      
-      NextX = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(0);
-      NextY = extOutlines.at(algorithmCurrentOutline).at(algorithmCurrentPoint).at(1);
-    }
-  }
-  
-  prevPointLon = targetPointLon;
-  prevPointLat = targetPointLat;
-
-  targetPointLon = NextX;
-  targetPointLat = NextY;
-  
-  // A leg from a point of a lap closer to the outline than MOWER_TURN_INSET runs along the outline:
-  // the mower must not swing out on its side. Laps go up the indices; counter-clockwise the
-  // inside is on their left. Everything planned on extOutlines keeps MOWER_TURN_INSET, where any
-  // turn stays inside.
-  int edge = 0;
-  if (lastOnLapRing){
-    edge = SignedArea(outlines.at(0)) > 0 ? -1 : 1;
-  }
-  lastOnLapRing = onLapRing;
-
-  std::vector<double> returnList;
-  returnList.push_back((double)NextX / 100.0);
-  returnList.push_back((double)NextY / 100.0);
-  returnList.push_back((double)nextTool);
-  returnList.push_back((double)edge);
-  return returnList;
-}
-
-void AlgorithmAbort(bool full_abort){
-  if (algorithmTarget != "BASE"){
-    if (full_abort){
-      algorithmAbortFull = true;
-    }
-    else {
-      algorithmAbortFull = false;
-    }
-    
-    algorithmTarget = "BASE";
-    
-    if (algorithmMode == "OUTLINE"){
-      algorithmMode = "SEEK";
-      // The way back runs on extOutlines[0]: join it where the lap is
-      if (!lapPath.empty()){
-        const std::vector<long long>& p = lapPath.at(lapPathIndex > 0 ? lapPathIndex - 1 : 0);
-        algorithmCurrentOutline = 0;
-        algorithmCurrentPoint = NearestPoint(extOutlines.at(0), p[0], p[1]);
-        algorithmLap = (int)lapRings.size();
-      }
-    }
-    else if (algorithmMode == "INFILL"){
-      //End of infill
-      if (algorithmInfillDirection == 0 && algorithmInfillPoint == intersectionPaths.at(algorithmInfillIndex).size() - 1){
-        if (!algorithmAbortFull){
-          algorithmTarget = "FORWARD";
-        }
-        
-        algorithmMode = "SEEK";
-        
-        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
-        
-        algorithmInfillIndex++;
-        
-        if (algorithmInfillIndex >= intersectionPaths.size()){
-          algorithmAbortFull = true;
-        }
-      }
-      else if (algorithmInfillDirection == 1 && algorithmInfillPoint == 0){
-        if (!algorithmAbortFull){
-          algorithmTarget = "FORWARD";
-        }
-        
-        algorithmMode = "SEEK";
-        
-        algorithmCurrentOutline = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(0));
-        algorithmCurrentPoint = (long long) (intersectionPaths.at(algorithmInfillIndex).at(algorithmInfillPoint).at(1));
-        
-        algorithmInfillIndex++;
-        
-        if (algorithmInfillIndex >= intersectionPaths.size()){
-          algorithmAbortFull = true;
-        }
-      }
-    }
-    
-    //TODO: Implement mower reverse for a bit from obstacle
-  }
-  // The caller asks AlgorithmNextPoint() for the next target. (Before 2026-10-27 this function
-  // did that itself, crashed on the empty "done" result and sent cm values as metres.)
-}
-
-void AlgorithmSetCurrentPosition(long long x_cm, long long y_cm) {
-  current_lon = x_cm;
-  current_lat = y_cm;
-}
+// ---------------------------------------------------------------- MISSION
 
 void AlgorithmReset() {
-  algorithmTarget = "FORWARD";
-  algorithmMode = "OUTLINE";
-  algorithmAbortFull = false;
-  algorithmDone = false;
-
-  algorithmCurrentOutline = 0;
-  algorithmCurrentPoint = 0;
-
-  algorithmInfillIndex = 0;
-  algorithmInfillPoint = 0;
-  algorithmInfillDirection = 0;
-
-  prevPointLon = 0;
-  prevPointLat = 0;
-  targetPointLon = 0;
-  targetPointLat = 0;
-  nextTool = NAV_TOOL_KEEP;
-  lastOnLapRing = false;
-  algorithmLap = 0;
-  lapPath.clear();
-  lapPathIndex = 0;
+    plan.reset();
+    prev_x_m = target_x_m = plan.base().x / 1000.0;
+    prev_y_m = target_y_m = plan.base().y / 1000.0;
 }
 
-void AlgorithmCaptureStart(){
-  AlgorithmReset();
-  outlines.clear();
+void AlgorithmSetGoal(coverage_goal goal) {
+    plan.set_goal(goal);
 }
 
-void AlgorithmCaptureNewOutline(){
-  outlines.push_back( std::vector<std::vector<long long>>());
-}
-void AlgorithmCaptureBaseExitPoint(int64_t x_cm, int64_t y_cm){
-  BASE_EXIT_X_CM = x_cm;
-  BASE_EXIT_Y_CM = y_cm;
-}
-void AlgorithmCaptureNewPoint(){
-  if (outlines.empty()) {
-    AlgorithmCaptureNewOutline();
-  }
-
-  outlines.back().push_back( std::vector<long long>());
-
-  outlines.back().back().push_back(GetLon());
-  outlines.back().back().push_back(GetLat());
-}
-void AlgorithmCaptureSetNewPoint(long long lon, long long lat){
-  if (outlines.empty()) {
-    AlgorithmCaptureNewOutline();
-  }
-
-  outlines.back().push_back( std::vector<long long>());
-
-  outlines.back().back().push_back(lon);
-  outlines.back().back().push_back(lat);
-
-  //TODO: Remove
-  //Serial.println(">point:" + String(lon) + ":" + String(lat) + "|xy");
-}
-bool AlgorithmCaptureRemoveOutline(){
-  //Index out of bounds, failed
-  if (outlines.size() == 0){return false;}
-
-  outlines.pop_back();
-  
-  return true;
+void AlgorithmStoppedAt(bool skip) {
+    plan.stopped_at(now_x_m(), now_y_m(), skip);
 }
 
-bool AlgorithmCaptureRemovePoint(){
-  //Index out of bounds, stop algorithm
-  if (outlines.empty() || outlines.back().size() == 0){return false;}
-
-  outlines.back().pop_back();
-  
-  return true;
+void AlgorithmReplan() {
+    plan.replan();
 }
 
-bool AlgorithmCaptureEnd(){
-  return GenerateGcode();
+bool AlgorithmMowingDone() {
+    return plan.mowed();
 }
 
-String AlgorithmGetPathString(){
-  String PathString = "";
+std::vector<double> AlgorithmNextPoint() {
+    CoveragePoint p;
+    uint32_t t0 = micros();
+    bool ok = plan.next(&p);
+    uint32_t us = micros() - t0;
+    if (us > 5000) SerialDebug.printf("[ALGO] next point took %lu ms\r\n", (unsigned long)(us / 1000));
+    if (!ok) return std::vector<double>();
+    uint8_t tool = p.blade == COVERAGE_BLADE_ON  ? NAV_TOOL_ON  :
+                   p.blade == COVERAGE_BLADE_OFF ? NAV_TOOL_OFF : NAV_TOOL_KEEP;
+    prev_x_m = target_x_m;
+    prev_y_m = target_y_m;
+    target_x_m = p.x;
+    target_y_m = p.y;
+    return std::vector<double>{ p.x, p.y, (double)tool, (double)p.edge };
+}
 
-  for (int i = 0; i < outlines.size(); i++){
-    PathString += "O\n";
-
-    for (int j = 0; j < outlines.at(i).size(); j++){
-      PathString += String((int) outlines.at(i).at(j).at(0)) + " " + String((int) outlines.at(i).at(j).at(1)) + "\n";
+void AlgorithmMotionSetTargetPoint(double x_m, double y_m, uint8_t tool, int8_t edge) {
+    motion_command_t cmd = { MOVING, prev_x_m, prev_y_m, x_m, y_m, tool, edge };
+    dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
+    if (result != DDS_SUCCESS) {
+        SerialDebug.printf("[ALGO] Failed to send motion command: %d\r\n", result);
     }
-  }
-
-  return PathString;
-}
-
-bool AlgorithmPopulatePathFromString(String& readData){
-  AlgorithmReset();
-  outlines.clear();
-
-  int newlineIndex = 0;
-  while ((newlineIndex = readData.indexOf('\n')) != -1) {
-        String line = readData.substring(0, newlineIndex);
-        readData = readData.substring(newlineIndex + 1);
-
-        if (line[0] == 'O'){
-          AlgorithmCaptureNewOutline();
-        }
-        else {
-          // Split each line by space and assign values to variables
-          int spaceIndex = line.indexOf(' ');
-          if (spaceIndex != -1) {
-              String variableValue1 = line.substring(0, spaceIndex);
-              String variableValue2 = line.substring(spaceIndex + 1);
-
-              AlgorithmCaptureSetNewPoint(variableValue1.toInt(), variableValue2.toInt());
-          }
-        }
-    }
-
-    return AlgorithmCaptureEnd();
 }
 
 void AlgorithmSeedStartPosition() {
-    // Seed prevPoint and targetPoint to current pose so the first segment's
-    // start = robot's actual position. Subsequent segments will use the
-    // intended (planned) previous target.
-    prevPointLon = current_lon;
-    prevPointLat = current_lat;
-    targetPointLon = current_lon;
-    targetPointLat = current_lat;
+    prev_x_m = target_x_m = now_x_m();
+    prev_y_m = target_y_m = now_y_m();
 }
 
-const std::vector<std::vector<std::vector<long long>>>& AlgorithmGetExtOutlines() {
-    return extOutlines;
+void AlgorithmSetCurrentPosition(long long x_cm, long long y_cm) {
+    current_x_cm = x_cm;
+    current_y_cm = y_cm;
 }
-const std::vector<std::vector<std::vector<long long>>>& AlgorithmGetIntersectionPaths() {
-    return intersectionPaths;
+
+const CoveragePlan& AlgorithmPlan() {
+    return plan;
+}
+
+// ---------------------------------------------------------------- CAPTURE
+
+void AlgorithmCaptureStart() {
+    outlines.clear();
+}
+
+void AlgorithmCaptureNewOutline() {
+    outlines.push_back(std::vector<std::vector<long long>>());
+}
+
+void AlgorithmCaptureNewPoint() {
+    AlgorithmCaptureSetNewPoint(current_x_cm, current_y_cm);
+}
+
+void AlgorithmCaptureSetNewPoint(long long x_cm, long long y_cm) {
+    if (outlines.empty()) AlgorithmCaptureNewOutline();
+    outlines.back().push_back(std::vector<long long>{ x_cm, y_cm });
+}
+
+bool AlgorithmCaptureRemoveOutline() {
+    if (outlines.empty()) return false;
+    outlines.pop_back();
+    return true;
+}
+
+bool AlgorithmCaptureRemovePoint() {
+    if (outlines.empty() || outlines.back().empty()) return false;
+    outlines.back().pop_back();
+    return true;
+}
+
+bool AlgorithmCaptureEnd() {
+    MapPaths paths;
+    for (const auto& outline : outlines) {
+        if (outline.size() < 3) continue;   // a stray "new outline" or a point or two
+        MapPath path;
+        for (const auto& q : outline) path.push_back(MapPoint(q[0] * 10, q[1] * 10));
+        paths.push_back(path);
+    }
+    CoverageConfig cfg = {
+        MOWER_EDGE_INSET, MOWER_TURN_INSET, MOWER_OVERLAP / 100.0, PLANNER_MIN_ROW, PLANNER_MARGIN,
+        PLANNER_CORNER_TURN, PLANNER_LAP_JOIN, PLANNER_TOLERANCE, plan_log
+    };
+    uint32_t t0 = millis();
+    uint32_t heap0 = ESP.getFreeHeap();
+    bool ok = false;
+    plan = CoveragePlan();   // the old plan's memory back first: the heap holds one plan at a time
+    try {
+        ok = !paths.empty() && plan.build(paths, cfg);
+    } catch (const std::bad_alloc&) {
+        plan = CoveragePlan();   // out of memory fails the capture instead of rebooting the mower
+        SerialDebug.println("[ALGO] Out of memory building the plan");
+    }
+    SerialDebug.printf("[ALGO] Plan built in %lu ms, %u pieces, heap free %u -> %u B (largest block %u B)\r\n",
+                       (unsigned long)(millis() - t0), (unsigned)plan.pieces().size(), (unsigned)heap0,
+                       (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
+    AlgorithmReset();
+    return ok;
+}
+
+String AlgorithmGetPathString() {
+    String s = "";
+    for (const auto& outline : outlines) {
+        s += "O\n";
+        for (const auto& q : outline) s += String((long)q[0]) + " " + String((long)q[1]) + "\n";
+    }
+    return s;
+}
+
+bool AlgorithmPopulatePathFromString(String& readData) {
+    AlgorithmCaptureStart();
+    int newlineIndex;
+    while ((newlineIndex = readData.indexOf('\n')) != -1) {
+        String line = readData.substring(0, newlineIndex);
+        readData = readData.substring(newlineIndex + 1);
+        if (line.length() == 0) continue;
+        if (line[0] == 'O') {
+            AlgorithmCaptureNewOutline();
+        } else {
+            int spaceIndex = line.indexOf(' ');
+            if (spaceIndex != -1) {
+                AlgorithmCaptureSetNewPoint(line.substring(0, spaceIndex).toInt(), line.substring(spaceIndex + 1).toInt());
+            }
+        }
+    }
+    return AlgorithmCaptureEnd();
 }

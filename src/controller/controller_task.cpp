@@ -7,11 +7,6 @@ bool controller_path_edit_allowed() {
     return robot_state == ROBOT_STATE_IDLE || robot_state == ROBOT_STATE_MANUAL;
 }
 
-// External globals from algorithm
-extern String algorithmTarget;
-extern String algorithmMode;
-extern bool algorithmAbortFull;
-
 // GPS cache (updated by gps_callback)
 static gps_data_t latest_gps_ctrl = {0, 0, 0, 999};
 static bool       gps_valid_ctrl  = false;
@@ -22,14 +17,6 @@ static double   datum_capture_start_lat = 0;
 static double   datum_capture_start_lon = 0;
 
 // -------------------------------------------------------- HELPERS ---------------------------------------------------------------
-
-static void go_to_base() {
-
-}
-
-static void go_to_base_exit() {
-    
-}
 
 static void stop_motors() {
     motor_data_t stop = { MOTOR_STOP, 0.0f, 0.0f };
@@ -80,7 +67,7 @@ static void abort_mission(const char* reason) {
 static bool planner_exhausted = false;
 
 static void complete_mission() {
-    SerialDebug.printf("[CTRL] Mowing complete, returning to IDLE\r\n");
+    SerialDebug.printf("[CTRL] Mowing complete, at base, IDLE\r\n");
     stop_motors();
     motor_main_off();
     robot_state = ROBOT_STATE_IDLE;
@@ -102,6 +89,23 @@ static void go_to_next_algorithm_point() {
         return;
     }
     AlgorithmMotionSetTargetPoint(next.at(0), next.at(1), (uint8_t)next.at(2), (int8_t)next.at(3));
+}
+
+// The planner works towards a new goal from where the robot stands: what it handed out and the
+// robot did not reach is not mowed. The motion task has stopped and dropped its path.
+static void plan_from_here(coverage_goal goal, bool skip) {
+    AlgorithmStoppedAt(skip);
+    AlgorithmSetGoal(goal);
+    AlgorithmSeedStartPosition();
+    planner_exhausted = false;
+    go_to_next_algorithm_point();
+}
+
+// Home through the lawn, blade off (the way home switches it off too)
+static void go_to_base() {
+    motion_stop();
+    motor_main_off();
+    plan_from_here(COVERAGE_HOME, false);
 }
 
 static void enter_manual_mode() {
@@ -189,13 +193,10 @@ static void start_mowing() {
     }
 
     SerialDebug.printf("[CTRL] Starting mowing\r\n");
-    if (robot_state == ROBOT_STATE_IDLE) {
-        AlgorithmReset();   // a new mission; without this a second start after "complete" did nothing
-    }
+    // From the base after rain or charging it goes on where it stopped; else a new mission
+    if (robot_state == ROBOT_STATE_IDLE || AlgorithmMowingDone()) AlgorithmReset();
     robot_state = ROBOT_STATE_MOWING;
-    planner_exhausted = false;
-    AlgorithmSeedStartPosition();
-    go_to_next_algorithm_point();
+    plan_from_here(COVERAGE_MOW, false);
 }
 
 static void pause_mowing() {
@@ -232,9 +233,9 @@ static void return_to_base() {
 }
 
 static void handle_charging_complete() {
-    SerialDebug.printf("[CTRL] Charging complete, leaving charging station\r\n");
-    robot_state = ROBOT_STATE_LEAVING_CHARGING_STATION;
-    go_to_base_exit();
+    SerialDebug.printf("[CTRL] Charging complete, going on mowing\r\n");
+    robot_state = ROBOT_STATE_MOWING;   // no dock to back out of yet
+    plan_from_here(COVERAGE_MOW, false);
 }
 
 static void handle_docking_complete() {
@@ -249,19 +250,23 @@ static void handle_motion_done() {
     switch (robot_state) {
         case ROBOT_STATE_MOWING:
             go_to_next_algorithm_point();   // the queue ran dry before the next point arrived
-            if (planner_exhausted) complete_mission();
+            if (planner_exhausted) {
+                SerialDebug.printf("[CTRL] Lawn mowed, returning to base\r\n");
+                return_to_base();
+            }
             break;
 
         case ROBOT_STATE_RETURNING_TO_BASE:
-            SerialDebug.printf("[CTRL] Reached base, entering charging station\r\n");
-            robot_state = ROBOT_STATE_ENTERING_CHARGING_STATION;
-            handle_docking_complete();
-            break;
-
-        case ROBOT_STATE_LEAVING_CHARGING_STATION:
-            SerialDebug.printf("[CTRL] Left base, resuming mowing\r\n");
-            robot_state = ROBOT_STATE_MOWING;
             go_to_next_algorithm_point();
+            if (!planner_exhausted) break;
+            if (AlgorithmMowingDone()) {
+                complete_mission();
+            } else {
+                // No dock yet: the base point stands in for the charging station
+                SerialDebug.printf("[CTRL] Reached base, entering charging station\r\n");
+                robot_state = ROBOT_STATE_ENTERING_CHARGING_STATION;
+                handle_docking_complete();
+            }
             break;
 
         default:
@@ -270,19 +275,17 @@ static void handle_motion_done() {
 }
 
 static void handle_obstacle() {
-    if (robot_state != ROBOT_STATE_MOWING) return;
-
-    // Motion has already stopped and dropped its path. The planner runs a few points ahead of
-    // the mower, so the line skipped is the one being planned, not always the one hit.
-    SerialDebug.printf("[CTRL] Obstacle hit — skipping line\r\n");
-    stop_motors();
-    try {
-        AlgorithmAbort(false);
-    } catch (const std::exception& e) {
-        abort_mission(e.what());
+    // Motion has already stopped and dropped its path
+    if (robot_state == ROBOT_STATE_RETURNING_TO_BASE) {
+        SerialDebug.printf("[CTRL] Obstacle hit, new way home from here\r\n");
+        stop_motors();
+        plan_from_here(COVERAGE_HOME, false);
         return;
     }
-    go_to_next_algorithm_point();
+    if (robot_state != ROBOT_STATE_MOWING) return;
+    SerialDebug.printf("[CTRL] Obstacle hit, skipping the piece it was on\r\n");   // the piece it was on is given up
+    stop_motors();
+    plan_from_here(COVERAGE_MOW, true);
 }
 
 static void stop_mowing() {
@@ -325,7 +328,7 @@ static void controller_signal_callback(dds_callback_context_t* context) {
             handle_motion_done();
             break;
         case SIGNAL_MOTION_WANT_POINT:
-            if (robot_state == ROBOT_STATE_MOWING) go_to_next_algorithm_point();
+            if (robot_state == ROBOT_STATE_MOWING || robot_state == ROBOT_STATE_RETURNING_TO_BASE) go_to_next_algorithm_point();
             break;
         case SIGNAL_LOW_BATTERY:
             handle_low_battery();
@@ -368,6 +371,12 @@ static void gps_callback(dds_callback_context_t* context) {
     gps_valid_ctrl  = (data->accuracy > 0 && data->accuracy < 999);
 }
 
+// Where the planner (capture points, plan from here) sees the robot
+static void fused_pose_callback(dds_callback_context_t* context) {
+    fused_pose_data_t* data = (fused_pose_data_t*)context->message_data.data;
+    AlgorithmSetCurrentPosition((long long)(data->x * 100.0), (long long)(data->y * 100.0));
+}
+
 // -------------------------------------------------------- TASK ---------------------------------------------------------------
 
 static dds_thread_context_t thread_context;
@@ -398,6 +407,11 @@ void controller_task(void* parameter) {
         SerialDebug.printf("GPS topic subscribe failed: %s\n", DDS_RESULT_TO_STRING(result));
     }
 
+    result = DDS_SUBSCRIBE("/fused_pose", fused_pose_callback, &thread_context);
+    if (result != DDS_SUCCESS) {
+        SerialDebug.printf("Fused pose subscribe failed: %s\n", DDS_RESULT_TO_STRING(result));
+    }
+
     // ------- THREAD SETUP CODE END -------
 
     vTaskDelay(1500); // Allow some time for system stabilization before starting main loop
@@ -407,7 +421,7 @@ void controller_task(void* parameter) {
     robot_state = ROBOT_STATE_IDLE;
 
     if (!CONFIG_DATUM) {
-        SerialDebug.printf("[CTRL] Datum not set. Waiting for Bluetooth setup.\r\n");
+        SerialDebug.printf("[CTRL] Datum not set. Waiting for datum capture (console g).\r\n");
     }
     if (!CONFIG_PATH) {
         SerialDebug.printf("[CTRL] Path not set. Waiting for path setup.\r\n");

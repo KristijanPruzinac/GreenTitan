@@ -385,10 +385,16 @@ void NavPath::classify(int i) {
         else if (next >= 0.01f) room_out = len_out * t / (t + tanf(next / 2.0f));
     }
     float r = fminf(cfg_->corner_radius, fminf(room_in / t, room_out / t));
+    // Along an edge on the outer side the wider the arc, the less the rear swings out: a bend
+    // there is rounded as wide as its legs allow, cutting at most edge_swing inside the corner
+    int outer = b.turn > 0.0f ? -1 : 1;
+    if (b.edge == outer && !b.cut) {
+        float cut = 1.0f / cosf(fabsf(b.turn) / 2.0f) - 1.0f;
+        r = fmaxf(r, fminf(fminf(room_in / t, room_out / t), cut > 0.0f ? cfg_->edge_swing / cut : 1e9f));
+    }
     bool round = fabsf(b.turn) <= cfg_->max_rounded_turn && r >= cfg_->min_radius;
     // Along an edge on the outer side, a corner that would swing the rear out more than
     // edge_swing is driven as an edge corner if it fits
-    int outer = b.turn > 0.0f ? -1 : 1;
     float tail = body_swing(b.turn, round ? r : 0.0f, cfg_->rear_overhang, cfg_->half_width);
     // The robot is on the first leg: the curve has to start ahead of it
     if (i == 1) room_in = fminf(room_in, (float)hypot(b.x - axle_x_, b.y - axle_y_));

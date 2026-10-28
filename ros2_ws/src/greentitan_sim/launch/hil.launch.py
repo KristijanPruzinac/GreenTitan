@@ -30,7 +30,8 @@ def _setup(context):
         if not device:  # serial arrives over TCP from the Windows relay; expose it as a pty
             device = os.path.join(os.environ.get('XDG_RUNTIME_DIR', '/tmp'), 'greentitan_esp32')
             actions.append(ExecuteProcess(
-                cmd=['socat', f'pty,link={device},raw,echo=0', f"tcp-listen:{arg('tcp_port')},reuseaddr"],
+                # nodelay: micro-ROS waits for each reply, and Nagle + delayed ACKs made every round trip ~70 ms
+                cmd=['socat', f'pty,link={device},raw,echo=0', f"tcp-listen:{arg('tcp_port')},reuseaddr,nodelay"],
                 output='screen', respawn=True, respawn_delay=1.0))
         actions.append(Node(package='micro_ros_agent', executable='micro_ros_agent', output='screen',
                             arguments=['serial', '--dev', device, '-b', arg('baud')],

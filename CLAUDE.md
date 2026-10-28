@@ -39,8 +39,7 @@ src/                     ESP32 firmware (PlatformIO, env esp32dev)
                          speed profile), NavTracker (TinyMPC). No mower code here
   motion/                motion_task: mower glue around navigation/ (config, point queue, blade, guards)
   controller/            controller_task: mission state machine
-  algorithm/             coverage planner (outline + skip-row boustrophedon infill); *.bck = legacy GPS-degree version
-  bluetooth/             Classic-BT SPP command protocol ("GreenTitan")
+  algorithm/             coverage planner: lawn_map + coverage (Clipper2; outline laps + skip-row infill), algorithm.* = firmware glue; *.bck = legacy GPS-degree version
   configuration/         NVS Preferences persistence
   visualization/         packs the planned path into a Float64MultiArray for RViz
   simulation/            sim_task (scripted motor pattern, not started anywhere)
@@ -49,7 +48,7 @@ src/                     ESP32 firmware (PlatformIO, env esp32dev)
 ros2_ws/src/robot_package/   ROS 2 (ament_python) package
   config/ekf.yaml        THE localization config
   launch/robot.launch.xml   static TFs + ekf_node + path_visualizer
-  robot_package/path_visualizer.py
+  robot_package/path_visualizer.py, fused_pose_relay.py (EKF Odometry → compact esp/fused_pose)
 ros2_ws/src/sim_env/     generic Gazebo sim: YAML world/robot → SDF, device models (gnss, imu, stepper)
 ros2_ws/src/greentitan_sim/  mower + lawn configs, hil.launch.py, console tool
 ros2_ws/build|install|log   colcon output (gitignored)
@@ -57,6 +56,7 @@ tools/android/           phone provisioning (adb debloat, Termux, camera over ad
 cad/                     Python scripts that drive Fusion 360 / render studies (roof, canopy, cowl, ...)
 outputs/                 generated CAD exports/renders (mostly gitignored)
 lib/tinympc/             vendored TinyMPC solver (MIT), patched for the ESP32 (float, no stdout)
+lib/clipper2/            vendored Clipper2 polygon library (BSL-1.0), needs C++17
 platformio.ini           board, libs (incl. ESP-DDS, micro_ros_platformio jazzy), DDS limits
 ```
 
@@ -110,12 +110,12 @@ There are no automated tests. The `test/` folders only hold the PlatformIO and a
 - Push back with evidence when a proposal conflicts with real-world behaviour (slip, RTK noise, terrain). The user values that.
 - Commit or push only when asked.
 
-## Status (2026-10-27)
+## Status (2026-10-28)
 
 - **Field-tested** (old drive train): localization (GPS + gyro, gated yaw) and line following. The drive was too weak for real terrain because the steppers had no gearbox.
 - **Works in teleport/sim mode:** the coverage planner and mission sequencing.
 - **Navigation core** (2026-10-27): curved axle paths (merged near-straight points, rounded corners, skip-row infill with arc U-turns, turning on the spot only for reversals) and TinyMPC tracking; the planner keeps half width + 5 cm from every outline. The body (casters 0.415 m behind the axle) must not swing past the edge: infill rows keep 0.51 m in, where any turn is safe; outline laps use the edge-corner curve, or a corner cut inward where it doesn't fit, and are joined mid-side. In Gazebo HIL on a 2 m lawn there were no swing warnings. Only needle tips (> ~170° turns) still warn (ARCHITECTURE §14 item 24).
-- **Works in Gazebo HIL** (2026-10-27): a full mission on a 2 m square, line following at 0.3 m/s (single-line test: console `l`, ~5 cm stop and cross-track error), stall and stuck-turn detection. Not yet checked on the real V3 drive: gear ratio, DM542T microsteps, motor wiring sign, STEP pulses on a scope.
+- **Works in Gazebo HIL** (2026-10-27): a full mission on a 2 m square, line following at 0.3 m/s (single-line test: console `l`, ~5 cm stop and cross-track error), stall and stuck-turn detection. The micro-ROS link has run without stalls since 2026-10-28 (ARCHITECTURE §11). Not yet checked on the real V3 drive: gear ratio, DM542T microsteps, motor wiring sign, STEP pulses on a scope.
 - **Not implemented:** return-to-base and docking, battery reading, rain sensor, obstacle sensing (obstacles are serial-triggered only), reverse driving, camera use.
 - **In progress:** the Mower V3 rebuild with 10:1 gearboxes, the cover design, and moving the ROS 2 host to the phone.
 - Next work items: `docs/ARCHITECTURE.md` → Known issues / Planned direction, and `docs/HARDWARE.md` → Open items.
