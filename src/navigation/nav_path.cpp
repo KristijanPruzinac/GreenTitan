@@ -270,9 +270,12 @@ void NavPath::cut_corner(int i) {
     }
     float d, out, inset, h;
     if (edge_fit(i, turn, &d, &out, &inset, &h) && d <= room_in && out <= len_out) return;
-    // The point turn_margin inside both legs
+    // The point turn_margin inside both legs. The incoming leg is taken from where the corner before
+    // was planned, not where a cut moved it: cut corners then lie on the lap moved in, not on a
+    // spiral (each cut measured from the one before)
+    float h_in0 = atan2f((float)(b.y - (a.y - a.my)), (float)(b.x - (a.x - a.mx)));
     float sg = turn > 0.0f ? 1.0f : -1.0f;
-    float n1x = -sinf(h_in) * sg, n1y = cosf(h_in) * sg, n2x = -sinf(h_out) * sg, n2y = cosf(h_out) * sg;
+    float n1x = -sinf(h_in0) * sg, n1y = cosf(h_in0) * sg, n2x = -sinf(h_out) * sg, n2y = cosf(h_out) * sg;
     float den = 1.0f + n1x * n2x + n1y * n2y;
     if (den < 0.1f) return;
     float m = turn_margin();
@@ -280,6 +283,8 @@ void NavPath::cut_corner(int i) {
     if (m * tanf(at / 2.0f) > fminf(len_in, len_out) - cfg_->path_tolerance) return;   // back along each leg
     b.x += dx;
     b.y += dy;
+    b.mx = dx;
+    b.my = dy;
     b.cut = true;
     // A corner before it that ends a leg off the edge (the way onto a lap) would now turn further
     // inward right at the edge and swing out: it moves in with this one, the leg staying parallel
@@ -287,6 +292,8 @@ void NavPath::cut_corner(int i) {
     if (pa.edge != b.edge && !pa.fixed) {
         pa.x += m * n1x;
         pa.y += m * n1y;
+        pa.mx += m * n1x;
+        pa.my += m * n1y;
         stop_corner(i - 1);
     }
     stop_corner(i);
@@ -388,7 +395,8 @@ void NavPath::classify(int i) {
     // An edge curve may use all of the next leg: the corner after it was planned with that (cut_corner)
     if (b.edge == outer && !b.cut && tail - cfg_->half_width > cfg_->edge_swing && edge_corner(i, room_in, len_out)) {
         // decided
-    } else if (round) {
+    } else if (round && !b.cut) {   // a cut corner turns on the spot where it was moved: an arc would
+                                    // shortcut further inside and leave the lap little straight side
         b.kind = K_ROUND;
         b.trim_in = b.trim_out = r * t;
         b.curvature = copysignf(1.0f / r, b.turn);

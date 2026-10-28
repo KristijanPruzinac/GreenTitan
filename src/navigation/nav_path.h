@@ -75,6 +75,7 @@ private:
         bool  edge_pivot;          // K_EDGE: ends with a turn on the spot where the curve ends
         float edge_inset;          // K_EDGE: ... this far inside the next leg (front swing)
         bool  cut;                 // moved inward (cut_corner): turning on the spot there stays in
+        float mx, my;              // how far cut_corner moved it (from the waypoint)
     };
     struct Prim {                  // piece of tool path
         double x, y;               // start
