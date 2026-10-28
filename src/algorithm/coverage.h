@@ -24,6 +24,8 @@ struct CoverageConfig {
     double edge_inset;    // m: first lap this far from every outline
     double turn_inset;    // m: turning on the spot this far from every outline stays inside
     double row_spacing;   // m: rows and laps at most this far apart
+    double turn_radius;   // m: the tightest arc the mower drives. Rows are mowed in an order that
+                          // keeps twice this between one and the next, so the U-turn is two arcs
     double min_row;       // m: shorter pieces of row are left out
     double margin;        // m: routes keep this far inside the turn zone
     double corner_turn;   // rad: a lap corner turning away from the outline more than this is sharp;
@@ -93,15 +95,26 @@ private:
         double m0, m1;      // its mowed length at the start and at the end of the leg
     };
 
+    struct Step {           // from one lap on to the next inward (step)
+        int to;             // that lap
+        double run;         // mm on along the lap left first, to its corner
+        MapPoint join;      // where the leg on to the next lap ends
+        double start;       // mm along its ring where its mowing starts ...
+        double mowed;       // ... and how much of it the step mowed
+    };
+
     bool done(int i) const { return pieces_[i].mowed >= pieces_[i].length - 1.0; }
     int  pick() const;
+    int  next_row() const;
     double join_distance(int i) const;
     double join_clear(const Piece& p, double longest) const;
     bool slant(int i, double s, int dir, MapPoint* q) const;
-    bool step(int i, double s, int* to, double* s2, MapPoint* q) const;
-    bool exits(int i, double s, int hops) const;
+    int  inside(int i, MapPoint at, double* dist) const;
+    bool step(int i, double s, Step* st) const;
+    bool exits(int i, double s) const;
+    void along(int i, double s, double run, uint8_t blade);
     void leave(uint8_t blade);
-    void leave_from(int k, MapPoint at);
+    void leave_from(int k, MapPoint at, bool step);
     void plan_lap(int i);
     void plan_row(int i);
     void plan_route(MapPoint to, uint8_t blade);
@@ -114,15 +127,19 @@ private:
     std::vector<Piece> pieces_;
     std::vector<std::vector<int>> cells_;   // row pieces, in row order
     std::vector<MapZone> levels_;           // lap depth steps: the lawn this far in (area only)
+    int skip_ = 1;                          // rows apart for a U-turn of arcs
     MapPoint base_;
     bool built_ = false;
 
     coverage_goal goal_ = COVERAGE_IDLE;
     int cell_ = -1;                 // cell of the row planned last
+    int row_ = -1;                  // that row
+    int sweep_ = 1;                 // the way its cell is being mowed: +1 up its rows, -1 down
     struct Leave {                  // the lap planned or driven last is still to be left
         bool pending = false;
         int piece = -1;
         double s = 0;               // from here, mm along its ring
+        bool step = false;          // by stepping on to the next lap (not after a stop)
     } leave_;
     MapPoint end_;                  // where the waypoints planned so far end
     std::deque<Queued> queue_;      // planned, not handed out yet

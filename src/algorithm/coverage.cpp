@@ -52,20 +52,20 @@ struct Ring {
         auto it = std::upper_bound(sharp.begin(), sharp.end(), w);
         return it == sharp.end() ? sharp.front() + len - w : *it - w;
     }
-    bool clear(double s, double j) const { return back(s) >= j - 1 && fwd(s) >= j - 1; }
+    bool clear(double s, double j) const { return fwd(s) >= j - 1; }   // j ahead of the next corner
     double longest() const {   // longest stretch between sharp corners
         if (sharp.size() < 2) return len;
         double m = sharp.front() + len - sharp.back();
         for (size_t k = 1; k < sharp.size(); k++) m = fmax(m, sharp[k] - sharp[k - 1]);
         return m;
     }
-    // Positions at least j from the sharp corners, about `stride` apart, the ends of each stretch
-    // included (on a side shorter than 2 j, only its middle)
+    // Positions clear() of the sharp corners, about `stride` apart, the ends of each stretch
+    // included (none on a stretch too short)
     std::vector<double> spots(double j, double stride) const {
         std::vector<double> out;
         size_t n = sharp.size();
         for (size_t k = 0; k < (n ? n : 1); k++) {
-            double lo = n ? sharp[k] + j : 0, hi = n ? (k + 1 < n ? sharp[k + 1] : sharp[0] + len) - j : len - stride;
+            double lo = n ? sharp[k] : 0, hi = n ? (k + 1 < n ? sharp[k + 1] : sharp[0] + len) - j : len - stride;
             if (lo > hi + 1) continue;
             int m = (int)ceil((hi - lo) / stride - 1e-9);
             for (int i = 0; i <= m; i++) out.push_back(wrap(m ? lo + (hi - lo) * i / m : lo));
@@ -171,6 +171,7 @@ bool CoveragePlan::build(const MapPaths& outlines, const CoverageConfig& cfg) {
         }
         int n = std::max(1, (int)ceil((vmax - vmin) / MM(cfg.row_spacing) - 1e-6));
         double step = (vmax - vmin) / n;
+        skip_ = std::max(1, (int)ceil(MM(2 * cfg.turn_radius) / step - 1e-6));
         auto at = [&](double u, double v) { return MapPoint((int64_t)llround(u * ux + v * vx), (int64_t)llround(u * uy + v * vy)); };
         struct Seg { double u0, u1; MapPoint a, b; int cell; };
         std::vector<Seg> prev, cur;
@@ -240,6 +241,7 @@ void CoveragePlan::reset() {
     }
     goal_ = COVERAGE_IDLE;
     cell_ = -1;
+    row_ = -1;
     leave_.pending = false;
     queue_.clear();
     sent_.clear();
@@ -268,7 +270,7 @@ void CoveragePlan::unqueue() {
     }
     queue_.clear();
     end_ = sent_.empty() ? sent_from_ : sent_.back().p;
-    leave_from((int)sent_.size() - 1, end_);
+    leave_from((int)sent_.size() - 1, end_, true);
 }
 
 void CoveragePlan::stopped_at(double x, double y, bool skip) {
@@ -290,7 +292,7 @@ void CoveragePlan::stopped_at(double x, double y, bool skip) {
         }
         const Queued& on = sent_[k];
         if (on.piece >= 0) pieces_[on.piece].mowed = on.m0 + frac * (on.m1 - on.m0);
-        leave_from(k, at);
+        leave_from(k, at, false);
         if (skip) {   // the piece it was on, or on the way to
             int s = on.piece;
             for (size_t i = k + 1; s < 0 && i < sent_.size(); i++) s = sent_[i].piece;
@@ -311,7 +313,7 @@ bool CoveragePlan::next(CoveragePoint* p) {
     if (goal_ == COVERAGE_MOW) {
         // Off the lap just done first, unless it steps on to the next one: the next piece is
         // picked, and joined, from where that leaves the robot
-        if (queue_.empty() && leave_.pending && !step(leave_.piece, leave_.s, nullptr, nullptr, nullptr)) {
+        if (queue_.empty() && leave_.pending && !(leave_.step && step(leave_.piece, leave_.s, nullptr))) {
             leave(COVERAGE_BLADE_KEEP);
         }
         int i;
@@ -334,12 +336,10 @@ bool CoveragePlan::next(CoveragePoint* p) {
 
 // Laps first, the outermost left first: a lap ends by stepping on to the next one inward where it
 // can, so the robot does not turn away from the outline beside it. Among the rows, the cell of the
-// last row first; else the nearest row at the end of what is left of its cell, so a cell is mowed
-// from one end to the other.
+// last row first (next_row); else the nearest row at the end of what is left of its cell.
 int CoveragePlan::pick() const {
-    int to;
-    double s;
-    if (leave_.pending && step(leave_.piece, leave_.s, &to, &s, nullptr)) return to;
+    Step st;
+    if (leave_.pending && leave_.step && step(leave_.piece, leave_.s, &st)) return st.to;
     bool laps_left = false, stay = false;
     double depth = INFINITY;
     for (size_t i = 0; i < pieces_.size(); i++) {
@@ -347,6 +347,7 @@ int CoveragePlan::pick() const {
         if (pieces_[i].lap) { laps_left = true; depth = fmin(depth, pieces_[i].depth); }
         else if (pieces_[i].cell == cell_) stay = true;
     }
+    if (!laps_left && stay) return next_row();
     int best = -1;
     double best_d = INFINITY;
     for (size_t i = 0; i < pieces_.size(); i++) {
@@ -365,6 +366,21 @@ int CoveragePlan::pick() const {
     return best;
 }
 
+// In the cell being mowed, the nearest row left at least skip_ rows from the last one, so the
+// U-turn to it is two arcs: on in the way the cell is swept, else back; else the nearest row
+// (turning on the spot). Sweeping on leaves the rows in between for passes back across the cell.
+int CoveragePlan::next_row() const {
+    const std::vector<int>& c = cells_[cell_];
+    int at = pieces_[row_].index, n = (int)c.size(), best = -1, best_cost = 0;
+    for (int k = 0; k < n; k++) {
+        if (done(c[k])) continue;
+        int d = k - at;
+        int cost = abs(d) < skip_ ? abs(d) + 2 * n : d * sweep_ > 0 ? abs(d) : abs(d) + n;
+        if (best < 0 || cost < best_cost) { best = c[k]; best_cost = cost; }
+    }
+    return best;
+}
+
 double CoveragePlan::join_distance(int i) const {
     const Piece& p = pieces_[i];
     if (p.lap) {
@@ -378,10 +394,12 @@ double CoveragePlan::join_distance(int i) const {
     return map_dist(end_, lerp(from, to, p.mowed / p.length));
 }
 
-// Laps closer to the outline than turn_inset are joined and left at least this far from their
-// sharp corners (the corners before and after need it to keep the body in), or mid-way
+// Laps closer to the outline than turn_inset are joined at least this far before their next
+// sharp corner (NavPath's edge corner starts about that far ahead of it to keep the body in). On
+// a lap too small for that, as far as its longest stretch has; a corner closer than its edge
+// corner needs is turned on the spot.
 double CoveragePlan::join_clear(const Piece& p, double longest) const {
-    return p.depth < MM(cfg_.turn_inset - cfg_.tolerance) ? fmin(MM(cfg_.lap_join), longest / 2) : 0;
+    return p.depth < MM(cfg_.turn_inset - cfg_.tolerance) ? fmin(MM(cfg_.lap_join), longest) : 0;
 }
 
 // Between lap i at s and the turn zone at a slant, forward off it (dir +1) or on to it (-1),
@@ -398,7 +416,8 @@ bool CoveragePlan::slant(int i, double s, int dir, MapPoint* q) const {
     double w = r.wrap(s);
     if (dir > 0 && w < r.cum[k]) w += r.len;   // s at the ring's first point, coming off its last side
     double run = dir > 0 ? w - r.cum[k] : r.cum[k + 1] - w;
-    bool steep = run >= join_clear(p, r.longest()) - 1;
+    double j = join_clear(p, r.longest());
+    bool steep = run >= (dir > 0 ? j / 2 : j) - 1;
     double ux, uy;
     r.dir(k, &ux, &uy);
     double d = m + MM(cfg_.margin);   // into the zone, not onto its edge
@@ -421,53 +440,94 @@ bool CoveragePlan::slant(int i, double s, int dir, MapPoint* q) const {
     return false;
 }
 
-// From lap i at s on to a lap of the next depth step not begun yet: up to lap_join further on
-// along it, down to the shortest leg that turns by less than corner_turn at either end; the leg
-// comes no closer to the outline than lap i
-bool CoveragePlan::step(int i, double s, int* to, double* s2, MapPoint* q) const {
+// The lap right inside lap i (the next depth step, not begun yet) nearest `at`, and how far
+int CoveragePlan::inside(int i, MapPoint at, double* dist) const {
+    int b = -1;
+    *dist = INFINITY;
+    for (size_t k = 0; k < pieces_.size(); k++) {
+        const Piece& p = pieces_[k];
+        if (!p.lap || p.started || p.level != pieces_[i].level + 1) continue;
+        MapPoint q;
+        Ring(p.pts).nearest(at, &q);
+        if (map_dist(at, q) < *dist) { *dist = map_dist(at, q); b = (int)k; }
+    }
+    return b;
+}
+
+// From lap i at s on to the lap right inside it.
+// Lap i with sharp corners goes on to one and turns in there, on to the side after the matching
+// corner of the next lap: the corner is driven anyway (NavPath's edge corner, its curve ending on
+// the leg in), and the laps further in step on in the same corner. The first corner where that
+// side has room for the leg in and the join clearance after it, else the one with most room. The
+// leg in ends as far along the side as leaves the join clearance, between the shortest leg that
+// meets the side within corner_turn and lap_join; the side up to there counts as mowed (the leg
+// ran beside it), so the next lap ends at its corner.
+// A lap without sharp corners steps on where it is: up to lap_join further on, down to the shortest
+// leg that turns by less than corner_turn at either end.
+bool CoveragePlan::step(int i, double s, Step* st) const {
     const Piece& a = pieces_[i];
-    Ring ra(a.pts);
-    MapPoint at = ra.at(s);
-    double ux, uy, vx, vy;
-    ra.dir(ra.side(s - 1), &ux, &uy);
-    for (size_t b = 0; b < pieces_.size(); b++) {
-        const Piece& p = pieces_[b];
-        if (!p.lap || p.started || p.level != a.level + 1) continue;
-        Ring rb(p.pts, cfg_.corner_turn);
-        // clear of corners for both laps: the leg on to it still runs beside the outline of lap i
-        double j = fmax(join_clear(p, rb.longest()), fmin(join_clear(a, INFINITY), rb.longest() / 2));
-        MapPoint near;
-        double sb = rb.nearest(at, &near);
-        if (map_dist(at, near) > p.depth - a.depth + MM(cfg_.tolerance)) continue;   // not the lap right inside
-        double lmin = map_dist(at, near) / tan(cfg_.corner_turn), lmax = fmax(lmin, MM(cfg_.lap_join));
-        for (int n = 0; n <= 4; n++) {
-            double l = lmax - (lmax - lmin) * n / 4;
-            double t = rb.wrap(sb + l);
-            if (!rb.clear(t, j)) continue;
-            MapPoint e = rb.at(t);
-            double len = map_dist(at, e);
-            if (len < 1) continue;
-            double wx = (e.x - at.x) / len, wy = (e.y - at.y) / len;
-            rb.dir(rb.side(t), &vx, &vy);
-            double c = cos(cfg_.corner_turn);
-            if (wx * ux + wy * uy < c || wx * vx + wy * vy < c || !levels_[a.level].sees(at, e)) continue;
-            if (to) *to = (int)b;
-            if (s2) *s2 = t;
-            if (q) *q = e;
-            return true;
+    Ring ra(a.pts, cfg_.corner_turn);
+    bool corner = !ra.sharp.empty();
+    double run = 0, best = 0, lmin = 0, room = -INFINITY;
+    int b = -1;
+    if (corner) {
+        double r = fmax(0.0, ra.fwd(s - 1) - 1);
+        for (size_t n = 0; n < ra.sharp.size(); n++, r += ra.fwd(s + r + 1) + 1) {
+            double d;
+            int k = inside(i, ra.at(s + r), &d);
+            if (k < 0 || d > MM(cfg_.lap_join)) continue;
+            const Piece& p = pieces_[k];
+            Ring rb(p.pts, cfg_.corner_turn);
+            double l = (p.depth - a.depth) / tan(cfg_.corner_turn);
+            double left = rb.fwd(rb.nearest(ra.at(s + r), nullptr) + 1) + 1 - l - join_clear(p, rb.longest());
+            if (left > room) { room = left; run = r; b = k; best = d; lmin = l; }
+            if (left >= 0) break;
         }
+    } else {
+        b = inside(i, ra.at(s), &best);
+        if (b >= 0 && best > pieces_[b].depth - a.depth + MM(cfg_.tolerance)) b = -1;   // not right inside
+        lmin = best / tan(cfg_.corner_turn);
+    }
+    if (b < 0) return false;
+    const Piece& p = pieces_[b];
+    MapPoint at = ra.at(s + run);
+    Ring rb(p.pts, cfg_.corner_turn);
+    double sb = rb.nearest(at, nullptr);
+    double lmax = fmax(lmin, MM(cfg_.lap_join));
+    double l0 = corner ? fmax(lmin, fmin(lmax, lmin + room)) : lmax;
+    double ux, uy, vx, vy, c = cos(cfg_.corner_turn);
+    ra.dir(ra.side(s - 1), &ux, &uy);
+    for (int n = -1; n <= 4; n++) {
+        double l = n < 0 ? l0 : lmax - (lmax - lmin) * n / 4;
+        double t = rb.wrap(sb + l);
+        MapPoint e = rb.at(t);
+        double len = map_dist(at, e);
+        if (len < 1) continue;
+        double wx = (e.x - at.x) / len, wy = (e.y - at.y) / len;
+        rb.dir(rb.side(t), &vx, &vy);
+        if (wx * vx + wy * vy < c || (!corner && wx * ux + wy * uy < c) || !levels_[a.level].sees(at, e)) continue;
+        if (st) *st = { b, run, e, corner ? sb : t, corner ? l : 0 };
+        return true;
     }
     return false;
 }
 
-// Lap i, joined at s, can be left there once round: on to the turn zone, or a step on to the next
-// lap that can be left where it is joined
-bool CoveragePlan::exits(int i, double s, int hops) const {
-    if (MM(cfg_.turn_inset) - pieces_[i].depth < MM(cfg_.tolerance)) return true;
-    if (slant(i, s, 1, nullptr)) return true;
-    int to;
-    double t;
-    return hops > 0 && step(i, s, &to, &t, nullptr) && exits(to, t, hops - 1);
+// Lap i, joined at s, can be left there once round: on to the next lap, or at a slant on to the
+// turn zone
+bool CoveragePlan::exits(int i, double s) const {
+    return MM(cfg_.turn_inset) - pieces_[i].depth < MM(cfg_.tolerance) || step(i, s, nullptr) || slant(i, s, 1, nullptr);
+}
+
+// Along lap i from s on to s + run, the blade as given
+void CoveragePlan::along(int i, double s, double run, uint8_t blade) {
+    const Piece& p = pieces_[i];
+    Ring r(p.pts);
+    int k = r.side(s), last = r.side(s + run);
+    for (int n = 0; k != last && n < (int)p.pts.size(); n++) {
+        k = (k + 1) % (int)p.pts.size();
+        push(p.pts[k], blade, -1);
+    }
+    push(r.at(s + run), blade, -1);
 }
 
 // Off the lap being left, at a slant into the turn zone. Where that is out of reach (stopped
@@ -481,14 +541,8 @@ void CoveragePlan::leave(uint8_t blade) {
     double stride = fmax(MM(cfg_.row_spacing), r.len / 400);
     MapPoint q;
     for (double l = 0; l < r.len; l += stride) {
-        double s = leave_.s + l;
-        if (!slant(i, s, 1, &q)) continue;
-        int k = r.side(leave_.s), last = r.side(s);
-        for (int n = 0; k != last && n < (int)p.pts.size(); n++) {
-            k = (k + 1) % (int)p.pts.size();
-            push(p.pts[k], blade, -1);
-        }
-        push(r.at(s), blade, -1);
+        if (!slant(i, leave_.s + l, 1, &q)) continue;
+        along(i, leave_.s, l, blade);
         push(q, blade, 0);
         return;
     }
@@ -496,7 +550,8 @@ void CoveragePlan::leave(uint8_t blade) {
 }
 
 // The robot is at `at` on handed-out leg k: if that runs along a lap, it leaves from there
-void CoveragePlan::leave_from(int k, MapPoint at) {
+// (stopped there: straight off it, not on along it to step in)
+void CoveragePlan::leave_from(int k, MapPoint at, bool step) {
     leave_.pending = false;
     if (k < 0 || k >= (int)sent_.size()) return;
     const Queued& q = sent_[k];
@@ -504,6 +559,7 @@ void CoveragePlan::leave_from(int k, MapPoint at) {
     leave_.pending = true;
     leave_.piece = q.piece;
     leave_.s = Ring(pieces_[q.piece].pts).nearest(at, nullptr);
+    leave_.step = step;
 }
 
 // A lap is joined where it can be left again once round (laps closer to the outline than
@@ -517,27 +573,40 @@ void CoveragePlan::plan_lap(int i) {
     double j = join_clear(p, r.longest());
     double stride = fmax(MM(cfg_.row_spacing), r.len / 400);
     double s = 0;
-    int to;
+    Step st;
     MapPoint join, in;
     auto joinable = [&](double t) { return !near || slant(i, t, -1, &in); };
-    if (leave_.pending && step(leave_.piece, leave_.s, &to, &s, &join) && to == i) {
+    if (leave_.pending && leave_.step && step(leave_.piece, leave_.s, &st) && st.to == i) {
         leave_.pending = false;
+        along(leave_.piece, leave_.s, st.run, COVERAGE_BLADE_ON);
+        push(st.join, COVERAGE_BLADE_ON, -1);
         p.started = true;
-        p.start = s;
-        p.mowed = 0;
-        push(join, COVERAGE_BLADE_ON, -1);
+        p.start = st.start;
+        p.mowed = st.mowed;
+        s = r.wrap(st.start + st.mowed);
     } else {
         bool found = false;
         std::vector<double> spots = r.spots(j, stride);
         if (!p.started) {
-            std::vector<std::pair<double, double>> at;   // distance, position
-            for (double t : spots) at.push_back({ map_dist(end_, r.at(t)), t });
+            // The nearest by the way there (to the slant on to it) and on from there to the
+            // corner where it steps in, where it can be left
+            std::vector<std::pair<double, double>> at;   // way, position
+            for (double t : spots) {
+                MapPoint z = r.at(t);
+                if (!joinable(t)) continue;
+                double way = near ? map_dist(end_, in) + map_dist(in, z) + (r.sharp.empty() ? 0 : r.fwd(t)) : map_dist(end_, z);
+                at.push_back({ way, t });
+            }
             std::sort(at.begin(), at.end());
             for (size_t k = 0; k < at.size() && !found; k++) {
-                found = joinable(at[k].second) && exits(i, at[k].second, (int)levels_.size());
+                found = exits(i, at[k].second);
                 if (found) s = at[k].second;
             }
             if (!found) {
+                if (at.empty()) {   // no slant on to it anywhere
+                    for (double t : spots) at.push_back({ map_dist(end_, r.at(t)), t });
+                    std::sort(at.begin(), at.end());
+                }
                 logf("Lap %d has no place to join and leave it", i);
                 s = at.empty() ? 0 : at[0].second;
                 found = joinable(s);
@@ -584,6 +653,7 @@ void CoveragePlan::plan_lap(int i) {
         leave_.pending = true;
         leave_.piece = i;
         leave_.s = r.wrap(target);
+        leave_.step = true;
     }
 }
 
@@ -598,7 +668,10 @@ void CoveragePlan::plan_row(int i) {
     plan_route(lerp(from, to, p.mowed / p.length), COVERAGE_BLADE_KEEP);
     push(to, COVERAGE_BLADE_ON, 0, i, p.mowed, p.length);
     p.mowed = p.length;
+    if (p.cell == cell_ && row_ >= 0) sweep_ = p.index > pieces_[row_].index ? 1 : -1;
+    else sweep_ = p.index + 1 == (int)cells_[p.cell].size() ? -1 : 1;   // into the cell
     cell_ = p.cell;
+    row_ = i;
 }
 
 void CoveragePlan::plan_route(MapPoint to, uint8_t blade) {

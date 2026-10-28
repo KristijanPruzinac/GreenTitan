@@ -245,7 +245,9 @@ void NavPath::cut_corner(int i) {
     const Node& a = nodes_[i - 1];
     const Node& c = nodes_[i + 1];
     if (b.cut || edge_n_ == 0 || i < 2) return;
-    float h_in  = atan2f((float)(b.y - a.y), (float)(b.x - a.x));
+    // The turn is measured from where the corner before was planned, not where a cut moved it:
+    // the move would make every bend after a cut look sharp and cut it too, all around a lap
+    float h_in  = atan2f((float)(b.y - (a.y - a.my)), (float)(b.x - (a.x - a.mx)));
     float h_out = atan2f((float)(c.y - b.y), (float)(c.x - b.x));
     float turn = wrapf(h_out - h_in), at = fabsf(turn);
     const float w = cfg_->half_width;
@@ -268,14 +270,17 @@ void NavPath::cut_corner(int i) {
             room_in -= taken;
         }
     }
+    // A bend the legs leave room to round wide (classify, the outgoing leg shared with the next
+    // corner) swings the rear out little
+    float t = tanf(at / 2.0f), cut = 1.0f / cosf(at / 2.0f) - 1.0f;
+    float wide = fminf(fminf(room_in, len_out / 2.0f) / t, cut > 0.0f ? cfg_->edge_swing / cut : 1e9f);
+    if (body_swing(turn, wide, cfg_->rear_overhang, w) - w <= cfg_->edge_swing) return;
     float d, out, inset, h;
     if (edge_fit(i, turn, &d, &out, &inset, &h) && d <= room_in && out <= len_out) return;
-    // The point turn_margin inside both legs. The incoming leg is taken from where the corner before
-    // was planned, not where a cut moved it: cut corners then lie on the lap moved in, not on a
-    // spiral (each cut measured from the one before)
-    float h_in0 = atan2f((float)(b.y - (a.y - a.my)), (float)(b.x - (a.x - a.mx)));
+    // The point turn_margin inside both legs, the incoming one as planned (above): cut corners then
+    // lie on the lap moved in, not on a spiral (each cut measured from the one before)
     float sg = turn > 0.0f ? 1.0f : -1.0f;
-    float n1x = -sinf(h_in0) * sg, n1y = cosf(h_in0) * sg, n2x = -sinf(h_out) * sg, n2y = cosf(h_out) * sg;
+    float n1x = -sinf(h_in) * sg, n1y = cosf(h_in) * sg, n2x = -sinf(h_out) * sg, n2y = cosf(h_out) * sg;
     float den = 1.0f + n1x * n2x + n1y * n2y;
     if (den < 0.1f) return;
     float m = turn_margin();
