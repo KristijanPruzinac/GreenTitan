@@ -11,6 +11,9 @@ Config::
     output_topic: imu/raw
     frame_id: imu
     orientation: false                 # publish the simulator's orientation (true) or mark unknown
+    gyro_angle: false                  # instead put the output gyro z integrated at the input rate
+                                       # in orientation (a z rotation): a HIL link carries samples in
+                                       # bursts, the receiver turns it back into the mean rate
     lpf_hz: 44                         # 0 disables
     output_rate: 0                     # Hz, decimate after the LPF (0 = every input sample)
     gyro:  {noise_density: 8.7e-5, bias_sigma: 0.03, bias_instability: 0.0005, bias_tau: 100,
@@ -64,6 +67,9 @@ class ImuModel(DeviceNode):
         self.lpf_hz = float(self.c('lpf_hz', 0))
         self.frame_id = self.c('frame_id', 'imu')
         self.orientation = bool(self.c('orientation', False))
+        self.gyro_angle = bool(self.c('gyro_angle', False))
+        self.angle = 0.0
+        self.prev_wz = None
         self.last = None
         self.last_pub = None
         self.output_period = 1.0 / float(self.c('output_rate', 0)) if self.c('output_rate') else 0.0
@@ -82,6 +88,9 @@ class ImuModel(DeviceNode):
         a = np.array([msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z])
         w = self.gyro.apply(w, dt, rate, float(self.vib.get('gyro_sigma', 0)), alpha)
         a = self.accel.apply(a, dt, rate, float(self.vib.get('accel_sigma', 0)), alpha)
+        if self.prev_wz is not None:
+            self.angle += 0.5 * (self.prev_wz + float(w[2])) * dt
+        self.prev_wz = float(w[2])
         if self.last_pub is not None and t - self.last_pub < self.output_period - 1e-6:
             return
         self.last_pub = t
@@ -94,7 +103,9 @@ class ImuModel(DeviceNode):
         av = (float(self.accel.p['noise_density']) ** 2) * rate / 2
         out.angular_velocity_covariance = [gv, 0.0, 0.0, 0.0, gv, 0.0, 0.0, 0.0, gv]
         out.linear_acceleration_covariance = [av, 0.0, 0.0, 0.0, av, 0.0, 0.0, 0.0, av]
-        if self.orientation:
+        if self.gyro_angle:
+            out.orientation.z, out.orientation.w = float(np.sin(self.angle / 2)), float(np.cos(self.angle / 2))
+        elif self.orientation:
             out.orientation = msg.orientation
         else:
             out.orientation_covariance[0] = -1.0

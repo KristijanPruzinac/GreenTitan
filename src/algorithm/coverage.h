@@ -23,7 +23,7 @@
 struct CoverageConfig {
     double edge_inset;    // m: first lap this far from every outline
     double turn_inset;    // m: turning on the spot this far from every outline stays inside
-    double row_spacing;   // m: rows and laps at most this far apart
+    double row_spacing;   // m: rows and laps at most this far apart (the cut width less an overlap)
     double turn_radius;   // m: the tightest arc the mower drives. Rows are mowed in an order that
                           // keeps twice this between one and the next, so the U-turn is two arcs
     double min_row;       // m: shorter pieces of row are left out

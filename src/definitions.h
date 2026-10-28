@@ -51,6 +51,7 @@ typedef struct {
 #define GYRO_SCL_PIN 22
 
 #define GYRO_DEADBAND 0.04f
+#define IMU_GYRO_Z_VARIANCE 4e-4f   // (rad/s)^2 for the EKF, ~0.02 rad/s over one /imu interval. Was 0.01 until 2026-10-28: the EKF yaw rate lagged the gyro in every turn
 #define GNSS_ANTENNA_BEHIND_AXLE 0.180f   // m, antenna (base_link) behind the wheel axle, Mower V3 CAD
 
 typedef struct {
@@ -61,6 +62,7 @@ typedef struct {
     float gyro_x;
     float gyro_y;
     float gyro_z;
+    double gyro_yaw;   // rad, gyro z integrated since boot (unwrapped; relative, not a compass heading)
 
     uint32_t timestamp_sec;
     uint32_t timestamp_nsec;
@@ -91,6 +93,7 @@ typedef struct {
 #define MOWER_FRONT_OVERHANG              0.12f  // m, cover ahead of the axle
 #define MOWER_REAR_OVERHANG               0.415f // m, casters behind it
 #define MOWER_HALF_WIDTH                  0.20f  // m, outside of the drive wheels
+#define MOWER_BLADE_DIAMETER              0.25   // m, cut width (the blade sits on base_link)
 // Hard limit: the planned (axle) path keeps half the width plus this from the outline and from
 // the inner outlines. Turns swing the overhangs further out; the motion task warns where.
 #define MOWER_EDGE_CLEARANCE              0.05f  // m
@@ -100,8 +103,8 @@ typedef struct {
 // The strip between the first outline lap and it is mowed by further laps.
 #define MOWER_TURN_INSET                  (fmaxf(hypotf(MOWER_REAR_OVERHANG, MOWER_HALF_WIDTH), \
                                                  hypotf(MOWER_FRONT_OVERHANG, MOWER_HALF_WIDTH)) + MOWER_EDGE_CLEARANCE)
-// Coverage planner (src/algorithm, ARCHITECTURE §8). Rows and laps are at most MOWER_OVERLAP (cm,
-// settings) apart.
+// Coverage planner (src/algorithm, ARCHITECTURE §8). Rows and laps are MOWER_BLADE_DIAMETER less
+// MOWER_OVERLAP (cm, settings) apart, so a tracking error under the overlap leaves no gap.
 #define PLANNER_MIN_ROW                   0.10   // m, shorter pieces of row are left out
 #define PLANNER_MARGIN                    0.02   // m, ways between pieces keep this far inside the turn zone
 // A lap corner turning away from the outline by more than this needs a straight run-in (NavPath's
@@ -116,6 +119,13 @@ typedef struct {
 #define MOTION_PATH_TOLERANCE             0.03f  // m, near-straight waypoints merged within this
 // Turning on the spot (path start, sharp corners, or far off the path heading)
 #define MOTION_MAX_TRACK_HEADING_ERROR    1.0f   // rad, ~57 deg: beyond this turn on the spot first
+// MPC weights (NavTracker). The curvature-rate weight makes the curvature reach an arc's only
+// after ~0.3 m of path (arcs entered ~6 cm late on the native bench); 0.001 fixes that there but
+// is not confirmed in HIL yet (ARCHITECTURE known issues).
+#define MOTION_MPC_Q_LATERAL              400.0f
+#define MOTION_MPC_Q_HEADING              20.0f
+#define MOTION_MPC_Q_CURVATURE            0.1f
+#define MOTION_MPC_R_CURVATURE_RATE       0.01f
 #define MOTION_TURN_DONE                  0.05f  // rad, ~3 deg: then hand over to the tracker
 #define MOTION_ROTATE_GAIN                1.5f   // rad/s per rad of heading error
 #define CONTROL_YAW_TAU                   1.0f   // s, control heading follows the EKF yaw this slowly, gyro in between
@@ -140,9 +150,13 @@ typedef struct {
 #define BATTERY_LEVEL_CHARGED 95
 
 //Sensors
+#ifndef MICRO_ROS_DOMAIN_ID
+#define MICRO_ROS_DOMAIN_ID 0   // ROS domain of the micro-ROS node; HIL builds for parallel boards override it
+#endif
 #define MOTION_UPDATE_FREQUENCY 10
 #define BATTERY_UPDATE_FREQUENCY 10
-#define IMU_UPDATE_FREQUENCY 10
+#define IMU_UPDATE_FREQUENCY 10   // /imu messages (averaged over the samples in between)
+#define IMU_SAMPLE_FREQUENCY 50   // gyro reads; integrated on the ESP so no rotation is lost between messages
 #define MOTOR_UPDATE_FREQUENCY 1000
 #define GPS_UPDATE_FREQUENCY 5
 

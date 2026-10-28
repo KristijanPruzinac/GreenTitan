@@ -31,7 +31,7 @@ static const NavConfig nav_config = {
     MOTION_MAX_ROUNDED_TURN,       // max_rounded_turn
     MOTION_PATH_TOLERANCE,         // path_tolerance
     MOTION_MAX_TRACK_HEADING_ERROR,// max_heading_error
-    400.0f, 20.0f, 0.1f, 0.01f,    // MPC weights: lateral, heading, curvature, curvature rate
+    MOTION_MPC_Q_LATERAL, MOTION_MPC_Q_HEADING, MOTION_MPC_Q_CURVATURE, MOTION_MPC_R_CURVATURE_RATE,
 };
 
 static dds_thread_context_t thread_context;

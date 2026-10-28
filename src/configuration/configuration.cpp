@@ -19,7 +19,7 @@ FileResult SaveConfiguration() {
     }
 
     prefs.putBool  ("SETUP_DONE",    SETUP_COMPLETED);
-    prefs.putInt   ("MOWER_OVERLAP", MOWER_OVERLAP);
+    prefs.putInt   ("MOW_OVERLAP", MOWER_OVERLAP);
     prefs.putInt   ("MAX_DEVIATION", MAX_DEVIATION);
     prefs.putDouble("BASE_LON",      BASE_LON);
     prefs.putDouble("BASE_LAT",      BASE_LAT);
@@ -60,7 +60,7 @@ FileResult LoadConfiguration() {
     }
 
     SETUP_COMPLETED                  = prefs.getBool  ("SETUP_DONE",    SETUP_COMPLETED);
-    MOWER_OVERLAP                    = prefs.getInt   ("MOWER_OVERLAP", MOWER_OVERLAP);
+    MOWER_OVERLAP                    = prefs.getInt   ("MOW_OVERLAP", MOWER_OVERLAP);
     MAX_DEVIATION                    = prefs.getInt   ("MAX_DEVIATION", MAX_DEVIATION);
     BASE_LON                         = prefs.getDouble("BASE_LON",      BASE_LON);
     BASE_LAT                         = prefs.getDouble("BASE_LAT",      BASE_LAT);

@@ -50,7 +50,7 @@ int GPS_STABILITY_CHECK_DURATION_SECONDS = 15; // 5 minutes TODO: Revert to 5 mi
 
 float MOTION_ACC_FACTOR = 1.0;
 
-int MOWER_OVERLAP = 15;
+int MOWER_OVERLAP = 5;
 int MAX_DEVIATION = 50;
 
 float BATTERY_LEVEL_MIN = 16;
@@ -167,7 +167,11 @@ void init_micro_ros(){
     allocator = rcl_get_default_allocator();
 
     //create init_options
-    RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
+    // ROS domain: 0 unless the build sets MICRO_ROS_DOMAIN_ID (several HIL boards on one PC)
+    rcl_init_options_t init_options = rcl_get_zero_initialized_init_options();
+    RCCHECK(rcl_init_options_init(&init_options, allocator));
+    RCCHECK(rcl_init_options_set_domain_id(&init_options, MICRO_ROS_DOMAIN_ID));
+    RCCHECK(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
 
     // create node
     RCCHECK(rclc_node_init_default(&node, "micro_ros_platformio_node", "", &support));
@@ -265,10 +269,11 @@ void datum_set_callback(dds_callback_context_t* context) {
     datum_publish_count = 0;
 }
 
-// Recent gyro z samples (rad/s) with their stamps, so the GPS yaw can use the turn rate at the
-// GPS epoch (the fix arrives ~0.2 s late). 16 samples at 10 Hz cover the EKF's 1 s history.
+// Recent /imu messages: mean gyro z over the interval before each (rad/s) and the integrated gyro
+// yaw at it, with their stamps, so the GPS yaw can use the turn rate at the GPS epoch (the fix
+// arrives ~0.2 s late). 16 messages at 10 Hz cover the EKF's 1 s history.
 #define GYRO_HISTORY 16
-static struct { double t; float gz; } gyro_hist[GYRO_HISTORY];
+static struct { double t; float gz; double yaw; } gyro_hist[GYRO_HISTORY];
 static int gyro_hist_n = 0, gyro_hist_head = 0;   // head = next slot to write
 
 // Gyro z at time t, interpolated. *spread = change between the two samples around t: how far the
@@ -294,18 +299,24 @@ static float gyro_z_at(double t, float* spread) {
     return gyro_hist[(gyro_hist_head + GYRO_HISTORY - gyro_hist_n) % GYRO_HISTORY].gz;   // oldest
 }
 
-// Yaw turned between t0 and t1 by the local gyro (trapezoid over the history, newest held after it)
-static double gyro_turn_between(double t0, double t1) {
-    const double step = 0.02;
-    double turn = 0.0, s;
-    float spread, prev = gyro_z_at(t0, &spread);
-    for (double t = t0; t < t1; t += s) {
-        s = fmin(step, t1 - t);
-        float g = gyro_z_at(t + s, &spread);
-        turn += 0.5 * (prev + g) * s;
-        prev = g;
+// Integrated gyro yaw at time t: linear between messages (their rate is the mean over that
+// interval), the newest rate held after the newest message, the oldest yaw before the history
+static double gyro_yaw_at(double t) {
+    if (gyro_hist_n == 0) return 0.0;
+    int newest = (gyro_hist_head + GYRO_HISTORY - 1) % GYRO_HISTORY;
+    if (t >= gyro_hist[newest].t) return gyro_hist[newest].yaw + gyro_hist[newest].gz * (t - gyro_hist[newest].t);
+    for (int k = 1; k < gyro_hist_n; k++) {
+        int a = (newest + GYRO_HISTORY - k) % GYRO_HISTORY;
+        int b = (a + 1) % GYRO_HISTORY;
+        if (t >= gyro_hist[a].t)
+            return gyro_hist[a].yaw + (gyro_hist[b].yaw - gyro_hist[a].yaw) * (t - gyro_hist[a].t) / (gyro_hist[b].t - gyro_hist[a].t);
     }
-    return turn;
+    return gyro_hist[(gyro_hist_head + GYRO_HISTORY - gyro_hist_n) % GYRO_HISTORY].yaw;
+}
+
+// Yaw turned between t0 and t1 by the local gyro
+static double gyro_turn_between(double t0, double t1) {
+    return gyro_yaw_at(t1) - gyro_yaw_at(t0);
 }
 
 void imu_topic_callback(dds_callback_context_t* context) {
@@ -324,13 +335,23 @@ void imu_topic_callback(dds_callback_context_t* context) {
     imu_msg.angular_velocity.y = data->gyro_y;
     imu_msg.angular_velocity.z = data->gyro_z;
 
-    // MPU6050 can't give absolute orientation - tell EKF to ignore it
-    imu_msg.orientation_covariance[0] = -1;
+    // Orientation = the integrated gyro yaw. Not an absolute heading: the EKF uses it
+    // differentially (imu0_differential), i.e. as the mean yaw rate between consecutive messages,
+    // so a message lost or delayed on the link loses no rotation. robot_localization makes that
+    // rate's variance (var_now + var_prev) * dt, hence var = IMU_GYRO_Z_VARIANCE / (2 dt).
+    double half_yaw = 0.5 * data->gyro_yaw;
+    imu_msg.orientation.x = 0.0;
+    imu_msg.orientation.y = 0.0;
+    imu_msg.orientation.z = sin(half_yaw);
+    imu_msg.orientation.w = cos(half_yaw);
+    imu_msg.orientation_covariance[0] = 1e6;
+    imu_msg.orientation_covariance[4] = 1e6;
+    imu_msg.orientation_covariance[8] = IMU_GYRO_Z_VARIANCE * IMU_UPDATE_FREQUENCY / 2.0;
 
     // Covariances - diagonal elements only (row-major 3x3 matrix)
     imu_msg.angular_velocity_covariance[0] = 0.01f;
     imu_msg.angular_velocity_covariance[4] = 0.01f;
-    imu_msg.angular_velocity_covariance[8] = 0.01f;
+    imu_msg.angular_velocity_covariance[8] = IMU_GYRO_Z_VARIANCE;
 
     imu_msg.linear_acceleration_covariance[0] = 0.1f;
     imu_msg.linear_acceleration_covariance[4] = 0.1f;
@@ -343,6 +364,7 @@ void imu_topic_callback(dds_callback_context_t* context) {
     if (gyro_hist_n == 0 || t > gyro_hist[newest].t) {           // keep stamps strictly increasing
         gyro_hist[gyro_hist_head].t = t;
         gyro_hist[gyro_hist_head].gz = data->gyro_z;
+        gyro_hist[gyro_hist_head].yaw = data->gyro_yaw;
         gyro_hist_head = (gyro_hist_head + 1) % GYRO_HISTORY;
         if (gyro_hist_n < GYRO_HISTORY) gyro_hist_n++;
     }
@@ -560,6 +582,8 @@ static void hil_imu_callback(const void* msgin) {
     hil_imu_sample_t sample = {
         (float)msg->linear_acceleration.x, (float)msg->linear_acceleration.y, (float)msg->linear_acceleration.z,
         (float)msg->angular_velocity.x, (float)msg->angular_velocity.y, (float)msg->angular_velocity.z,
+        2.0 * atan2(msg->orientation.z, msg->orientation.w),
+        msg->orientation_covariance[0] < 0 ? 0.0 : msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9,
     };
     hil_imu_set(sample);
 }
@@ -793,7 +817,7 @@ static void init_test_path() {
     BASE_EXIT_X_CM = DATUM_BASE_EXIT_DISTANCE_CM;
     BASE_EXIT_Y_CM = 0;
 
-    MOWER_OVERLAP = 15;
+    MOWER_OVERLAP = 5;
 
     AlgorithmCaptureStart();
 
@@ -1068,8 +1092,19 @@ void loop() {
                     AlgorithmCaptureNewOutline();
                     SerialDebug.println("[DEBUG] New outline started");
                 }
-                else if (c == 'p') {  // Add point
-                    if (!CONFIG_DATUM) {
+                else if (c == 'p') {  // Add point: where the mower is, or "p<x cm>,<y cm>\n" typed in
+                    char buf[24]; int len = 0;
+                    while (SerialDebug.available() && len < (int)sizeof(buf) - 1) {
+                        char ch = SerialDebug.read();
+                        if (ch == '\n' || ch == '\r') break;
+                        buf[len++] = ch;
+                    }
+                    buf[len] = '\0';
+                    long x, y;
+                    if (sscanf(buf, "%ld,%ld", &x, &y) == 2) {
+                        AlgorithmCaptureSetNewPoint(x, y);
+                        SerialDebug.printf("[DEBUG] Point added (%ld, %ld) cm\r\n", x, y);
+                    } else if (!CONFIG_DATUM) {
                         SerialDebug.println("[DEBUG] Cannot add point: no datum set");
                     } else {
                         AlgorithmCaptureNewPoint();

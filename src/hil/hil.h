@@ -11,6 +11,11 @@
 struct hil_imu_sample_t {
   float acc_x, acc_y, acc_z;     // m/s^2, sensor frame, includes gravity (like the MPU6050)
   float gyro_x, gyro_y, gyro_z;  // rad/s, sensor frame
+  // Gyro z integrated by the simulator at its full rate (rad, wrapped) and the sample's sim
+  // stamp (s); stamp 0 = not sent. Samples come over the link in bursts, so the driver gives the
+  // mean rate since the previous read from these, as a real gyro read on the ESP would
+  // (over ESP time, so a simulation off real time does not change the angle).
+  double gyro_z_angle, stamp;
 };
 
 void hil_init();
@@ -20,7 +25,7 @@ void hil_gnss_push(const uint8_t* data, size_t len);
 int hil_gnss_available();
 int hil_gnss_read();
 
-// Latest IMU sample. Returns false until the first sample arrives.
+// Latest IMU sample. Returns false until the first sample arrives, and while no new one has.
 void hil_imu_set(const hil_imu_sample_t& sample);
 bool hil_imu_get(hil_imu_sample_t* sample);
 

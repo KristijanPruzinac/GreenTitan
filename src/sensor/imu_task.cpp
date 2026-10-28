@@ -37,7 +37,7 @@ bool init_imu(){
 // Gyro bias from the first samples at rest. Runs on the same imu_read() stream in every
 // build (real, HIL), so the firmware sees identical behaviour. Accel is not offset: that
 // would also remove gravity and tilt.
-#define IMU_CALIBRATION_SAMPLES  (3 * IMU_UPDATE_FREQUENCY)   // 3 s
+#define IMU_CALIBRATION_SAMPLES  (3 * IMU_SAMPLE_FREQUENCY)   // 3 s
 #define IMU_CALIBRATION_MAX_STD  0.01                         // rad/s; above this the mower moved
 
 static bool imu_calibrate_step(){
@@ -111,7 +111,7 @@ void imu_task(void* parameter) {
         .arg = NULL,
     };
     esp_timer_create(&timer_args, &(thread_context.timer));
-    esp_timer_start_periodic(thread_context.timer, 1000 * 1000 / IMU_UPDATE_FREQUENCY);
+    esp_timer_start_periodic(thread_context.timer, 1000 * 1000 / IMU_SAMPLE_FREQUENCY);
 
     // ------- THREAD SETUP CODE START -------
 
@@ -155,8 +155,33 @@ void imu_task(void* parameter) {
                   imu_acc.acceleration.y = acc_y_offset;
               }
 
-              IMU_data_t IMU_data = {imu_acc.acceleration.x - acc_x_offset, imu_acc.acceleration.y - acc_y_offset, imu_acc.acceleration.z - acc_z_offset,
-                                    imu_gyro.gyro.x - gyro_x_offset, imu_gyro.gyro.y - gyro_y_offset, gz};
+              // Every read is integrated (trapezoid) into the gyro yaw; /imu goes out at
+              // IMU_UPDATE_FREQUENCY with the averages since the last message, so a turn that
+              // starts or stops between messages is still counted in full.
+              static double yaw = 0.0, last_t = 0.0, last_gz = 0.0, pub_t = 0.0, pub_yaw = 0.0;
+              static double sum[5];
+              static int n = 0;
+              double now = esp_timer_get_time() * 1e-6;
+              if (last_t > 0.0) yaw += 0.5 * (gz + last_gz) * (now - last_t);
+              last_t = now;
+              last_gz = gz;
+              double s_now[5] = { imu_acc.acceleration.x - acc_x_offset, imu_acc.acceleration.y - acc_y_offset,
+                                  imu_acc.acceleration.z - acc_z_offset,
+                                  imu_gyro.gyro.x - gyro_x_offset, imu_gyro.gyro.y - gyro_y_offset };
+              for (int i = 0; i < 5; i++) sum[i] += s_now[i];
+              n++;
+              if (now - pub_t < (1.0 - 0.5 * IMU_UPDATE_FREQUENCY / IMU_SAMPLE_FREQUENCY) / IMU_UPDATE_FREQUENCY) {
+                DDS_PROCESS_THREAD_MESSAGES(&thread_context);
+                DDS_GIVE_MUTEX(&thread_context);
+                continue;
+              }
+              double gz_avg = pub_t > 0.0 ? (yaw - pub_yaw) / (now - pub_t) : gz;
+              IMU_data_t IMU_data = {(float)(sum[0] / n), (float)(sum[1] / n), (float)(sum[2] / n),
+                                    (float)(sum[3] / n), (float)(sum[4] / n), (float)gz_avg, yaw};
+              for (int i = 0; i < 5; i++) sum[i] = 0.0;
+              n = 0;
+              pub_t = now;
+              pub_yaw = yaw;
 
               struct timespec ts;
               clock_gettime(CLOCK_REALTIME, &ts);

@@ -39,14 +39,15 @@ devices:
     latency: 0.04
     initial_state: fix
     outputs: {ubx_topic: hil/gnss_ubx, fix_topic: sim/gnss/fix, vel_topic: ''}
-  # MPU6050 as configured by the firmware: +-4 g, +-500 dps, DLPF 10 Hz. The firmware samples it
-  # at 10 Hz, so 50 Hz over the link is plenty.
+  # MPU6050 as configured by the firmware: +-4 g, +-500 dps, DLPF 10 Hz. The firmware reads it at
+  # 50 Hz; over the link 20 Hz plus the integrated gyro angle give it the same rotation.
   - model: imu
     name: imu
     input: imu
     output_topic: hil/imu
     lpf_hz: 10
-    output_rate: 20        # firmware reads at 10 Hz; higher rates crowd the micro-ROS input buffers
+    output_rate: 20        # higher rates crowd the micro-ROS input buffers
+    gyro_angle: true
     gyro: {range: 8.727, resolution: 0.000266}
     accel: {range: 39.23, resolution: 0.0012}
   # DM542T + 23HS32 + MG23-G10. microsteps must match the driver DIP switches (HARDWARE.md §8).

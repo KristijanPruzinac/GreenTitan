@@ -25,25 +25,30 @@ ekf:
     odom0_queue_size: 2
     odom0_differential: false
 
-    # IMU (provides angular velocity and linear acceleration)
+    # IMU: its orientation is the gyro z integrated on the ESP (not an absolute heading), used
+    # differentially = the mean yaw rate between consecutive messages. Until 2026-10-28 the
+    # instantaneous gyro rate (vyaw) was fused: messages come in bursts over micro-ROS, and every
+    # turn that started or stopped in a gap was miscounted (7-35 deg per spin in HIL).
     imu0: /imu/data
     imu0_config: [false, false, false,
-              false, false, false,    # don't claim absolute orientation
+              false, false, true,     # yaw, differential
               false, false, false,
-              false, false, true,     # use vyaw (gyro z)
+              false, false, false,
               false, false, false]
-    imu0_queue_size: 5
-    imu0_differential: false
+    imu0_queue_size: 10
+    imu0_differential: true
     imu0_remove_gravitational_acceleration: false
 
     # robot_localization defaults, except yaw rate (0.02 -> 0.5): follow the gyro without the
-    # ~0.15 s filter lag. HIL 2026-10-27.
+    # ~0.15 s filter lag (HIL 2026-10-27); and yaw (0.06 -> 0.001, 2026-10-28): the gyro carries
+    # the heading, each GPS heading fix (+-4 deg at 0.3 m/s) pulls it in over ~2 s instead of
+    # moving it at once.
     process_noise_covariance: [0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                                0.0, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                                0.0, 0.0, 0.06, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                                0.0, 0.0, 0.0, 0.03, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                                0.0, 0.0, 0.0, 0.0, 0.03, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                               0.0, 0.0, 0.0, 0.0, 0.0, 0.06, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                               0.0, 0.0, 0.0, 0.0, 0.0, 0.001, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.025, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.025, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.04, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
