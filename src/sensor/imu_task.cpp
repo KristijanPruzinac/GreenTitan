@@ -146,12 +146,13 @@ void imu_task(void* parameter) {
               else {
                 gz = imu_gyro.gyro.z - gyro_z_offset;
               }
-              if (fabs(gz) < GYRO_DEADBAND) gz = 0.0f;
+              // No deadband on gz: the boot calibration removes the bias, and a deadband dropped the
+              // slow steering corrections on a row from the heading (2026-10-29, ARCHITECTURE item 26)
 
-              if (fabs(imu_acc.acceleration.x - acc_x_offset) < GYRO_DEADBAND) {
+              if (fabs(imu_acc.acceleration.x - acc_x_offset) < ACC_DEADBAND) {
                   imu_acc.acceleration.x = acc_x_offset;
               }
-              if (fabs(imu_acc.acceleration.y - acc_y_offset) < GYRO_DEADBAND) {
+              if (fabs(imu_acc.acceleration.y - acc_y_offset) < ACC_DEADBAND) {
                   imu_acc.acceleration.y = acc_y_offset;
               }
 

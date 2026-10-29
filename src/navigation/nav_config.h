@@ -36,13 +36,11 @@ struct NavConfig {
     float max_rounded_turn;   // rad, sharper corners turn on the spot
     float path_tolerance;     // m, waypoints that bend the path less than this are merged away
 
-    // Tracking (MPC per metre of path). Errors larger than max_heading_error are outside what
-    // the linear model covers; the robot turns on the spot back onto the path heading first.
+    // Tracking (NavTracker). Beyond max_heading_error the robot turns on the spot back onto the
+    // path heading first.
     float max_heading_error;  // rad
-    float q_lateral;          // weight on lateral error
-    float q_heading;          // weight on heading error
-    float q_curvature;        // weight on curvature deviating from the path's
-    float r_curvature_rate;   // weight on changing curvature (smoothness)
+    float heading_gain;       // rad/s of turn per rad of heading error
+    float approach_distance;  // m, aims atan(lateral error / this) toward the path
 };
 
 #endif

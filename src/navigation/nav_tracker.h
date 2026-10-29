@@ -4,18 +4,16 @@
 #include "nav_config.h"
 #include "nav_path.h"
 
-// Model-predictive path tracking with TinyMPC. The model is per metre of path, not per second:
-//   state  [lateral error, heading error, curvature - path curvature]
-//   input  rate of curvature change per metre
-// so it is linear and the same at every speed, and one solver set up at boot serves the whole
-// path. The path's own curvature is fed forward; the MPC only corrects the deviation, inside the
-// curvature the turn rate and outer wheel allow at the planned speed.
+// Path tracking by heading (the line follower of 4e26468, on curved paths). The robot aims at the
+// path heading turned toward the path by atan(lateral error / approach_distance), and turns at
+// heading_gain x the heading error; the path's own curvature is fed forward. A curvature set
+// straight from the error, with no curvature state in between: an MPC that could only ramp the
+// curvature (TinyMPC until 2026-10-29) added lag and weaved more on the same heading error.
 class NavTracker {
 public:
     bool begin(const NavConfig& cfg);
-    // Curvature (1/m, + = left) to drive now. current_curvature = what is being commanded.
-    float solve(const NavReference& ref, float current_curvature);
-    int last_iterations() const;
+    // Curvature (1/m, + = left) to drive now at speed (m/s)
+    float solve(const NavReference& ref, float speed);
 };
 
 #endif

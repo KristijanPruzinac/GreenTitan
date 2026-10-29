@@ -50,7 +50,7 @@ typedef struct {
 #define GYRO_SDA_PIN 21
 #define GYRO_SCL_PIN 22
 
-#define GYRO_DEADBAND 0.04f
+#define ACC_DEADBAND 0.04f   // m/s^2, accel x/y below this read as zero (the gyro has none)
 #define IMU_GYRO_Z_VARIANCE 4e-4f   // (rad/s)^2 for the EKF, ~0.02 rad/s over one /imu interval. Was 0.01 until 2026-10-28: the EKF yaw rate lagged the gyro in every turn
 #define GNSS_ANTENNA_BEHIND_AXLE 0.180f   // m, antenna (base_link) behind the wheel axle, Mower V3 CAD
 
@@ -119,13 +119,10 @@ typedef struct {
 #define MOTION_PATH_TOLERANCE             0.03f  // m, near-straight waypoints merged within this
 // Turning on the spot (path start, sharp corners, or far off the path heading)
 #define MOTION_MAX_TRACK_HEADING_ERROR    1.0f   // rad, ~57 deg: beyond this turn on the spot first
-// MPC weights (NavTracker). The curvature-rate weight makes the curvature reach an arc's only
-// after ~0.3 m of path (arcs entered ~6 cm late on the native bench); 0.001 fixes that there but
-// is not confirmed in HIL yet (ARCHITECTURE known issues).
-#define MOTION_MPC_Q_LATERAL              400.0f
-#define MOTION_MPC_Q_HEADING              20.0f
-#define MOTION_MPC_Q_CURVATURE            0.1f
-#define MOTION_MPC_R_CURVATURE_RATE       0.01f
+// Path tracking (NavTracker): turn rate per rad of heading error, and the distance over which it
+// aims back at the path (4e26468: 0.8 and MOTION_CORRECTION_GAIN 0.3)
+#define MOTION_HEADING_GAIN               0.8f   // rad/s per rad
+#define MOTION_APPROACH_DISTANCE          0.3f   // m
 #define MOTION_TURN_DONE                  0.05f  // rad, ~3 deg: then hand over to the tracker
 #define MOTION_ROTATE_GAIN                1.5f   // rad/s per rad of heading error
 #define CONTROL_YAW_TAU                   1.0f   // s, control heading follows the EKF yaw this slowly, gyro in between

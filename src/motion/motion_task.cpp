@@ -31,7 +31,8 @@ static const NavConfig nav_config = {
     MOTION_MAX_ROUNDED_TURN,       // max_rounded_turn
     MOTION_PATH_TOLERANCE,         // path_tolerance
     MOTION_MAX_TRACK_HEADING_ERROR,// max_heading_error
-    MOTION_MPC_Q_LATERAL, MOTION_MPC_Q_HEADING, MOTION_MPC_Q_CURVATURE, MOTION_MPC_R_CURVATURE_RATE,
+    MOTION_HEADING_GAIN,           // heading_gain
+    MOTION_APPROACH_DISTANCE,      // approach_distance
 };
 
 static dds_thread_context_t thread_context;
@@ -52,7 +53,6 @@ static double   teleport_target_y = 0;
 static NavPath&   path = *new NavPath();   // on the heap: static DRAM is full
 static NavTracker tracker;
 static bool       turning = false;      // on the spot: path start, a sharp corner, or far off heading
-static float      last_curvature = 0.0f;
 static float      last_speed = 0.0f;
 static uint8_t    applied_tool = NAV_TOOL_KEEP;
 
@@ -102,7 +102,6 @@ static void start_turn() {
     turning = true;
     rotate_since_ms = millis();
     last_speed = 0.0f;
-    last_curvature = 0.0f;
 }
 
 // Stop the wheels and drop the path; also drops queued messages (a real stop)
@@ -193,7 +192,7 @@ static void pose_updated_callback(dds_callback_context_t* context) {
         }
     }
     if (!turning) {
-        float curvature = tracker.solve(ref, last_curvature);
+        float curvature = tracker.solve(ref, fmaxf(last_speed, nav_config.v_min));
         // Planned speed, ramped up no faster than the path acceleration (the wheel ramps then
         // keep the commanded curvature), never below creep speed so the end still closes
         linear_cmd = fmaxf(nav_config.v_min,
@@ -203,7 +202,6 @@ static void pose_updated_callback(dds_callback_context_t* context) {
             linear_cmd = MAX_ANGULAR_VEL / fabsf(curvature);
             rotation_cmd = copysignf(MAX_ANGULAR_VEL, rotation_cmd);
         }
-        last_curvature = curvature;
         last_speed = linear_cmd;
     }
 

@@ -1,4 +1,4 @@
-# A 30 x 30 m garden lawn: gentle undulation, uneven turf, a slight fall to the east, molehills,
+# A 30 x 30 m garden lawn: gentle undulation, uneven turf, a slight fall to the east,
 # a flat base-station pad at the origin, a house wall and a tree that degrade RTK.
 world:
   name: lawn
@@ -18,7 +18,6 @@ terrain:
     - {wavelength: 0.25, amplitude: 0.004}   # tufts
   features:
     - {type: slope, gradient: [0.03, 0.0]}
-    - {type: random_mounds, count: 25, radius: [0.10, 0.18], height: [0.04, 0.09]}   # molehills
     - {type: flatten, position: [0.0, 0.0], radius: 1.0, blend: 1.0}                # base station
 
 objects:

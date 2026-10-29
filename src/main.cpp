@@ -772,7 +772,7 @@ void init_freertos() {
         xTaskCreatePinnedToCore(
             motion_task,
             "MotionTask",
-            4096,   // the MPC's Eigen matrices are on the heap, not this stack
+            4096,
             NULL,
             1,
             &task_handles[3],

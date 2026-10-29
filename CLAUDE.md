@@ -36,7 +36,7 @@ src/                     ESP32 firmware (PlatformIO, env esp32dev)
   sensor/                gps_task (UBX NAV-PVT), imu_task (MPU6050)
   motor/                 motor_task: steppers (ContinuousStepper), blade relay, sim odometry
   navigation/            robot-independent navigation core: NavPath (rounded corners, tool->axle path,
-                         speed profile), NavTracker (TinyMPC). No mower code here
+                         speed profile), NavTracker (heading tracker). No mower code here
   motion/                motion_task: mower glue around navigation/ (config, point queue, blade, guards)
   controller/            controller_task: mission state machine
   algorithm/             coverage planner: lawn_map + coverage (Clipper2; outline laps + skip-row infill), algorithm.* = firmware glue; *.bck = legacy GPS-degree version
@@ -55,7 +55,6 @@ ros2_ws/build|install|log   colcon output (gitignored)
 tools/android/           phone provisioning (adb debloat, Termux, camera over adb)
 cad/                     Python scripts that drive Fusion 360 / render studies (roof, canopy, cowl, ...)
 outputs/                 generated CAD exports/renders (mostly gitignored)
-lib/tinympc/             vendored TinyMPC solver (MIT), patched for the ESP32 (float, no stdout)
 lib/clipper2/            vendored Clipper2 polygon library (BSL-1.0), needs C++17
 platformio.ini           board, libs (incl. ESP-DDS, micro_ros_platformio jazzy), DDS limits
 ```
@@ -114,9 +113,9 @@ There are no automated tests. The `test/` folders only hold the PlatformIO and a
 
 - **Field-tested** (old drive train): localization (GPS + gyro, gated yaw) and line following. The drive was too weak for real terrain because the steppers had no gearbox.
 - **Works in teleport/sim mode:** the coverage planner and mission sequencing.
-- **Navigation core** (2026-10-27): curved axle paths (merged near-straight points, rounded corners, skip-row infill with arc U-turns, turning on the spot only for reversals) and TinyMPC tracking; the planner keeps half width + 5 cm from every outline. The body (casters 0.415 m behind the axle) must not swing past the edge: infill rows keep 0.51 m in, where any turn is safe; outline laps use the edge-corner curve, or a corner cut inward where it doesn't fit, and step inward from lap to lap at a corner, like a spiral; rows are swept skip-row in one direction and back (2026-10-28: 10–20 % faster and 3–7× fewer spins than e22d2d2 on the native bench). In Gazebo HIL on a 2 m lawn the body stayed inside. Only needle tips (> ~170° turns) still warn (ARCHITECTURE §14 item 24).
+- **Navigation core** (2026-10-27): curved axle paths (merged near-straight points, rounded corners, skip-row infill with arc U-turns, turning on the spot only for reversals) and heading tracking (the 4e26468 steering core with curvature feed-forward; TinyMPC replaced 2026-10-29); the planner keeps half width + 5 cm from every outline. The body (casters 0.415 m behind the axle) must not swing past the edge: infill rows keep 0.51 m in, where any turn is safe; outline laps use the edge-corner curve, or a corner cut inward where it doesn't fit, and step inward from lap to lap at a corner, like a spiral; rows are swept skip-row in one direction and back (2026-10-28: 10–20 % faster and 3–7× fewer spins than e22d2d2 on the native bench). In Gazebo HIL on a 2 m lawn the body stayed inside. Only needle tips (> ~170° turns) still warn (ARCHITECTURE §14 item 24).
 - **Works in Gazebo HIL** (2026-10-27): a full mission on a 2 m square, line following at 0.3 m/s (single-line test: console `l`, ~5 cm stop and cross-track error), stall and stuck-turn detection. The micro-ROS link has run without stalls since 2026-10-28 (ARCHITECTURE §11). Not yet checked on the real V3 drive: gear ratio, DM542T microsteps, motor wiring sign, STEP pulses on a scope.
-- **Heading** (2026-10-28): the ESP integrates the gyro at 50 Hz and the EKF fuses that angle differentially. With the boot clock sync and the HIL gyro fixes, driving yaw error in HIL at real time is 1.6° median / 5.1° p95 (was 2.7° / 8.4°). After each spin the yaw still drifts 4–8° for ~1.5 s while the casters realign (ARCHITECTURE §14 item 25). Reset the HIL board after every Gazebo start (new sim gyro bias). HIL measurements need a single Gazebo instance: two at once pushed the sim off real time.
+- **Heading** (2026-10-28): the ESP integrates the gyro at 50 Hz and the EKF fuses that angle differentially. With the boot clock sync and the HIL gyro fixes, driving yaw error in HIL at real time is 1.6° median / 5.1° p95 (was 2.7° / 8.4°). During a spin the EKF yaw trails by about rate × 0.1 s and catches up when it stops (ARCHITECTURE §14 item 25). Rows still swing ~8 cm from straight (median, HIL) from the remaining ~4° heading error (item 26; the gyro deadband was removed 2026-10-29). Reset the HIL board after every Gazebo start (new sim gyro bias). HIL measurements need a single Gazebo instance: two at once pushed the sim off real time.
 - **Not implemented:** return-to-base and docking, battery reading, rain sensor, obstacle sensing (obstacles are serial-triggered only), reverse driving, camera use.
 - **In progress:** the Mower V3 rebuild with 10:1 gearboxes, the cover design, and moving the ROS 2 host to the phone.
 - Next work items: `docs/ARCHITECTURE.md` → Known issues / Planned direction, and `docs/HARDWARE.md` → Open items.
