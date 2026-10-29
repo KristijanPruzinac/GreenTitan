@@ -132,7 +132,8 @@ static bool datum_published = false;
 bool pending_path_publish = false;
 
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
-#define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){}}
+static int publish_failures = 0;   // rcl_publish errors, reported with the /imu count
+#define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){ publish_failures++; }}
 
 // Error handle loop
 void error_loop() {
@@ -280,8 +281,8 @@ void datum_set_callback(dds_callback_context_t* context) {
 
 // Recent /imu messages: mean gyro rates over the interval before each (rad/s, body axes), the
 // integrated gyro yaw and the tilt at it, with their stamps, so the GPS fix can use the motion at
-// the GPS epoch (the fix arrives ~0.2 s late). 16 messages at 10 Hz cover the EKF's 1 s history.
-#define GYRO_HISTORY 16
+// the GPS epoch (the fix arrives ~0.2 s late). 1.6 s of messages cover the EKF's 1 s history.
+#define GYRO_HISTORY (IMU_UPDATE_FREQUENCY * 8 / 5)
 struct ImuSample { double t; float gz, gx, gy, roll, pitch; double yaw; };
 static ImuSample gyro_hist[GYRO_HISTORY];
 static int gyro_hist_n = 0, gyro_hist_head = 0;   // head = next slot to write
@@ -368,6 +369,17 @@ void imu_topic_callback(dds_callback_context_t* context) {
     imu_msg.linear_acceleration_covariance[8] = 0.1f;
 
     RCSOFTCHECK(rcl_publish(&imu_publisher, &imu_msg, NULL));
+    // What the ESP hands to the link, to tell its losses from the link's (HIL 2026-10-29: the
+    // host got 13.5 /imu per second, ARCHITECTURE item 26)
+    static int imu_sent = 0;
+    static uint32_t link_report_ms = 0;
+    imu_sent++;
+    if (millis() - link_report_ms > 10000) {
+        SerialDebug.printf("[LINK] %d /imu sent in %u ms, %d publish errors\r\n",
+                           imu_sent, (unsigned)(millis() - link_report_ms), publish_failures);
+        imu_sent = publish_failures = 0;
+        link_report_ms = millis();
+    }
 
     double t = data->timestamp_sec + data->timestamp_nsec * 1e-9;
     int newest = (gyro_hist_head + GYRO_HISTORY - 1) % GYRO_HISTORY;
