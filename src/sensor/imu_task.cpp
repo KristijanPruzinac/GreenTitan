@@ -6,10 +6,6 @@ static double gyro_x_offset = 0;
 static double gyro_y_offset = 0;
 static double gyro_z_offset = 0;
 
-static double acc_x_offset = 0;
-static double acc_y_offset = 0;
-static double acc_z_offset = 0;
-
 static volatile bool calibration_completed = false;
 
 //Data
@@ -139,36 +135,46 @@ void imu_task(void* parameter) {
               calibration_completed = imu_calibrate_step();
             }
             else if (have_sample){
-              double gz;
-              if (IMU_INVERT){
-                gz = -(imu_gyro.gyro.z - gyro_z_offset);
-              }
-              else {
-                gz = imu_gyro.gyro.z - gyro_z_offset;
-              }
+              // Sensor -> body axes (x forward, y left, z up). Mounted upside down = turned 180 deg
+              // about x (IMU_INVERT): y and z flip, for the gyro and the accelerometer alike.
+              double flip = IMU_INVERT ? -1.0 : 1.0;
+              double gx = imu_gyro.gyro.x - gyro_x_offset;
+              double gy = flip * (imu_gyro.gyro.y - gyro_y_offset);
+              double gz = flip * (imu_gyro.gyro.z - gyro_z_offset);
+              double ax = imu_acc.acceleration.x, ay = flip * imu_acc.acceleration.y, az = flip * imu_acc.acceleration.z;
               // No deadband on gz: the boot calibration removes the bias, and a deadband dropped the
               // slow steering corrections on a row from the heading (2026-10-29, ARCHITECTURE item 26)
-
-              if (fabs(imu_acc.acceleration.x - acc_x_offset) < ACC_DEADBAND) {
-                  imu_acc.acceleration.x = acc_x_offset;
-              }
-              if (fabs(imu_acc.acceleration.y - acc_y_offset) < ACC_DEADBAND) {
-                  imu_acc.acceleration.y = acc_y_offset;
-              }
 
               // Every read is integrated (trapezoid) into the gyro yaw; /imu goes out at
               // IMU_UPDATE_FREQUENCY with the averages since the last message, so a turn that
               // starts or stops between messages is still counted in full.
               static double yaw = 0.0, last_t = 0.0, last_gz = 0.0, pub_t = 0.0, pub_yaw = 0.0;
+              static double roll = 0.0, pitch = 0.0;
               static double sum[5];
               static int n = 0;
               double now = esp_timer_get_time() * 1e-6;
-              if (last_t > 0.0) yaw += 0.5 * (gz + last_gz) * (now - last_t);
+              // Roll and pitch: the gyro carries them (Euler rates, so a turn on a slope stays
+              // right), the accelerometer's gravity direction pulls them in over IMU_TILT_TAU. The
+              // pull is slow because driving and turning add their own acceleration; the part a
+              // spin puts on the IMU, IMU_X_BEHIND_AXLE ahead of the centre, is taken out first.
+              double ax_g = ax - gz * gz * IMU_X_BEHIND_AXLE;
+              double roll_acc = atan2(ay, az), pitch_acc = atan2(-ax_g, sqrt(ay * ay + az * az));
+              if (last_t > 0.0) {
+                double dt = now - last_t;
+                yaw += 0.5 * (gz + last_gz) * dt;
+                double cr = cos(roll), sr = sin(roll), tp = tan(pitch);
+                roll += (gx + (sr * gy + cr * gz) * tp) * dt;
+                pitch += (cr * gy - sr * gz) * dt;
+                double k = fmin(1.0, dt / IMU_TILT_TAU);
+                roll += k * remainder(roll_acc - roll, 2.0 * M_PI);
+                pitch += k * (pitch_acc - pitch);
+              } else {
+                roll = roll_acc;
+                pitch = pitch_acc;
+              }
               last_t = now;
               last_gz = gz;
-              double s_now[5] = { imu_acc.acceleration.x - acc_x_offset, imu_acc.acceleration.y - acc_y_offset,
-                                  imu_acc.acceleration.z - acc_z_offset,
-                                  imu_gyro.gyro.x - gyro_x_offset, imu_gyro.gyro.y - gyro_y_offset };
+              double s_now[5] = { ax, ay, az, gx, gy };
               for (int i = 0; i < 5; i++) sum[i] += s_now[i];
               n++;
               if (now - pub_t < (1.0 - 0.5 * IMU_UPDATE_FREQUENCY / IMU_SAMPLE_FREQUENCY) / IMU_UPDATE_FREQUENCY) {
@@ -178,7 +184,8 @@ void imu_task(void* parameter) {
               }
               double gz_avg = pub_t > 0.0 ? (yaw - pub_yaw) / (now - pub_t) : gz;
               IMU_data_t IMU_data = {(float)(sum[0] / n), (float)(sum[1] / n), (float)(sum[2] / n),
-                                    (float)(sum[3] / n), (float)(sum[4] / n), (float)gz_avg, yaw};
+                                    (float)(sum[3] / n), (float)(sum[4] / n), (float)gz_avg, yaw,
+                                    (float)roll, (float)pitch};
               for (int i = 0; i < 5; i++) sum[i] = 0.0;
               n = 0;
               pub_t = now;

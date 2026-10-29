@@ -50,9 +50,11 @@ typedef struct {
 #define GYRO_SDA_PIN 21
 #define GYRO_SCL_PIN 22
 
-#define ACC_DEADBAND 0.04f   // m/s^2, accel x/y below this read as zero (the gyro has none)
+#define IMU_TILT_TAU 2.0f   // s, roll/pitch follow the accelerometer this slowly, the gyro in between
+#define IMU_X_BEHIND_AXLE 0.25f   // m, MPU6050 behind the wheel axle (Mower V3 CAD, est.)
 #define IMU_GYRO_Z_VARIANCE 4e-4f   // (rad/s)^2 for the EKF, ~0.02 rad/s over one /imu interval. Was 0.01 until 2026-10-28: the EKF yaw rate lagged the gyro in every turn
 #define GNSS_ANTENNA_BEHIND_AXLE 0.180f   // m, antenna (base_link) behind the wheel axle, Mower V3 CAD
+#define GNSS_ANTENNA_HEIGHT 0.28f   // m, antenna above the ground (est.): tilt moves it sideways by this x the angle
 
 typedef struct {
     float acc_x;
@@ -63,6 +65,8 @@ typedef struct {
     float gyro_y;
     float gyro_z;
     double gyro_yaw;   // rad, gyro z integrated since boot (unwrapped; relative, not a compass heading)
+    float roll;        // rad, + = left side up (body axes: x forward, y left, z up, as all fields here)
+    float pitch;       // rad, + = nose down
 
     uint32_t timestamp_sec;
     uint32_t timestamp_nsec;

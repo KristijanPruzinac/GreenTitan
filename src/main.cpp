@@ -278,34 +278,35 @@ void datum_set_callback(dds_callback_context_t* context) {
     datum_publish_count = 0;
 }
 
-// Recent /imu messages: mean gyro z over the interval before each (rad/s) and the integrated gyro
-// yaw at it, with their stamps, so the GPS yaw can use the turn rate at the GPS epoch (the fix
-// arrives ~0.2 s late). 16 messages at 10 Hz cover the EKF's 1 s history.
+// Recent /imu messages: mean gyro rates over the interval before each (rad/s, body axes), the
+// integrated gyro yaw and the tilt at it, with their stamps, so the GPS fix can use the motion at
+// the GPS epoch (the fix arrives ~0.2 s late). 16 messages at 10 Hz cover the EKF's 1 s history.
 #define GYRO_HISTORY 16
-static struct { double t; float gz; double yaw; } gyro_hist[GYRO_HISTORY];
+struct ImuSample { double t; float gz, gx, gy, roll, pitch; double yaw; };
+static ImuSample gyro_hist[GYRO_HISTORY];
 static int gyro_hist_n = 0, gyro_hist_head = 0;   // head = next slot to write
 
-// Gyro z at time t, interpolated. *spread = change between the two samples around t: how far the
-// true rate can be off there (0 in a steady turn, large where a turn starts or stops).
-static float gyro_z_at(double t, float* spread) {
+// One field of the history at time t, interpolated. *spread = change between the two samples
+// around t: how far the true value can be off there (0 in a steady turn, large where one starts).
+static float imu_at(double t, float ImuSample::*field, float* spread) {
     *spread = 0.0f;
     if (gyro_hist_n == 0) return 0.0f;
     int newest = (gyro_hist_head + GYRO_HISTORY - 1) % GYRO_HISTORY;
     int prev = (newest + GYRO_HISTORY - 1) % GYRO_HISTORY;
     if (t >= gyro_hist[newest].t) {
-        if (gyro_hist_n > 1) *spread = fabsf(gyro_hist[newest].gz - gyro_hist[prev].gz);
-        return gyro_hist[newest].gz;
+        if (gyro_hist_n > 1) *spread = fabsf(gyro_hist[newest].*field - gyro_hist[prev].*field);
+        return gyro_hist[newest].*field;
     }
     for (int k = 1; k < gyro_hist_n; k++) {
         int a = (newest + GYRO_HISTORY - k) % GYRO_HISTORY;      // older sample
         int b = (a + 1) % GYRO_HISTORY;
         if (t >= gyro_hist[a].t) {
             double f = (t - gyro_hist[a].t) / (gyro_hist[b].t - gyro_hist[a].t);
-            *spread = fabsf(gyro_hist[b].gz - gyro_hist[a].gz);
-            return gyro_hist[a].gz + f * (gyro_hist[b].gz - gyro_hist[a].gz);
+            *spread = fabsf(gyro_hist[b].*field - gyro_hist[a].*field);
+            return gyro_hist[a].*field + f * (gyro_hist[b].*field - gyro_hist[a].*field);
         }
     }
-    return gyro_hist[(gyro_hist_head + GYRO_HISTORY - gyro_hist_n) % GYRO_HISTORY].gz;   // oldest
+    return gyro_hist[(gyro_hist_head + GYRO_HISTORY - gyro_hist_n) % GYRO_HISTORY].*field;   // oldest
 }
 
 // Integrated gyro yaw at time t: linear between messages (their rate is the mean over that
@@ -373,6 +374,10 @@ void imu_topic_callback(dds_callback_context_t* context) {
     if (gyro_hist_n == 0 || t > gyro_hist[newest].t) {           // keep stamps strictly increasing
         gyro_hist[gyro_hist_head].t = t;
         gyro_hist[gyro_hist_head].gz = data->gyro_z;
+        gyro_hist[gyro_hist_head].gx = data->gyro_x;
+        gyro_hist[gyro_hist_head].gy = data->gyro_y;
+        gyro_hist[gyro_hist_head].roll = data->roll;
+        gyro_hist[gyro_hist_head].pitch = data->pitch;
         gyro_hist[gyro_hist_head].yaw = data->gyro_yaw;
         gyro_hist_head = (gyro_hist_head + 1) % GYRO_HISTORY;
         if (gyro_hist_n < GYRO_HISTORY) gyro_hist_n++;
@@ -394,6 +399,22 @@ void gps_topic_callback(dds_callback_context_t* context) {
     const double METERS_PER_LAT = 111111.0;
     double y_north = (data->latitude  - BASE_LAT) * METERS_PER_LAT;
     double x_east  = (data->longitude - BASE_LON) * METERS_PER_LAT * cos(BASE_LAT * M_PI / 180.0);
+
+    // Tilt: the antenna sits GNSS_ANTENNA_HEIGHT up, so roll and pitch move it sideways and
+    // forwards (4 deg of roll on turf = 2 cm), and rocking moves it at that height x the tilt
+    // rate, which the GPS would read as heading. Both are taken out: the fix is moved to the
+    // point under the antenna, as if the mower stood level. base_link stays that point.
+    double gps_t = data->timestamp_sec + data->timestamp_nsec * 1e-9;
+    float spread_x, unused;
+    float roll = imu_at(gps_t, &ImuSample::roll, &unused), pitch = imu_at(gps_t, &ImuSample::pitch, &unused);
+    float roll_rate = imu_at(gps_t, &ImuSample::gx, &spread_x), pitch_rate = imu_at(gps_t, &ImuSample::gy, &unused);
+    float cy = cosf(fused_yaw_for_twist), sy = sinf(fused_yaw_for_twist);
+    double tilt_fwd = GNSS_ANTENNA_HEIGHT * cos(roll) * sin(pitch), tilt_left = -GNSS_ANTENNA_HEIGHT * sin(roll);
+    x_east  -= cy * tilt_fwd - sy * tilt_left;
+    y_north -= sy * tilt_fwd + cy * tilt_left;
+    double rock_fwd = GNSS_ANTENNA_HEIGHT * pitch_rate, rock_left = -GNSS_ANTENNA_HEIGHT * roll_rate;
+    double vel_east  = data->vel_east  - (cy * rock_fwd - sy * rock_left);
+    double vel_north = data->vel_north - (sy * rock_fwd + cy * rock_left);
 
     // Header timestamp
     gps_msg.header.stamp.sec     = data->timestamp_sec;
@@ -425,13 +446,12 @@ void gps_topic_callback(dds_callback_context_t* context) {
     // - The yaw variance is what the velocity uncertainty gives, (sigma / speed)^2, so slow driving
     //   counts little. sigma combines the GPS sAcc and the lever-arm error from the gyro rate
     //   changing between samples. Below 3 sigma the direction is noise and nothing is fused.
-    float cy = cosf(fused_yaw_for_twist), sy = sinf(fused_yaw_for_twist);
     float gyro_spread;
     double lever = -GNSS_ANTENNA_BEHIND_AXLE *                          // body-left speed of the antenna
-                   gyro_z_at(data->timestamp_sec + data->timestamp_nsec * 1e-9, &gyro_spread);
-    double lever_err = GNSS_ANTENNA_BEHIND_AXLE * gyro_spread;
-    double axle_e = data->vel_east  + sy * lever;
-    double axle_n = data->vel_north - cy * lever;
+                   imu_at(gps_t, &ImuSample::gz, &gyro_spread);
+    double lever_err = hypot(GNSS_ANTENNA_BEHIND_AXLE * gyro_spread, GNSS_ANTENNA_HEIGHT * spread_x);
+    double axle_e = vel_east  + sy * lever;
+    double axle_n = vel_north - cy * lever;
     double axle_speed = hypot(axle_e, axle_n);
     double s_acc = data->vel_accuracy;
     double sigma = hypot(s_acc, lever_err);
@@ -450,7 +470,6 @@ void gps_topic_callback(dds_callback_context_t* context) {
             // A yaw more than 3 sigma of the combined uncertainty away from the EKF's yaw at the
             // GPS epoch is not fused. At boot the EKF's yaw variance is huge, so the first lock passes.
             // The EKF's yaw is its state FUSED_YAW_LAG before its stamp; the gyro carries it to the epoch.
-            double gps_t = data->timestamp_sec + data->timestamp_nsec * 1e-9;
             double fused_t = fused_yaw_stamp - FUSED_YAW_LAG;
             double yaw_then = fused_yaw_for_twist + (gps_t >= fused_t ? gyro_turn_between(fused_t, gps_t)
                                                                       : -gyro_turn_between(gps_t, fused_t));
@@ -471,8 +490,8 @@ void gps_topic_callback(dds_callback_context_t* context) {
     // that yaw is off; yaw itself is not corrected by this. (Until 2026-10-27 east/north went
     // in unrotated, so between fixes the EKF predicted motion in the wrong direction whenever
     // yaw was not ~0: at yaw 90 deg it moved west while the mower drove north.)
-    gps_msg.twist.twist.linear.x =  cy * data->vel_east + sy * data->vel_north;   // forward
-    gps_msg.twist.twist.linear.y = -sy * data->vel_east + cy * data->vel_north;   // left
+    gps_msg.twist.twist.linear.x =  cy * vel_east + sy * vel_north;   // forward
+    gps_msg.twist.twist.linear.y = -sy * vel_east + cy * vel_north;   // left
     gps_msg.twist.twist.linear.z = 0.0;
     gps_msg.twist.twist.angular.x = 0.0;
     gps_msg.twist.twist.angular.y = 0.0;
