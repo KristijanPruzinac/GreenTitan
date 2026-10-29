@@ -468,13 +468,24 @@ void gps_topic_callback(dds_callback_context_t* context) {
             yaw_var = (sigma / axle_speed) * (sigma / axle_speed);
             // Outlier gate: the axle can still slide sideways (caster drag, wheel slip in a pivot).
             // A yaw more than 3 sigma of the combined uncertainty away from the EKF's yaw at the
-            // GPS epoch is not fused. At boot the EKF's yaw variance is huge, so the first lock passes.
+            // GPS epoch is not fused. The EKF's yaw variance does not say whether its yaw was ever set
+            // from GPS: in HIL (2026-10-29) it booted 150 deg off with a small variance and the gate
+            // threw out every GPS yaw for 2 minutes. So GPS_YAW_RELOCK rejections in a row (a slide
+            // lasts a moment, a wrong yaw stays) let the next one through, which relocks the yaw.
             // The EKF's yaw is its state FUSED_YAW_LAG before its stamp; the gyro carries it to the epoch.
+            static int rejected = 0;
             double fused_t = fused_yaw_stamp - FUSED_YAW_LAG;
             double yaw_then = fused_yaw_for_twist + (gps_t >= fused_t ? gyro_turn_between(fused_t, gps_t)
                                                                       : -gyro_turn_between(gps_t, fused_t));
             double innov = angle_diff(yaw_meas, yaw_then);
-            if (innov * innov > 9.0 * (yaw_var + fused_yaw_var)) yaw_var = 1e6;
+            if (innov * innov <= 9.0 * (yaw_var + fused_yaw_var)) {
+                rejected = 0;
+            } else if (++rejected > GPS_YAW_RELOCK) {
+                rejected = 0;
+                SerialDebug.printf("[GPS] Yaw relocked, %.0f deg off\r\n", innov * 180.0 / M_PI);
+            } else {
+                yaw_var = 1e6;
+            }
         }
     }
     gps_msg.pose.covariance[35] = yaw_var;

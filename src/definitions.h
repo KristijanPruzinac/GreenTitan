@@ -132,6 +132,7 @@ typedef struct {
 #define CONTROL_YAW_TAU                   1.0f   // s, control heading follows the EKF yaw this slowly, gyro in between
 #define CONTROL_YAW_SNAP                  0.5f   // rad, ~30 deg: further off, take the EKF yaw directly
 #define FUSED_YAW_LAG                     0.15   // s, EKF yaw behind its own stamp (HIL 2026-10-27; measure on the robot)
+#define GPS_YAW_RELOCK                    10     // GPS yaws in a row outside the gate (2 s of driving): fuse the next anyway
 #define MOTION_POSE_TIMEOUT_MS            500    // stop driving if /fused_pose (10 Hz) goes quiet
 #define MOTION_STALL_DIST                0.10f  // m: driving forward but moved less than this ...
 #define MOTION_STALL_TIME_MS              4000   // ... for this long = stalled (obstacle signal)
@@ -156,8 +157,12 @@ typedef struct {
 #endif
 #define CLOCK_SYNC_ATTEMPTS 10  // boot clock sync with the agent: the shortest round trip wins
 #define MOTION_UPDATE_FREQUENCY 10
+#define MOTION_POSE_GAP_LONG_MS 150   // ms, a pose gap longer than this counts as late in the report
+#define MOTION_POSE_GAP_REPORT_MS 10000
 #define BATTERY_UPDATE_FREQUENCY 10
-#define IMU_UPDATE_FREQUENCY 10   // /imu messages (averaged over the samples in between)
+#define IMU_UPDATE_FREQUENCY 25   // /imu messages (averaged over the samples in between). Above the EKF's 10 Hz,
+                                  // so each EKF cycle has a new input: with 10 Hz it skipped ~40 % of its outputs
+                                  // (no new stamp, no publish; HIL 2026-10-29). A divisor of IMU_SAMPLE_FREQUENCY
 #define IMU_SAMPLE_FREQUENCY 50   // gyro reads; integrated on the ESP so no rotation is lost between messages
 #define MOTOR_UPDATE_FREQUENCY 1000
 #define GPS_UPDATE_FREQUENCY 5

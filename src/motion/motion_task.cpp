@@ -59,6 +59,10 @@ static uint8_t    applied_tool = NAV_TOOL_KEEP;
 static uint32_t last_pose_ms  = 0;
 static bool     pose_stale    = false;
 
+// Pose arrival gaps while driving, reported every MOTION_POSE_GAP_REPORT_MS
+static int      gap_count = 0, gap_long = 0;
+static uint32_t gap_max_ms = 0, gap_report_ms = 0;
+
 // Stall check: driving but the fused (GPS) position has not moved. Uses only the sign of the
 // command, never its magnitude. Seen in HIL 2026-10-27: high-centred on a molehill.
 static bool     stall_anchor_set = false;
@@ -138,15 +142,32 @@ static void motion_add_point(double px, double py, uint8_t tool, int8_t edge) {
     request_point();
 }
 
+// The poses come 0.1 s apart only on average; the gap report shows how often one is late
+// (HIL 2026-10-29: a third of them, ARCHITECTURE item 26).
 static void pose_updated_callback(dds_callback_context_t* context) {
     fused_pose_data_t* data = (fused_pose_data_t*)context->message_data.data;
+
+    uint32_t now_ms = millis();
+    if (mode == MOVING) {
+        uint32_t gap = now_ms - last_pose_ms;
+        gap_count++;
+        if (gap > MOTION_POSE_GAP_LONG_MS) gap_long++;
+        if (gap > gap_max_ms) gap_max_ms = gap;
+        if (now_ms - gap_report_ms > MOTION_POSE_GAP_REPORT_MS) {
+            SerialDebug.printf("[MOTION] Poses %d, %d late (> %d ms), longest gap %u ms\r\n",
+                               gap_count, gap_long, MOTION_POSE_GAP_LONG_MS, gap_max_ms);
+            gap_count = gap_long = 0;
+            gap_max_ms = 0;
+            gap_report_ms = now_ms;
+        }
+    }
 
     x = data->x;
     y = data->y;
     yaw = data->yaw;
     linear_vel = data->vx;
     rotation_vel = data->omega;
-    last_pose_ms = millis();
+    last_pose_ms = now_ms;
     if (pose_stale) {
         pose_stale = false;
         stall_anchor_set = false;   // the wheels were stopped, don't count that as a stall
