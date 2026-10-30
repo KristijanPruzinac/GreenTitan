@@ -1,6 +1,7 @@
 #include "tof_task.h"
 #include "../hil/hil.h"
 #include "../motion/wall_assist.h"
+#include "tof_map.h"
 #include <new>
 
 #if !HIL_ENABLED
@@ -14,6 +15,8 @@ static TofPose pose = {};
 static float tilt_roll = 0.0f, tilt_pitch = 0.0f;   // rad, from /imu
 
 static TofPoint* memory = nullptr;                  // heap: TOF_MEMORY_POINTS
+static TofZone* zones = nullptr;                    // heap: one frame's zones
+static bool map_ok = false;
 static TofRay rays[2][TOF_ZONES];
 static tof_frame_t latest[2];
 static bool latest_valid[2] = { false, false };
@@ -188,17 +191,21 @@ static bool next_frame(int s, tof_frame_t* f) {
 
 // ---------------------------------------------------------------- POINTS
 
-static void memory_add(float x, float y, uint32_t now) {
+static uint8_t to_cm(float m) { return (uint8_t)fminf(fmaxf(m * 100.0f + 0.5f, 0.0f), 255.0f); }
+
+static void memory_add(const TofZone& z, uint32_t now) {
+  float x = z.x, y = z.y;
   int16_t cx = (int16_t)floorf(x / TOF_GRID), cy = (int16_t)floorf(y / TOF_GRID);
+  uint8_t top = (z.flags & TOF_ZONE_TOP) ? to_cm(0.5f * (z.top_lo + z.top_hi)) : 0;
   int free_slot = -1, oldest = 0;
   for (int i = 0; i < TOF_MEMORY_POINTS; i++) {
     TofPoint& p = memory[i];
     if (p.t_ms == 0) { if (free_slot < 0) free_slot = i; continue; }
-    if (p.cx == cx && p.cy == cy) { p.x = x; p.y = y; p.t_ms = now; return; }
+    if (p.cx == cx && p.cy == cy) { p.x = x; p.y = y; p.t_ms = now; p.flags = z.flags; p.z_cm = to_cm(z.z); p.top_cm = top; return; }
     if (p.t_ms < memory[oldest].t_ms || memory[oldest].t_ms == 0) oldest = i;
   }
   int i = free_slot >= 0 ? free_slot : oldest;
-  memory[i] = { x, y, cx, cy, now };
+  memory[i] = { x, y, cx, cy, now, z.flags, to_cm(z.z), top };
 }
 
 // Old points, far points and points under the body (driven over: not solid) are forgotten
@@ -215,29 +222,22 @@ static void memory_prune(uint32_t now) {
   }
 }
 
-// Valid zones above the ground -> world points. The pose is carried from its arrival to the
-// frame's measure time with its own speed and turn rate; roll and pitch tilt the body.
+// Valid zones -> world points (tof_frame_analyse). The pose is carried from its arrival to the
+// frame's measure time with its own speed and turn rate; roll and pitch tilt the body. The memory
+// keeps the zones above the plain ground threshold and the face points (low edges too); the map
+// takes the face points.
 static void add_frame(int s, const tof_frame_t& f) {
   if (!pose.valid || millis() - pose.ms > MOTION_POSE_TIMEOUT_MS) return;   // can't place the points
   float dt = ((int32_t)(f.t_ms - pose.ms) - TOF_FRAME_DELAY * 1000.0f) * 1e-3f;
-  float yaw = pose.yaw + pose.omega * dt;
-  double ax = pose.x + pose.vx * cosf(pose.yaw) * dt, ay = pose.y + pose.vx * sinf(pose.yaw) * dt;
-  float cy = cosf(yaw), sy = sinf(yaw);
-  float cr = cosf(tilt_roll), sr = sinf(tilt_roll), cp = cosf(tilt_pitch), sp = sinf(tilt_pitch);
-  for (int k = 0; k < TOF_ZONES; k++) {
-    if (f.status[k] != TOF_STATUS_VALID) continue;
-    float r = f.range_mm[k] * 1e-3f;
-    if (r < TOF_MIN_RANGE || r > TOF_MAX_RANGE) continue;
-    const TofRay& ray = rays[s][k];
-    float bx = ray.ox + r * ray.dx, by = ray.oy + r * ray.dy, bz = ray.oz + r * ray.dz;
-    // Ground: below TOF_MIN_HEIGHT over the plane the wheels stand on (the body frame, so a slope
-    // the mower stands on is already taken out), with an allowance for ground rising ahead of it
-    if (bz < TOF_MIN_HEIGHT + TOF_GROUND_SLOPE * fmaxf(bx, 0.0f)) continue;
-    // Body -> level (roll about x, then pitch about y), then yaw and the axle position
-    float ly = cr * by - sr * bz, lz = sr * by + cr * bz;
-    float lx = cp * bx + sp * lz;
-    memory_add((float)(ax + cy * lx - sy * ly), (float)(ay + sy * lx + cy * ly), f.t_ms);
-  }
+  TofFramePose fp;
+  fp.x = pose.x + pose.vx * cosf(pose.yaw) * dt;
+  fp.y = pose.y + pose.vx * sinf(pose.yaw) * dt;
+  fp.yaw = pose.yaw + pose.omega * dt;
+  fp.roll = tilt_roll; fp.pitch = tilt_pitch; fp.omega = pose.omega;
+  tof_frame_analyse(rays[s], f, fp, zones);
+  for (int k = 0; k < TOF_ZONES; k++)
+    if (zones[k].flags & (TOF_ZONE_HIGH | TOF_ZONE_FACE)) memory_add(zones[k], f.t_ms);
+  if (map_ok) tof_map_frame(rays[s], f, fp, zones, f.t_ms);
 }
 
 // ---------------------------------------------------------------- DDS
@@ -252,7 +252,8 @@ static void pose_callback(dds_callback_context_t* context) {
     double jump = hypot(x - (pose.x + pose.vx * cosf(pose.yaw) * dt), y - (pose.y + pose.vx * sinf(pose.yaw) * dt));
     if (jump > TOF_POSE_JUMP) {
       memory_clear();
-      SerialDebug.printf("[TOF] Pose jumped %.0f cm, point memory cleared\r\n", jump * 100.0);
+      tof_map_pose_jump();
+      SerialDebug.printf("[TOF] Pose jumped %.0f cm, point memory cleared, map kept apart\r\n", jump * 100.0);
     }
   }
   pose = { x, y, d->yaw, d->vx, d->omega, now, true };
@@ -283,13 +284,16 @@ void tof_task(void* parameter) {
 
     build_rays();
     memory = new (std::nothrow) TofPoint[TOF_MEMORY_POINTS]();
+    zones = new (std::nothrow) TofZone[TOF_ZONES]();
+    map_ok = zones && tof_map_init();
 #if HIL_ENABLED
     sensor_present[0] = sensor_present[1] = true;   // frames come from hil/tof
 #else
     init_sensors();   // here, not in setup(): the firmware upload takes seconds and needs no one else
 #endif
     sensors_found = (sensor_present[0] ? 1 : 0) + (sensor_present[1] ? 1 : 0);
-    if (memory == nullptr) sensors_found = 0;
+    if (memory == nullptr || zones == nullptr) sensors_found = 0;
+    else if (!map_ok) SerialDebug.println("[TOF] Out of memory for the map");
     if (sensors_found == 0) SerialDebug.println("[TOF] No sensors, ToF and wall assist off");
     wall_assist_init(sensors_found > 0);
 
@@ -330,6 +334,12 @@ void tof_task(void* parameter) {
               }
               if (new_frame && pose.valid) memory_prune(millis());
               wall_assist_update(pose, new_frame);
+              static uint32_t map_ms = 0;
+              if (map_ok && pose.valid && millis() - map_ms >= TOF_MAP_UPDATE_MS) {
+                map_ms = millis();
+                TofFramePose fp = { pose.x, pose.y, pose.yaw, tilt_roll, tilt_pitch, pose.omega };
+                tof_map_update(fp, millis());
+              }
             }
 
             // ------- THREAD LOOP CODE END -------

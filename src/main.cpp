@@ -1,6 +1,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "Arduino.h"
+#include <new>
 
 #include <micro_ros_platformio.h>
 
@@ -15,6 +16,7 @@
 #include <std_msgs/msg/float64_multi_array.h>
 #include <std_msgs/msg/u_int8_multi_array.h>
 #include <std_msgs/msg/float32_multi_array.h>
+#include <std_msgs/msg/int16_multi_array.h>
 #include <std_msgs/msg/string.h>
 
 #include "esp_dds.h"
@@ -87,6 +89,7 @@ volatile int      LAST_DATUM_CAPTURE_RESULT  = DATUM_RESULT_NONE;
 #include "motion/motion_task.h"
 #include "motion/wall_assist.h"
 #include "sensor/tof_task.h"
+#include "sensor/tof_map.h"
 
 //Controller
 #include "controller/controller_task.h"
@@ -107,6 +110,7 @@ rcl_subscription_t fused_pose_subscriber;
 
 rcl_publisher_t datum_publisher;
 rcl_publisher_t path_data_publisher;
+rcl_publisher_t wall_map_publisher;
 
 sensor_msgs__msg__Imu imu_msg;
 nav_msgs__msg__Odometry gps_msg;
@@ -272,6 +276,13 @@ void init_micro_ros(){
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float64MultiArray),
         "algo/path_data"));
     limit_reliable_wait(&path_data_publisher);
+
+    // ToF object map for the drive page, reliable like the path (up to ~0.9 kB, fragmented)
+    RCCHECK(rclc_publisher_init_default(
+        &wall_map_publisher, &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int16MultiArray),
+        "esp/wall_map"));
+    limit_reliable_wait(&wall_map_publisher);
     
     // GPS
     strcpy(gps_frame_id_buf, "odom");
@@ -791,6 +802,7 @@ static void destroy_micro_ros() {
     RCSOFTCHECK(rcl_publisher_fini(&imu_publisher, &node));
     RCSOFTCHECK(rcl_publisher_fini(&gps_publisher, &node));
     RCSOFTCHECK(rcl_publisher_fini(&path_data_publisher, &node));
+    RCSOFTCHECK(rcl_publisher_fini(&wall_map_publisher, &node));
     RCSOFTCHECK(rcl_subscription_fini(&fused_pose_subscriber, &node));
     if (HIL_ENABLED) {
         RCSOFTCHECK(rcl_subscription_fini(&hil_gnss_subscriber, &node));
@@ -837,6 +849,58 @@ static bool ros_link_check() {
         SerialDebug.println("[ROS] Agent reconnected");
     }
     return connected;
+}
+
+// ToF object map (sensor/tof_map.h): esp/wall_map at most every TOF_MAP_PUBLISH_MS, when it changed.
+// v1: [1, n, then per object kind, x0, y0, x1, y1, height, hits], cm (post: x0, y0 centre, x1 radius)
+static MapObject* wall_map_objects = nullptr;   // heap, TOF_MAP_OBJECTS
+static int16_t* wall_map_data = nullptr;        // heap, 2 + 7 x TOF_MAP_OBJECTS
+
+static int16_t map_cm(float m) { return (int16_t)fminf(fmaxf(roundf(m * 100.0f), -32767.0f), 32767.0f); }
+
+static int wall_map_snapshot() {
+    if (wall_map_objects == nullptr) wall_map_objects = new (std::nothrow) MapObject[TOF_MAP_OBJECTS];
+    return wall_map_objects ? tof_map_copy(wall_map_objects, TOF_MAP_OBJECTS) : 0;
+}
+
+static void publish_wall_map() {
+    static uint32_t last_ms = 0, last_version = 0;
+    uint32_t version = tof_map_version();
+    if (version == last_version || millis() - last_ms < TOF_MAP_PUBLISH_MS) return;
+    if (wall_map_data == nullptr) wall_map_data = new (std::nothrow) int16_t[2 + 7 * TOF_MAP_OBJECTS];
+    if (wall_map_data == nullptr) return;
+    int n = wall_map_snapshot();
+    last_ms = millis();
+    last_version = version;
+    int16_t* d = wall_map_data;
+    d[0] = 1; d[1] = n;
+    for (int i = 0; i < n; i++) {
+        const MapObject& o = wall_map_objects[i];
+        int16_t* e = d + 2 + 7 * i;
+        e[0] = o.kind; e[1] = map_cm(o.x0); e[2] = map_cm(o.y0); e[3] = map_cm(o.x1); e[4] = map_cm(o.y1);
+        e[5] = map_cm(o.height); e[6] = (int16_t)(o.hits > 32767 ? 32767 : o.hits);
+    }
+    std_msgs__msg__Int16MultiArray msg = {};
+    msg.data.data = d;
+    msg.data.size = msg.data.capacity = 2 + 7 * n;
+    RCSOFTCHECK(rcl_publish(&wall_map_publisher, &msg, NULL));
+}
+
+static void print_wall_map() {
+    static const char* kind_name[] = { "wall", "fence", "low edge", "hedge", "post" };
+    int n = wall_map_snapshot();
+    SerialDebug.printf("[MAP] %d objects (version %lu)\r\n", n, (unsigned long)tof_map_version());
+    for (int i = 0; i < n; i++) {
+        const MapObject& o = wall_map_objects[i];
+        const char* kind = o.kind <= MAP_POST ? kind_name[o.kind] : "?";
+        if (o.kind == MAP_POST)
+            SerialDebug.printf("[MAP] %2d %-8s at (%.2f, %.2f) r %.2f m, %.2f m high%s, %u hits, seen %lu ms ago\r\n", i, kind,
+                               o.x0, o.y0, o.x1, o.height, o.top_seen ? "" : "+", o.hits, (unsigned long)(millis() - o.t_ms));
+        else
+            SerialDebug.printf("[MAP] %2d %-8s (%.2f, %.2f) -> (%.2f, %.2f), %.2f m long, %.2f m high%s, %u hits, seen %lu ms ago\r\n",
+                               i, kind, o.x0, o.y0, o.x1, o.y1, hypotf(o.x1 - o.x0, o.y1 - o.y0), o.height,
+                               o.top_seen ? "" : "+", o.hits, (unsigned long)(millis() - o.t_ms));
+    }
 }
 
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
@@ -1325,6 +1389,13 @@ void loop() {
                 else if (c == 'i') {  // Wall assist / ToF status
                     wall_assist_print_status();
                 }
+                else if (c == 'n') {  // ToF object map
+                    print_wall_map();
+                }
+                else if (c == 'z') {  // Clear the ToF object map
+                    tof_map_clear();
+                    SerialDebug.println("[MAP] Cleared");
+                }
                 else if (c == 'x') {  // Stop mowing: halt, blade off, back to IDLE
                     SerialDebug.println("[DEBUG] Triggering mowing stop via serial");
                     controller_signal_t signal = { SIGNAL_STOP_MOWING };
@@ -1354,6 +1425,7 @@ void loop() {
             if (ros_link_check()) {
                 clock_resync();
                 hil_ros_tick();
+                publish_wall_map();
                 RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
                 // spin_some takes at most one message per subscription; a second pass drains
                 // what queued up meanwhile (fused_pose, HIL samples) before it fills the history
