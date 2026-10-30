@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>GreenTitan Drive</title>
+<!-- Drive page served by robot_package/web_ui.py. One file, no external resources (the phone may be offline). -->
+<style>
+:root {
+  --bg: #eef0ea; --panel: #ffffff; --ink: #1d2320; --muted: #66706a; --line: #d3d8cf;
+  --ok: #1f8a3b; --warn: #c27c00; --bad: #c62828; --info: #2f5fb3; --off: #8a918c;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+  font: 15px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+#bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.badge { display: flex; flex-direction: column; justify-content: center; min-width: 74px; padding: 4px 10px;
+  border-radius: 8px; background: #f3f4f1; border: 1px solid var(--line); }
+.badge .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.badge .v { font-size: 19px; font-weight: 700; white-space: nowrap; }
+.badge .s { font-size: 11px; color: var(--muted); max-width: 210px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge.ok { background: #e3f3e6; border-color: #9fd3ab; } .badge.ok .v { color: var(--ok); }
+.badge.warn { background: #fdf1db; border-color: #ecc77d; } .badge.warn .v { color: var(--warn); }
+.badge.bad { background: #fbe3e1; border-color: #eba59f; } .badge.bad .v { color: var(--bad); }
+.badge.info { background: #e4ecfa; border-color: #a9bfe8; } .badge.info .v { color: var(--info); }
+#rec { display: none; } #rec.on { display: flex; }
+#btns { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
+button { font: inherit; font-weight: 600; min-height: 40px; padding: 6px 12px; border-radius: 8px;
+  border: 1px solid #b9c0b5; background: #f7f8f5; color: var(--ink); cursor: pointer; touch-action: manipulation; }
+button:active { background: #e3e6df; }
+button.on { background: var(--ok); border-color: var(--ok); color: #fff; }
+button.rec { background: var(--bad); border-color: var(--bad); color: #fff; }
+button:disabled { opacity: .45; }
+#view { position: relative; flex: 1; min-height: 0; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+#legend { position: absolute; left: 8px; top: 8px; display: flex; flex-wrap: wrap; gap: 4px 10px; max-width: calc(100% - 16px);
+  padding: 4px 8px; background: rgba(255,255,255,.85); border-radius: 8px; font-size: 12px; pointer-events: none; }
+#legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+#legend i { display: inline-block; width: 14px; height: 4px; border-radius: 2px; }
+#notice { position: absolute; left: 50%; top: 44px; transform: translateX(-50%); padding: 6px 12px; border-radius: 8px;
+  background: var(--bad); color: #fff; font-weight: 600; display: none; max-width: calc(100% - 16px); text-align: center; }
+#log { position: absolute; right: 8px; top: 44px; width: min(440px, calc(100% - 16px)); max-height: 42%; overflow-y: auto;
+  background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 8px; padding: 4px 0; display: none;
+  font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; }
+#log.open { display: block; }
+#log div { padding: 1px 8px; white-space: pre-wrap; word-break: break-word; }
+#log div.wall { background: #fff1cf; color: #6b4300; font-weight: 600; }
+#joy { position: absolute; left: 16px; bottom: 16px; width: 150px; height: 150px; border-radius: 50%;
+  background: rgba(255,255,255,.55); border: 2px solid rgba(30,40,35,.35); touch-action: none; }
+#joy::before, #joy::after { content: ""; position: absolute; background: rgba(30,40,35,.18); }
+#joy::before { left: 50%; top: 10%; bottom: 10%; width: 2px; margin-left: -1px; }
+#joy::after { top: 50%; left: 10%; right: 10%; height: 2px; margin-top: -1px; }
+#knob { position: absolute; left: 50%; top: 50%; width: 62px; height: 62px; margin: -31px 0 0 -31px; border-radius: 50%;
+  background: #33433a; box-shadow: 0 2px 6px rgba(0,0,0,.35); pointer-events: none; z-index: 1; }
+#joy.held #knob { background: var(--ok); }
+#stop { position: absolute; right: 16px; bottom: 16px; width: 96px; height: 96px; border-radius: 50%;
+  background: var(--bad); border: 4px solid #fff; color: #fff; font-size: 22px; font-weight: 800; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+#stop:active { background: #8e1515; }
+#hint { position: absolute; left: 180px; bottom: 18px; right: 124px; font-size: 12px; color: var(--muted); pointer-events: none; }
+body.touch #hint { display: none; }
+@media (max-width: 600px) {
+  #bar, #btns { gap: 4px; padding: 4px 6px; }
+  .badge { min-width: 0; flex: 1 1 0; padding: 3px 5px; }
+  .badge .k { font-size: 10px; }
+  .badge .v { font-size: 14px; }
+  .badge .s { font-size: 10px; }
+  button { flex: 1 1 auto; min-height: 38px; padding: 4px 6px; font-size: 14px; }
+  #hint { display: none; }
+  #joy { width: 136px; height: 136px; left: 12px; bottom: 12px; }
+  #stop { width: 84px; height: 84px; right: 12px; bottom: 12px; font-size: 19px; }
+  #legend { font-size: 11px; }
+}
+</style>
+</head>
+<body>
+<div id="bar">
+  <div class="badge bad" id="b-link"><span class="k">Link</span><span class="v">--</span><span class="s"></span></div>
+  <div class="badge" id="b-manual"><span class="k">Manual</span><span class="v">?</span></div>
+  <div class="badge" id="b-assist"><span class="k">Assist</span><span class="v">?</span><span class="s"></span></div>
+  <div class="badge" id="b-speed"><span class="k">Speed</span><span class="v">--</span><span class="s"></span></div>
+  <div class="badge bad" id="rec"><span class="k">Recording</span><span class="v">REC</span><span class="s"></span></div>
+</div>
+<div id="btns">
+  <button id="c-manual">Manual</button>
+  <button id="c-assist">Assist</button>
+  <button id="c-record">Record</button>
+  <button id="c-finish" disabled>Finish</button>
+  <button id="c-status">Status</button>
+  <button id="c-follow" class="on">Follow</button>
+  <button id="c-log">Log</button>
+</div>
+<div id="view">
+  <canvas id="cv"></canvas>
+  <div id="legend"></div>
+  <div id="notice"></div>
+  <div id="log"></div>
+  <div id="joy"><div id="knob"></div></div>
+  <div id="hint">Keys: W A S D or arrows to drive, Space = stop. Drag to pan, wheel to zoom.</div>
+  <button id="stop">STOP</button>
+</div>
+<script>
+"use strict";
+// ---- constants (src/definitions.h) ----
+const MAX_LIN = 0.3, MAX_REV = 0.1, MAX_ANG = 0.6;          // m/s, m/s, rad/s
+const DEAD = 0.12, CURVE = 1.7;                            // stick deadzone, response exponent
+const ANT_BEHIND = 0.18;                                    // GNSS_ANTENNA_BEHIND_AXLE: base_link is behind the axle
+const FRONT = 0.12, REAR = 0.415, HALF_W = 0.20;            // MOWER_* footprint around the axle
+const TOF = [{x: 0.11, y: 0.15, yaw: 20}, {x: 0.11, y: -0.15, yaw: -20}], TOF_FOV = 45, TOF_RANGE = 1.5;
+const TRAIL_S = 180;                                        // trail fades out over this many seconds
+const KINDS = [["wall", "#b23a2a"], ["fence", "#8a5a2b"], ["low edge", "#d08a00"], ["hedge", "#2e7d32"], ["post", "#6a3fb5"]];
+
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+let view = {x: 0, y: 0, s: 90, follow: true};               // centre (m, odom), px per m
+let st = null, logId = 0, worldRev = -1, world = [], online = false, lastOk = 0;
+let trail = [];                                             // [x, y, t] of the axle
+let logLines = [];
+
+// ---- server ----
+async function post(path, body) {
+  try {
+    const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+    return await r.json();
+  } catch (e) { return null; }
+}
+const cmd = name => post("/cmd", {cmd: name});
+
+async function poll() {
+  try {
+    const r = await fetch("/state?since=" + logId, {cache: "no-store"});
+    st = await r.json();
+    online = true; lastOk = performance.now();
+    if (st.log_id < logId) logLines = [];                  // node restarted
+    for (const [i, s] of st.log) logLines.push(s);
+    logLines = logLines.slice(-30);
+    if (st.log.length || st.log_id < logId) renderLog();
+    logId = st.log_id;
+    if (st.world_rev !== worldRev) loadWorld(st.world_rev);
+    if (st.pose) addTrail(st.pose);
+    renderStatus();
+  } catch (e) {
+    online = false; renderStatus();
+  }
+  setTimeout(poll, 150);
+}
+
+async function loadWorld(rev) {
+  worldRev = rev;
+  if (!rev) { world = []; buildLegend(); return; }
+  try { world = (await (await fetch("/world", {cache: "no-store"})).json()).parts || []; } catch (e) { worldRev = -1; }
+  buildLegend();
+}
+
+function axleOf(p) { return [p.x + ANT_BEHIND * Math.cos(p.yaw), p.y + ANT_BEHIND * Math.sin(p.yaw)]; }
+
+function addTrail(p) {
+  const [x, y] = axleOf(p), t = performance.now() / 1000, last = trail[trail.length - 1];
+  if (!last || Math.hypot(x - last[0], y - last[1]) > 0.02) trail.push([x, y, t]);
+  while (trail.length && (t - trail[0][2] > TRAIL_S || trail.length > 5000)) trail.shift();
+}
+
+// ---- status ----
+function badge(id, cls, v, s) {
+  const b = $(id);
+  b.className = "badge " + (cls || "");
+  b.querySelector(".v").textContent = v;
+  const e = b.querySelector(".s"); if (e) e.textContent = s || "";
+}
+const ageText = a => a == null ? "never" : a < 10 ? a.toFixed(1) + " s" : Math.round(a) + " s";
+const ageCls = a => a == null || a > 2 ? "bad" : a > 0.5 ? "warn" : "ok";
+
+function renderStatus() {
+  if (!online || performance.now() - lastOk > 1500) {
+    badge("b-link", "bad", "OFFLINE", "page server not reachable");
+    return;
+  }
+  const esp = [st.age_imu, st.age_log].filter(a => a != null);
+  const ageEsp = esp.length ? Math.min(...esp) : null;
+  const worst = [ageEsp, st.age_pose].some(a => ageCls(a) === "bad") ? "bad" : [ageEsp, st.age_pose].some(a => ageCls(a) === "warn") ? "warn" : "ok";
+  badge("b-link", worst, worst === "ok" ? "OK" : worst === "warn" ? "SLOW" : "LOST", "ESP " + ageText(ageEsp) + " · pose " + ageText(st.age_pose));
+  badge("b-manual", st.manual ? "ok" : "", st.manual == null ? "?" : st.manual ? "ON" : "OFF");
+  const as = st.assist_state || "FREE";
+  const acls = st.assist === false ? "" : as === "LOCKED" ? "ok" : as === "FREE" ? "info" : "warn";
+  badge("b-assist", acls, st.assist === false ? "OFF" : as, st.assist === false ? "" : st.assist_why);
+  if (st.pose) badge("b-speed", "", st.pose.v.toFixed(2) + " m/s", (st.pose.w >= 0 ? "+" : "") + st.pose.w.toFixed(2) + " rad/s");
+  else badge("b-speed", "", "--", "no pose");
+  const n = st.outlines.reduce((a, o) => a + o.length, 0);
+  $("rec").className = "badge bad" + (st.recording ? " on" : "");
+  $("rec").querySelector(".s").textContent = st.outlines.length + " outline(s), " + n + " pts";
+  $("c-manual").className = st.manual ? "on" : "";
+  $("c-manual").textContent = st.manual ? "Manual ON" : "Manual";
+  $("c-assist").className = st.assist ? "on" : "";
+  $("c-assist").textContent = st.assist ? "Assist ON" : st.assist === false ? "Assist OFF" : "Assist";
+  $("c-record").textContent = st.recording ? "New outline" : "Record";
+  $("c-record").className = st.recording ? "" : "rec";
+  $("c-finish").disabled = !st.recording;
+  const note = st.notice === "manual is off" ? "Manual is off: press Manual first" : st.notice === "stick lost: stopped" ? "Stick signal lost: stopped" : "";
+  $("notice").textContent = note; $("notice").style.display = note && drive.active ? "block" : "none";
+}
+
+function renderLog() {
+  const el = $("log"), atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+  el.innerHTML = "";
+  for (const s of logLines) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    if (s.includes("[WALL]")) d.className = "wall";
+    el.appendChild(d);
+  }
+  if (atEnd) el.scrollTop = el.scrollHeight;
+}
+
+function buildLegend() {
+  const items = KINDS.map(([n, c]) => `<span><i style="background:${c}"></i>${n}</span>`);
+  items.push(`<span><i style="background:#2f5fb3"></i>outline</span>`, `<span><i style="background:#e07b00;opacity:.6"></i>trail</span>`);
+  if (world.length) items.push(`<span><i style="background:#9aa09b"></i>true objects</span>`, `<span><i style="background:none;border:1px dashed #555"></i>true mower</span>`);
+  $("legend").innerHTML = items.join("");
+}
+
+// ---- drawing ----
+function resize() {
+  DPR = window.devicePixelRatio || 1;
+  const r = cv.getBoundingClientRect();
+  W = r.width; H = r.height;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+}
+const sx = x => W / 2 + (x - view.x) * view.s, sy = y => H / 2 - (y - view.y) * view.s;
+const wx = px => view.x + (px - W / 2) / view.s, wy = py => view.y - (py - H / 2) / view.s;
+
+function bodyPoly(x, y, yaw, pts) {                        // body-frame points around the axle -> screen
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  return pts.map(([u, v]) => [sx(x + c * u - s * v), sy(y + s * u + c * v)]);
+}
+function pathPoly(p, close) {
+  ctx.beginPath();
+  p.forEach(([a, b], i) => i ? ctx.lineTo(a, b) : ctx.moveTo(a, b));
+  if (close) ctx.closePath();
+}
+
+function drawGrid() {
+  let step = 1;
+  while (step * view.s < 28) step *= step === 1 ? 5 : 2;   // 1, 5, 10, 20 m
+  const x0 = Math.floor(wx(0) / step) * step, x1 = wx(W), y0 = Math.floor(wy(H) / step) * step, y1 = wy(0);
+  ctx.lineWidth = 1;
+  for (let x = x0; x <= x1; x += step) { ctx.strokeStyle = Math.abs(x) < 1e-6 ? "#9aa59a" : "#d9ddd4"; ctx.beginPath(); ctx.moveTo(sx(x), 0); ctx.lineTo(sx(x), H); ctx.stroke(); }
+  for (let y = y0; y <= y1; y += step) { ctx.strokeStyle = Math.abs(y) < 1e-6 ? "#9aa59a" : "#d9ddd4"; ctx.beginPath(); ctx.moveTo(0, sy(y)); ctx.lineTo(W, sy(y)); ctx.stroke(); }
+}
+
+function drawScale() {
+  const want = Math.min(W * 0.3, 160) / view.s;
+  const nice = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50].reduce((a, b) => b <= want ? b : a, 0.1);
+  const len = nice * view.s, x = 12, y = $("legend").offsetHeight + 30;
+  ctx.fillStyle = "rgba(255,255,255,.85)"; ctx.fillRect(x - 6, y - 18, len + 12, 26);
+  ctx.strokeStyle = "#1d2320"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(x, y - 5); ctx.lineTo(x, y); ctx.lineTo(x + len, y); ctx.lineTo(x + len, y - 5); ctx.stroke();
+  ctx.fillStyle = "#1d2320"; ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center";
+  ctx.fillText(nice < 1 ? Math.round(nice * 100) + " cm" : nice + " m", x + len / 2, y - 7);
+}
+
+function label(text, x, y, color) {
+  ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.strokeText(text, x, y);
+  ctx.fillStyle = color; ctx.fillText(text, x, y); ctx.textBaseline = "alphabetic";
+}
+
+function drawWorld() {
+  ctx.fillStyle = "rgba(120,126,121,.35)"; ctx.strokeStyle = "#8d938e"; ctx.lineWidth = 1;
+  for (const p of world) {
+    if (p.p) pathPoly(p.p.map(([x, y]) => [sx(x), sy(y)]), true);
+    else { ctx.beginPath(); ctx.arc(sx(p.c[0]), sy(p.c[1]), Math.max(1, p.r * view.s), 0, 2 * Math.PI); }
+    ctx.fill(); ctx.stroke();
+  }
+}
+
+function drawMap() {
+  if (!st || !st.map) return;
+  const labels = view.s > 35;
+  for (const [kind, x0, y0, x1, y1, h, hits] of st.map) {
+    const [name, color] = KINDS[kind] || ["kind " + kind, "#555"];
+    ctx.globalAlpha = Math.min(1, 0.45 + hits / 40);
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    if (kind === 4) {
+      ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(sx(x0 / 100), sy(y0 / 100), Math.max(4, x1 / 100 * view.s), 0, 2 * Math.PI); ctx.stroke();
+      ctx.globalAlpha = 1;
+      if (labels) label(name, sx(x0 / 100), sy(y0 / 100) - 14, color);
+    } else {
+      ctx.lineWidth = 6; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(sx(x0 / 100), sy(y0 / 100)); ctx.lineTo(sx(x1 / 100), sy(y1 / 100)); ctx.stroke();
+      ctx.lineCap = "butt"; ctx.globalAlpha = 1;
+      if (labels) label(`${name} ${h} cm`, (sx(x0 / 100) + sx(x1 / 100)) / 2, (sy(y0 / 100) + sy(y1 / 100)) / 2 - 12, color);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawOutlines() {
+  if (!st) return;
+  ctx.strokeStyle = "#2f5fb3"; ctx.fillStyle = "#2f5fb3"; ctx.lineWidth = 2;
+  for (const o of st.outlines) {
+    if (!o.length) continue;
+    pathPoly(o.map(([x, y]) => [sx(x / 100), sy(y / 100)]), false); ctx.stroke();
+    for (const [x, y, corner] of o) { ctx.beginPath(); ctx.arc(sx(x / 100), sy(y / 100), corner ? 6 : 3.5, 0, 2 * Math.PI); ctx.fill(); }
+  }
+}
+
+function drawTrail() {
+  const t = performance.now() / 1000;
+  ctx.strokeStyle = "#e07b00"; ctx.lineWidth = 3; ctx.lineCap = "round";
+  for (let i = 1; i < trail.length; i++) {
+    const [ax, ay] = trail[i - 1], [bx, by, bt] = trail[i];
+    if (Math.hypot(bx - ax, by - ay) > 1) continue;         // pose jump: no line across it
+    ctx.globalAlpha = Math.max(0, 0.65 * (1 - (t - bt) / TRAIL_S));
+    ctx.beginPath(); ctx.moveTo(sx(ax), sy(ay)); ctx.lineTo(sx(bx), sy(by)); ctx.stroke();
+  }
+  ctx.globalAlpha = 1; ctx.lineCap = "butt";
+}
+
+const FOOT = [[FRONT, HALF_W], [-REAR, HALF_W], [-REAR, -HALF_W], [FRONT, -HALF_W]];
+
+function drawMower(p) {
+  const [x, y] = axleOf(p), yaw = p.yaw;
+  for (const t of TOF) {                                   // field-of-view wedges
+    const pts = [[t.x, t.y]];
+    for (let a = -TOF_FOV / 2; a <= TOF_FOV / 2 + 0.1; a += 4.5) {
+      const r = (t.yaw + a) * Math.PI / 180;
+      pts.push([t.x + TOF_RANGE * Math.cos(r), t.y + TOF_RANGE * Math.sin(r)]);
+    }
+    pathPoly(bodyPoly(x, y, yaw, pts), true);
+    ctx.fillStyle = "rgba(47,95,179,.10)"; ctx.fill();
+    ctx.strokeStyle = "rgba(47,95,179,.35)"; ctx.lineWidth = 1; ctx.stroke();
+  }
+  pathPoly(bodyPoly(x, y, yaw, FOOT), true);
+  ctx.fillStyle = "rgba(224,123,0,.55)"; ctx.fill();
+  ctx.strokeStyle = "#8a4b00"; ctx.lineWidth = 2; ctx.stroke();
+  pathPoly(bodyPoly(x, y, yaw, [[0, HALF_W], [0, -HALF_W]]), false); ctx.stroke();      // drive axle
+  pathPoly(bodyPoly(x, y, yaw, [[-0.05, 0.08], [FRONT - 0.01, 0], [-0.05, -0.08]]), true); // heading arrow (front = drive wheels)
+  ctx.fillStyle = "#1d2320"; ctx.fill();
+  ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), 3, 0, 2 * Math.PI); ctx.fillStyle = "#fff"; ctx.fill(); ctx.stroke();  // antenna
+}
+
+function drawTruth(p) {
+  pathPoly(bodyPoly(p.x, p.y, p.yaw, FOOT), true);          // truth pose = axle midpoint
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = "rgba(29,35,32,.55)"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+}
+
+function frame() {
+  if (view.follow && st && st.pose) [view.x, view.y] = axleOf(st.pose);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = "#f4f5f0"; ctx.fillRect(0, 0, W, H);
+  drawGrid();
+  drawWorld();
+  drawMap();
+  drawOutlines();
+  drawTrail();
+  if (st && st.truth) drawTruth(st.truth);
+  if (st && st.pose) drawMower(st.pose);
+  else label("no pose yet (/odometry/filtered/global)", W / 2, H / 2, "#66706a");
+  drawScale();
+  requestAnimationFrame(frame);
+}
+
+// ---- pan / zoom ----
+const pointers = new Map();
+let pinch = null;
+function zoomAt(px, py, f) {
+  const x = wx(px), y = wy(py);
+  view.s = Math.min(600, Math.max(4, view.s * f));
+  if (!view.follow) { view.x = x - (px - W / 2) / view.s; view.y = y + (py - H / 2) / view.s; }
+}
+function setFollow(on) { view.follow = on; $("c-follow").className = on ? "on" : ""; }
+let down = null;                                            // where a one-finger drag started
+cv.addEventListener("pointerdown", e => { cv.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.offsetX, e.offsetY]); pinch = null; down = [e.offsetX, e.offsetY]; });
+cv.addEventListener("pointermove", e => {
+  if (!pointers.has(e.pointerId)) return;
+  const prev = pointers.get(e.pointerId); pointers.set(e.pointerId, [e.offsetX, e.offsetY]);
+  if (pointers.size === 1) {
+    if (view.follow && Math.hypot(e.offsetX - down[0], e.offsetY - down[1]) < 8) return;   // a tap keeps following
+    setFollow(false); view.x -= (e.offsetX - prev[0]) / view.s; view.y += (e.offsetY - prev[1]) / view.s;
+  } else if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    if (pinch) {
+      zoomAt(m[0], m[1], d / pinch.d);
+      if (!view.follow) { view.x -= (m[0] - pinch.m[0]) / view.s; view.y += (m[1] - pinch.m[1]) / view.s; }
+    }
+    pinch = {d, m};
+  }
+});
+const lift = e => { pointers.delete(e.pointerId); pinch = null; };
+cv.addEventListener("pointerup", lift); cv.addEventListener("pointercancel", lift);
+cv.addEventListener("wheel", e => { e.preventDefault(); zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * 0.0015)); }, {passive: false});
+
+// ---- driving: joystick and keys feed one stick, sent at 10 Hz while held ----
+const drive = {joy: null, keys: new Set(), active: false};
+const shape = v => { const a = Math.abs(v); return a < DEAD ? 0 : Math.sign(v) * Math.pow((Math.min(a, 1) - DEAD) / (1 - DEAD), CURVE); };
+function stick() {                                          // [fwd -1..1, left -1..1] or null
+  if (drive.joy) return [shape(drive.joy[1]), shape(-drive.joy[0])];
+  const k = drive.keys;
+  if (!k.size) return null;
+  return [(k.has("f") ? 1 : 0) - (k.has("b") ? 1 : 0), (k.has("l") ? 1 : 0) - (k.has("r") ? 1 : 0)];
+}
+function sendStick() {
+  const s = stick();
+  if (s) {
+    drive.active = true;
+    post("/drive", {lin: s[0] >= 0 ? s[0] * MAX_LIN : s[0] * MAX_REV, ang: s[1] * MAX_ANG, held: true});
+  } else if (drive.active) {
+    drive.active = false;
+    post("/drive", {held: false});
+  }
+}
+setInterval(sendStick, 100);
+function release() { drive.joy = null; drive.keys.clear(); knob(0, 0); $("joy").classList.remove("held"); sendStick(); }
+
+const joy = $("joy");
+function knob(x, y) { $("knob").style.transform = `translate(${x}px, ${y}px)`; }
+function joyMove(e) {
+  const r = joy.getBoundingClientRect(), R = r.width / 2;
+  let dx = e.clientX - r.left - R, dy = e.clientY - r.top - R;
+  const d = Math.hypot(dx, dy), lim = R - 20;
+  if (d > lim) { dx *= lim / d; dy *= lim / d; }
+  knob(dx, dy);
+  drive.joy = [dx / lim, -dy / lim];
+}
+joy.addEventListener("pointerdown", e => { joy.setPointerCapture(e.pointerId); joy.classList.add("held"); joyMove(e); sendStick(); });
+joy.addEventListener("pointermove", e => { if (drive.joy) joyMove(e); });
+joy.addEventListener("pointerup", release); joy.addEventListener("pointercancel", release);
+
+const KEYMAP = {KeyW: "f", ArrowUp: "f", KeyS: "b", ArrowDown: "b", KeyA: "l", ArrowLeft: "l", KeyD: "r", ArrowRight: "r"};
+window.addEventListener("keydown", e => {
+  if (e.code === "Space" || e.code === "Escape") { e.preventDefault(); stopAll(); return; }
+  const k = KEYMAP[e.code];
+  if (!k || e.ctrlKey || e.metaKey || e.altKey) return;
+  e.preventDefault();
+  if (!drive.keys.has(k)) { drive.keys.add(k); sendStick(); }    // OS key repeat is ignored: the 10 Hz timer sends
+});
+window.addEventListener("keyup", e => { const k = KEYMAP[e.code]; if (k) { drive.keys.delete(k); sendStick(); } });
+window.addEventListener("blur", release);
+document.addEventListener("visibilitychange", () => { if (document.hidden) release(); });
+
+function stopAll() { drive.joy = null; drive.keys.clear(); drive.active = false; knob(0, 0); joy.classList.remove("held"); cmd("stop"); }
+
+// ---- buttons ----
+$("stop").addEventListener("click", stopAll);
+$("stop").addEventListener("pointerdown", e => { e.preventDefault(); stopAll(); });   // no wait for click on touch
+$("c-manual").onclick = () => cmd("manual");
+$("c-assist").onclick = () => cmd("assist");
+$("c-record").onclick = () => cmd(st && st.recording ? "outline" : "record");
+$("c-finish").onclick = () => cmd("finish");
+$("c-status").onclick = () => { cmd("status"); $("log").classList.add("open"); $("c-log").className = "on"; };
+$("c-follow").onclick = () => setFollow(!view.follow);
+$("c-log").onclick = () => { const open = $("log").classList.toggle("open"); $("c-log").className = open ? "on" : ""; renderLog(); };
+for (const b of document.querySelectorAll("button")) b.addEventListener("click", () => b.blur());   // Space = stop, not "press again"
+
+window.addEventListener("resize", resize);
+if (window.innerWidth > 800) { $("log").classList.add("open"); $("c-log").className = "on"; }
+if (matchMedia("(pointer: coarse)").matches) document.body.classList.add("touch");
+resize(); buildLegend(); poll(); requestAnimationFrame(frame);
+</script>
+</body>
+</html>

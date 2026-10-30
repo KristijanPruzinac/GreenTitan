@@ -6,6 +6,8 @@ esp32dev_hil) over micro-ROS, and the robot_package EKF.
 
 Without firmware (drive with teleop_twist_keyboard):
     ros2 launch greentitan_sim hil.launch.py robot:=<share>/config/mower_teleop.yaml agent:=false
+
+Drive page (joystick, live map, true objects of the world): http://localhost:8080/ (ui:=false: off).
 """
 import os
 
@@ -39,7 +41,11 @@ def _setup(context):
 
     if arg('localization') == 'true':
         actions.append(IncludeLaunchDescription(AnyLaunchDescriptionSource(
-            os.path.join(get_package_share_directory('robot_package'), 'launch', 'robot.launch.xml'))))
+            os.path.join(get_package_share_directory('robot_package'), 'launch', 'robot.launch.xml')),
+            launch_arguments={'ui': 'false'}.items()))  # started below, with the world for the overlay
+    if arg('ui') == 'true':
+        actions.append(Node(package='robot_package', executable='web_ui', output='screen',
+                            parameters=[{'port': int(arg('ui_port')), 'world': arg('world')}]))
     if arg('rviz') == 'true':
         actions.append(Node(package='rviz2', executable='rviz2', output='log',
                             arguments=['-d', os.path.join(get_package_share_directory('greentitan_sim'),
@@ -59,5 +65,7 @@ def generate_launch_description():
         DeclareLaunchArgument('baud', default_value='921600'),
         DeclareLaunchArgument('localization', default_value='true', description='start the robot_package EKF'),
         DeclareLaunchArgument('rviz', default_value='false'),
+        DeclareLaunchArgument('ui', default_value='true', description='drive page (web_ui) on http://localhost:ui_port/'),
+        DeclareLaunchArgument('ui_port', default_value='8080'),
         OpaqueFunction(function=_setup),
     ])

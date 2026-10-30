@@ -1,4 +1,8 @@
 <launch>
+  <!-- Drive page (web_ui) on http://<host>:ui_port/ -->
+  <arg name="ui" default="true"/>
+  <arg name="ui_port" default="8080"/>
+
   <!-- Static transforms (IMU and GPS links relative to base_link) -->
   <node pkg="tf2_ros" exec="static_transform_publisher"
         name="base_link_to_imu"
@@ -19,4 +23,9 @@
 
   <!-- Your custom nodes (path_visualizer) -->
   <node pkg="robot_package" exec="path_visualizer" name="path_visualizer" output="screen"/>
+
+  <!-- Joystick and live top-down view in a browser (phone or PC) -->
+  <node pkg="robot_package" exec="web_ui" name="web_ui" output="screen" if="$(var ui)">
+    <param name="port" value="$(var ui_port)"/>
+  </node>
 </launch>

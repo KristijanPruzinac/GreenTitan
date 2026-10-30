@@ -15,6 +15,7 @@ setup(
         ('share/robot_package', ['package.xml']),
         ('share/robot_package/launch', glob('launch/*')),
         ('share/robot_package/config', glob('config/*')),
+        ('share/robot_package/web', glob('web/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -31,6 +32,7 @@ setup(
         'console_scripts': [
             'path_visualizer = robot_package.path_visualizer:main',
             'fused_pose_relay = robot_package.fused_pose_relay:main',
+            'web_ui = robot_package.web_ui:main',
         ],
     },
 )
