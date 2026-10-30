@@ -152,6 +152,63 @@ typedef struct {
 #define TOF_SWEEP_WALL_BACK 0.7f   // m behind the axle: the followed wall's line reaches back this far
 #define TOF_PIVOT_SPEED 0.6f       // rad/s
 #define TOF_OUTLINE_SPACING 0.25f  // m of wall between outline points recorded while locked
+// Vertical faces in one zone column (src/sensor/tof_map.cpp): zones within TOF_FACE_TOL + TOF_FACE_TOL_FRAC x the
+// distance of each other's horizontal distance, at rising heights, are on one face (anything steeper than ~60 deg;
+// a 15 deg slope differs by 10..30 cm from zone to zone)
+#define TOF_FACE_TOL 0.03f
+#define TOF_FACE_TOL_FRAC 0.04f
+#define TOF_FACE_MIN_Z 0.03f       // m: face points from this high up are kept (grass reaches 3 cm)
+#define TOF_FACE_MIN_TOP 0.04f     // m: a face's highest zone at least this high
+#define TOF_FACE_MAX_GAP_ROWS 2    // zones that see through a face between two of its hits (fence boards, mesh)
+#define TOF_TOP_GAP 0.15f          // m: the zone above a face sees this much farther, or nothing: its top is seen
+// ToF map: segments and posts in the world frame from face points confirmed over several frames (ARCHITECTURE 6)
+#define TOF_MAP_OBJECTS 64
+#define TOF_MAP_CELLS 192          // candidate cells: face points not (yet) in an object
+#define TOF_MAP_CELL 0.05f         // m
+#define TOF_MAP_CELL_FRAMES 3      // a cell counts once seen in this many frames
+#define TOF_MAP_CELL_AGE_MS 3000   // a cell not seen for this long is dropped
+#define TOF_MAP_CELL_TOL 0.04f     // m, cells this close to a line are on it
+#define TOF_MAP_CLUSTER_DIST 0.12f // m, cells this close belong to one cluster
+#define TOF_MAP_RANSAC 30          // line candidates per cluster
+#define TOF_MAP_MIN_HITS 20        // face points of a new object ...
+#define TOF_MAP_MIN_TIME_MS 500    // ... seen over at least this long
+#define TOF_MAP_MIN_LENGTH 0.20f   // m, shortest new segment
+#define TOF_MAP_MAX_RESIDUAL 0.06f // m rms of a new segment's cells off its line
+#define TOF_MAP_LINE_TOL 0.06f     // m: a face point this close to a segment's line (or 2.5 x its rms) joins it
+#define TOF_MAP_JOIN_GAP 0.30f     // m: confirmed cells up to this far past a segment's end extend it; a wider gap is an opening
+#define TOF_MAP_POST_MAX 0.30f     // m: a cluster shorter than this with nothing else around is a post ...
+#define TOF_MAP_POST_TIME_MS 1000  // ... once seen over this long
+#define TOF_MAP_POST_MIN_RADIUS 0.03f
+#define TOF_MAP_MERGE_ANGLE 0.17f  // rad: collinear segments within this ...
+#define TOF_MAP_MERGE_GAP 0.15f    // ... overlapping or this close end to end are merged
+#define TOF_MAP_CORNER_ANGLE 0.52f // rad: segments meeting at this angle or more ...
+#define TOF_MAP_CORNER_DIST 0.25f  // ... with an end this close to their crossing meet there (a corner)
+#define TOF_MAP_REPLACE_DIST 0.30f // m: a new object this close to one from before a pose jump replaces it
+#define TOF_MAP_MAX_WEIGHT 4000.0f // face points in a segment's line sums before old ones are halved
+// Rays crossing an object: hit, or seen through (no target, or TOF_MAP_THROUGH past it)
+#define TOF_MAP_SEE_RANGE 1.0f     // m, crossings this close count (also for the fence ratio)
+#define TOF_MAP_THROUGH 0.15f
+#define TOF_MAP_EMPTY_RANGE 0.7f   // m: crossings this close all seen through in TOF_MAP_EMPTY_FRAMES frames over
+#define TOF_MAP_EMPTY_FRAMES 8     // TOF_MAP_EMPTY_MS: that part is not there (the sim's wire mesh is seen out to ~0.9 m)
+#define TOF_MAP_EMPTY_MS 1000
+#define TOF_MAP_MAX_TURN 0.7f      // rad/s: frames taken while turning faster are left out (the heading lags)
+#define TOF_MAP_UPDATE_MS 200
+// Types: fence if TOF_MAP_FENCE_THROUGH of the crossing rays pass or TOF_MAP_FENCE_GAP of its face points had a
+// see-through zone between them; low edge with its top seen below TOF_MAP_LOW_HEIGHT; hedge if rougher than
+// TOF_MAP_HEDGE_RESIDUAL; else wall. Post: from its shape
+#define TOF_MAP_FENCE_MIN_RAYS 20
+#define TOF_MAP_FENCE_THROUGH 0.30f
+#define TOF_MAP_FENCE_GAP 0.15f
+#define TOF_MAP_LOW_HEIGHT 0.35f
+#define TOF_MAP_HEDGE_RESIDUAL 0.03f
+// Top seen: in at least TOF_MAP_TOP_RATIO of the face points. Terrain: an object lower than TOF_MAP_TERRAIN_Z
+// whose top is seen in less than TOF_MAP_TERRAIN_TOP of them (a bump or slope rises on in the zone above, a
+// curb ends in a step); hidden, and dropped after TOF_MAP_TERRAIN_OBS face points
+#define TOF_MAP_TOP_RATIO 0.25f
+#define TOF_MAP_TERRAIN_Z 0.20f
+#define TOF_MAP_TERRAIN_TOP 0.5f
+#define TOF_MAP_TERRAIN_OBS 40.0f
+#define TOF_MAP_PUBLISH_MS 1000    // esp/wall_map at most this often, when changed
 
 typedef struct {
     uint16_t range_mm[TOF_ZONES];  // radial range along the zone centre direction
