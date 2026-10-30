@@ -4,7 +4,6 @@ static dds_thread_context_t thread_context;
 
 // STEP pulses come from the LEDC peripheral, not from loop(): the software ticker
 // toggled STEP once per 1 kHz loop() and topped out at ~500 steps/s.
-// loop() still runs the acceleration ramp, once per step period but at most every 1 ms.
 class LedcOscillator {
 public:
   void init(uint8_t pin) {
@@ -31,7 +30,7 @@ public:
     active_ = false;
   }
 
-  frequency_t minFrequency() const { return 20; }  // below this the motor just stops
+  frequency_t minFrequency() const { return MOTOR_MIN_STEP_RATE; }  // below this the motor just stops
 
 private:
   static uint8_t next_channel_;
@@ -46,6 +45,24 @@ ContinuousStepper<StepperDriver, OscillatorTicker<LedcOscillator>> motorA;
 ContinuousStepper<StepperDriver, OscillatorTicker<LedcOscillator>> motorB;
 
 static double MOTOR_METERS_PER_STEP = 2 * PI * WHEEL_RADIUS / MOTOR_STEPS_PER_WHEEL_REV;
+
+// The acceleration ramp runs here, on the real time between motor ticks. The library's own ramp
+// adds acceleration x step period once per step period, but loop() only runs every 1 ms: above
+// 1000 steps/s (0.24 m/s) it ramped at well under MOTOR_ACCELERATION, and in HIL no wheel ever
+// changed speed faster than ~0.25 m/s^2 (2026-10-30). The library now takes each speed at once.
+static double target_rate_a = 0, target_rate_b = 0;   // steps/s the wheels should reach
+static double rate_a = 0, rate_b = 0;                  // steps/s the ramp has them at now
+static int64_t ramp_last_us = 0;
+
+static void ramp_motors() {
+  int64_t now = esp_timer_get_time();
+  double dv = MOTOR_ACCELERATION * fmin(0.01, (now - ramp_last_us) * 1e-6);
+  ramp_last_us = now;
+  rate_a += fmax(-dv, fmin(dv, target_rate_a - rate_a));
+  rate_b += fmax(-dv, fmin(dv, target_rate_b - rate_b));
+  motorA.spin(fabs(rate_a) < MOTOR_MIN_STEP_RATE ? 0.0 : rate_a);
+  motorB.spin(fabs(rate_b) < MOTOR_MIN_STEP_RATE ? 0.0 : rate_b);
+}
 
 double odom_x = 0;
 double odom_y = 0;
@@ -70,9 +87,9 @@ bool init_motors() {
   motorA.begin(MOTOR_A_STEP_PIN, MOTOR_A_DIR_PIN);
   motorB.begin(MOTOR_B_STEP_PIN, MOTOR_B_DIR_PIN);
 
-  // Set acceleration
-  motorA.setAcceleration(MOTOR_ACCELERATION);
-  motorB.setAcceleration(MOTOR_ACCELERATION);
+  // The ramp is ramp_motors(); the library follows each step rate at once
+  motorA.setAcceleration(MOTOR_LIBRARY_ACCELERATION);
+  motorB.setAcceleration(MOTOR_LIBRARY_ACCELERATION);
 
   return true;
 }
@@ -89,8 +106,8 @@ static void motor_stop() {
     return;
   }
 
-  motorA.stop();
-  motorB.stop();
+  target_rate_a = 0;
+  target_rate_b = 0;
 
   xQueueReset(thread_context.queue); // Clear any pending motor commands to prevent them from executing after a stop command
 }
@@ -114,8 +131,8 @@ static void motor_move(double leftSpeed, double rightSpeed) {
     return;
   }
   
-  motorA.spin(leftSpeed);
-  motorB.spin(rightSpeed);
+  target_rate_a = leftSpeed;
+  target_rate_b = rightSpeed;
 }
 
 static void motor_move_vel(double linear_vel, double angular_vel) {
@@ -141,9 +158,9 @@ static void motor_move_vel(double linear_vel, double angular_vel) {
         return;
     }
     
-    // Send to motors (assuming motorA.spin takes m/s)
-    motorA.spin(left_rotational_speed_steps);
-    motorB.spin(right_rotational_speed_steps);
+    // ramp_motors() takes the wheels there
+    target_rate_a = left_rotational_speed_steps;
+    target_rate_b = right_rotational_speed_steps;
 }
 
 static void motor_topic_callback(dds_callback_context_t* context) {
@@ -227,6 +244,7 @@ void motor_task(void* parameter) {
             }
 
             if (!SIMULATION_ENABLED){
+              ramp_motors();
               motorA.loop();
               motorB.loop();
             }

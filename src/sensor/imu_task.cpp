@@ -191,10 +191,16 @@ void imu_task(void* parameter) {
               pub_t = now;
               pub_yaw = yaw;
 
+              // Stamped when the gyro measured it, not when it is sent: the angle is the one at the
+              // last read, IMU_SAMPLE_DELAY old by then (sensor filter, HIL link). Stamped at publish
+              // time (until 2026-10-30) the gyro ran ~0.1 s behind the GPS in HIL, and at every curve exit
+              // the EKF heading went ~5 deg past the turn (ARCHITECTURE item 26).
               struct timespec ts;
               clock_gettime(CLOCK_REALTIME, &ts);
-              IMU_data.timestamp_sec = ts.tv_sec;
-              IMU_data.timestamp_nsec = ts.tv_nsec;
+              int64_t stamp_ns = (int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec
+                                 - (int64_t)((esp_timer_get_time() * 1e-6 - now + IMU_SAMPLE_DELAY) * 1e9);
+              IMU_data.timestamp_sec = stamp_ns / 1000000000LL;
+              IMU_data.timestamp_nsec = stamp_ns % 1000000000LL;
 
               if (TASKS_STARTED) {
                 dds_result_t result = DDS_PUBLISH("/imu", IMU_data);

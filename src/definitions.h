@@ -131,7 +131,7 @@ typedef struct {
 #define MOTION_ROTATE_GAIN                1.5f   // rad/s per rad of heading error
 #define CONTROL_YAW_TAU                   1.0f   // s, control heading follows the EKF yaw this slowly, gyro in between
 #define CONTROL_YAW_SNAP                  0.5f   // rad, ~30 deg: further off, take the EKF yaw directly
-#define FUSED_YAW_LAG                     0.15   // s, EKF yaw behind its own stamp (HIL 2026-10-27; measure on the robot)
+#define FUSED_YAW_LAG                     0.10   // s, EKF yaw behind its own stamp (0.15 until the gyro got its measure time, 2026-10-30; check in HIL, measure on the robot)
 #define GPS_YAW_RELOCK                    10     // GPS yaws in a row outside the gate (2 s of driving): fuse the next anyway
 #define MOTION_POSE_TIMEOUT_MS            500    // stop driving if /fused_pose (10 Hz) goes quiet
 #define MOTION_STALL_DIST                0.10f  // m: driving forward but moved less than this ...
@@ -164,6 +164,11 @@ typedef struct {
                                   // so each EKF cycle has a new input: with 10 Hz it skipped ~40 % of its outputs
                                   // (no new stamp, no publish; HIL 2026-10-29). A divisor of IMU_SAMPLE_FREQUENCY
 #define IMU_SAMPLE_FREQUENCY 50   // gyro reads; integrated on the ESP so no rotation is lost between messages
+#if HIL_ENABLED
+#define IMU_SAMPLE_DELAY 0.05     // s, how old a gyro read is when taken: sim IMU filter + link (HIL bag 2026-10-30)
+#else
+#define IMU_SAMPLE_DELAY 0.015    // s, MPU6050 low-pass + I2C read (estimate; measure on the robot)
+#endif
 #define MOTOR_UPDATE_FREQUENCY 1000
 #define GPS_UPDATE_FREQUENCY 5
 
@@ -190,6 +195,8 @@ typedef struct {
 
 #define MOTOR_MAX_SPEED 200
 #define MOTOR_ACCELERATION 1500 // steps/s^2 at the motor, ~0.35 m/s^2 at the wheel (150 before the 10:1 gearbox)
+#define MOTOR_LIBRARY_ACCELERATION 1e6  // steps/s^2 given to ContinuousStepper: it takes each ramped rate at once
+#define MOTOR_MIN_STEP_RATE 20  // steps/s, the lowest LEDC frequency; slower stands still
 
 // Manual mode
 #define MANUAL_LINEAR_SPEED   0.3f
