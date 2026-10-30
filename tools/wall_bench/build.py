@@ -14,7 +14,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 OUT = os.environ.get('WALL_BENCH_BUILD', os.path.expanduser('~/.cache/wall_bench'))
 BINARY = os.path.join(OUT, 'bench')
-FLAGS = ['-std=gnu++17', '-O2', '-g0', '-w', '-pthread', '-DHIL_ENABLED=1', '-DESP_PLATFORM', '-DARDUINO=10800']
+FLAGS = ['-std=gnu++17', '-O2', '-g0', '-w', '-pthread', '-DHIL_ENABLED=1', '-DESP_PLATFORM', '-DARDUINO=10800'] + \
+    os.environ.get('WALL_BENCH_CFLAGS', '').split()   # e.g. -DWALL_DEBUG (with its own WALL_BENCH_BUILD)
 
 
 def _dds_dir():
