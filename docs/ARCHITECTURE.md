@@ -407,6 +407,19 @@ Findings that shaped the models:
 | ToF frames | 2× VL53L8CX over I2C (Wire1), ST ULD driver | `hil/tof` (both sensors, 15 Hz) into the same frame queue | Real I2C timing, sun and target reflectance are only modelled; the sim's `fences.yaml` walls are ideal geometry |
 | Datum | saved or `HARDCODED_DATUM_AND_PATH` | same; lawn origin is 45.5 / 18.0 to match the hardcoded datum. A board with nothing saved publishes no `gps/odom` or `imu/data` until console `g` | – |
 
+### Wall-assist bench (`tools/wall_bench`, 2026-10-30)
+
+A software-in-the-loop bench for the wall assist, ~6–15× real time per run (~25× on 10 parallel jobs), deterministic per seed, no ROS, Gazebo or board. `build.py` compiles the firmware's own `src/sensor/tof*.cpp` (new ones are picked up), `wall_assist.cpp`, `functions.cpp`, `hil.cpp` and the real ESP-DDS with g++ (`HIL_ENABLED=1`) against small shims (`shim/`: Arduino clock, FreeRTOS tasks as threads run one at a time in lockstep with a simulated clock, `esp_timer`, the debug console). `bench.cpp` adds a copy of `main.cpp`'s manual path (`v<lin>,<ang>` → `publish_manual_move` → `wall_assist_manual`, the 500 ms watchdog, keys `m f c o e` and space, outline points printed while capturing) and talks to `bench.py` over stdin/stdout. `bench.py` is the world and plant: a world YAML through `sim_env`'s `obstacles.py`, the ToF frames from `sim_env`'s `TofModel` with `mower.yaml`'s tof block (mount errors, 15 Hz, 0.05 s latency) into `hil_tof_push` as in HIL, `motor_task`'s clamps and step-rate ramp with the `definitions.h` numbers, optional wheel slip, and `/fused_pose` at 10 Hz for base_link with a slowly varying error (~2.5 cm, 1.6° median, 0.1 s old). The body footprint (0.12 front, 0.415 rear, 0.20 half width) is checked against the true parts every 20 ms; there is no contact physics, so a run stops at the first contact. Not modelled: the EKF (only its error), the micro-ROS link and its delays, Gazebo physics (caster drag, terrain tilt, wheel torque), IMU roll/pitch (sent as 0) and real sensor data; the ToF rays hit flat ground unless `--terrain world`.
+
+`scenarios.py` holds a scripted joystick user for each case (approaches at 10–90° from both sides at 0.3 and 0.1 m/s, following, pushing into the wall, inner and outer corners, a free wall end, gaps, a post, the pocket, pull-away and letting go in each state, reversing toward a wall seen before, every wall type) and the outcomes expected of the assist: no contact and body clearance ≥ `PASS_CLEARANCE` (0.10 m), lock, parallel within 10°, rounding corners, unlocking on a pull-away, stopping on letting go. The map check (`tof_map_copy()` in `src/sensor/tof_map.h`) runs when that header exists. Many cases fail on the firmware of 2026-10-30 by design of the test: it is a target list, not a regression gate. Reproducing the HIL laps on `fences.yaml` (scenarios `hil_south_plus`, `hil_north`) gave the same states, corner turns (89°, 63°, 119°; 91°, 87°), body clearance (min 5.5–6.9 cm, median 29–33 cm), axle-wall median (52–54 cm) and outline points (1.5 cm median off) as HIL.
+
+`ros2_ws/src/greentitan_sim/config/edges.yaml` is the edge-case world (also loads in HIL with `world:=`): inner corners of 45/60/90/120°, a 0.9 × 1.5 m pocket, an island with outer corners of 45/90/135°, a thin free-ended wall, 0.35 and 1.5 m gaps, a 0.1 m post, a hedge, 8 and 12 cm curbs; the layout is in its header. About 14.5 × 15 m: each feature has ≥ 1.5 m of free lawn around it.
+
+```bash
+python3 tools/wall_bench/run_all.py --seeds 3 [--jobs N] [--only REGEX] [--out /tmp/wall_bench]   # table; PNGs of failures
+python3 tools/wall_bench/run.py --scenario outer_90 [--seed N] [--plot out.png] [--slip 0.1]       # one case; --list
+```
+
 ## 12. ROS 2 package (`ros2_ws/src/robot_package`)
 
 - ament_python package.

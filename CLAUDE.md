@@ -53,9 +53,10 @@ ros2_ws/src/robot_package/   ROS 2 (ament_python) package
   robot_package/path_visualizer.py, fused_pose_relay.py (EKF Odometry → compact esp/fused_pose)
 ros2_ws/src/sim_env/     generic Gazebo sim: YAML world/robot → SDF, device models (gnss, imu, stepper, tof),
                          obstacles.py (walls/fences/curbs as parts), raycast.py (numpy rays for the ToF model)
-ros2_ws/src/greentitan_sim/  mower + lawn configs (fences.yaml: wall-following course), hil.launch.py, console tool
+ros2_ws/src/greentitan_sim/  mower + lawn configs (fences.yaml: wall-following course, edges.yaml: wall-assist edge cases), hil.launch.py, console tool
 ros2_ws/build|install|log   colcon output (gitignored)
 tools/android/           phone provisioning (adb debloat, Termux, camera over adb)
+tools/wall_bench/        wall-assist bench: the real ToF task + wall assist (g++, shims) against a numpy world and plant, scenario suite
 cad/                     Python scripts that drive Fusion 360 / render studies (roof, canopy, cowl, ...)
 outputs/                 generated CAD exports/renders (mostly gitignored)
 lib/tinympc/             vendored TinyMPC solver (MIT), patched for the ESP32 (float, no stdout)
@@ -94,6 +95,7 @@ ros2 run greentitan_sim console                                     # debug cons
 ```
 `gui:=true` opens the Gazebo window (true mower, WSLg on Windows 11). `rviz:=true` opens RViz with `config/hil.rviz`: top-down view in `odom` following `base_link`, EKF pose trail, outline/infill markers.
 Without firmware: `hil.launch.py robot:=<share>/config/mower_teleop.yaml agent:=false` and drive with `teleop_twist_keyboard`. HIL-vs-real differences are listed in ARCHITECTURE §11.
+Wall-assist bench (WSL/Linux, g++ + numpy, no ROS, no board): `python3 tools/wall_bench/run_all.py --seeds 3` (all scenarios, pass/fail table) or `python3 tools/wall_bench/run.py --scenario inner_90 --plot /tmp/x.png` (ARCHITECTURE §11).
 
 There are no automated tests. The `test/` folders only hold the PlatformIO and ament templates.
 
