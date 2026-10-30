@@ -50,7 +50,7 @@ src/                     ESP32 firmware (PlatformIO, env esp32dev)
 ros2_ws/src/robot_package/   ROS 2 (ament_python) package
   config/ekf.yaml        THE localization config
   launch/robot.launch.xml   static TFs + ekf_node + path_visualizer
-  robot_package/path_visualizer.py, fused_pose_relay.py (EKF Odometry → compact esp/fused_pose)
+  robot_package/path_visualizer.py, fused_pose_relay.py (EKF Odometry → compact esp/fused_pose), web_ui.py + web/drive.html (drive page)
 ros2_ws/src/sim_env/     generic Gazebo sim: YAML world/robot → SDF, device models (gnss, imu, stepper, tof),
                          obstacles.py (walls/fences/curbs as parts), raycast.py (numpy rays for the ToF model)
 ros2_ws/src/greentitan_sim/  mower + lawn configs (fences.yaml: wall-following course), hil.launch.py, console tool
@@ -93,6 +93,7 @@ GZ_IP=127.0.0.1 ros2 launch greentitan_sim hil.launch.py gui:=true rviz:=true
 ros2 run greentitan_sim console                                     # debug console over ROS
 ```
 `gui:=true` opens the Gazebo window (true mower, WSLg on Windows 11). `rviz:=true` opens RViz with `config/hil.rviz`: top-down view in `odom` following `base_link`, EKF pose trail, outline/infill markers.
+Drive page (joystick, live map, wall map, sim truth): both launch files start `web_ui`; open `http://localhost:8080/` (phone: `http://<host ip>:8080/`), `ui:=false` turns it off (ARCHITECTURE §10).
 Without firmware: `hil.launch.py robot:=<share>/config/mower_teleop.yaml agent:=false` and drive with `teleop_twist_keyboard`. HIL-vs-real differences are listed in ARCHITECTURE §11.
 
 There are no automated tests. The `test/` folders only hold the PlatformIO and ament templates.

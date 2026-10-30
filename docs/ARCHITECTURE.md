@@ -356,6 +356,18 @@ The body stays within 1 cm of the outline on the square, L-shape, neck and islan
 | `b` | fake rain |
 | `p` within 1.5 s of boot | clear datum |
 
+**Drive page** (`robot_package/web_ui`, 2026-10-30). A browser page for driving by hand and checking the wall map, on the phone or a PC. It replaces RViz and the Gazebo window for that. Open `http://<ROS host>:8080/`; `robot.launch.xml` and `hil.launch.py` start it (`ui:=false` turns it off, `ui_port:=` moves it).
+- It talks to the firmware only through the console mirror: keys on `esp/console`, output from `esp/log`. **The real build needs `DEBUG_OVER_ROS` 1** (today only `esp32dev_hil` sets it).
+- **Stick** (bottom left; on a PC also W A S D or the arrows): forward up to 0.3 m/s, reverse 0.1 m/s, turn 0.6 rad/s, with a deadzone (12 %) and a soft curve (half stick ≈ 0.07 m/s). The page reports the stick at 10 Hz; the node sends `v<lin>,<ang>` at a steady 10 Hz from its own timer while it is held. Release sends one space (stop). If the page goes silent for 0.35 s (Wi-Fi, closed tab), the node sends the stop itself; the firmware's own 500 ms watchdog stays as the last guard. Nothing is sent while the log says manual is off; the page asks to press Manual.
+- **Buttons:** Manual (`m`), Assist (`f`), Record (`c` + `o`; while recording it becomes New outline, `o`), Finish (`e`), Status (`i`, opens the log), Follow, Log, and a big STOP (space; Space or Esc on a keyboard).
+- **Status** (from the log lines): link (age of the last `imu/data` or log line, and of the EKF pose), manual on/off, assist off or its state with the last reason (`[WALL] A -> B: reason`; any state name), EKF speed, recording with the point count. The last 30 log lines, `[WALL]` lines highlighted.
+- **Map** (top-down, odom frame, metre grid, scale bar; follows the mower until panned; drag/pinch/wheel):
+  - the mower footprint around the axle (0.18 m ahead of base_link), the two ToF wedges to 1.5 m, a 3 min trail of the axle;
+  - the outline being recorded, from `[WALL]/[DEBUG] Point added (x, y) cm` (corner points larger);
+  - the wall map from `esp/wall_map` v1 (Int16MultiArray `[1, n, n × (kind, x0, y0, x1, y1, height, hits)]`, cm in odom; kind 0 wall, 1 fence, 2 low edge, 3 hedge, 4 post with x0, y0 the centre and x1 the radius), coloured and labelled by kind.
+- **Sim overlay** (parameter `world` = a world YAML; `hil.launch.py` passes its `world`): the true objects (`sim_env.obstacles.expand`) in grey and the true mower (`/sim/greentitan/ground_truth`, the axle midpoint) dashed. The world frame is **not** odom: odom is the firmware's flat-earth frame at the datum, which is wherever `g` was pressed (spawning at the lawn origin facing +x puts the antenna at world (−0.18, 0)). The node maps world → odom through the datum (`esp/datum`, or the `Datum published`/`Datum set to` log line): world ENU → lat/lon (`enu_to_geodetic`, the GNSS model's own conversion) → the firmware's `111111 m/°` conversion. Until a datum is seen it assumes the world origin. Without `world` (real mower) there is no overlay and `sim_env` is not imported.
+- Only stdlib + rclpy (`ThreadingHTTPServer`, polling `/state` ~7×/s, POST `/drive` and `/cmd`), one HTML file, no external resources: works with the phone offline. No login: anyone on the network can drive.
+
 ## 11. Simulation and test switches (`definitions.h`)
 
 | Flag | Effect | State |
@@ -410,11 +422,12 @@ Findings that shaped the models:
 ## 12. ROS 2 package (`ros2_ws/src/robot_package`)
 
 - ament_python package.
-- `robot.launch.xml` starts the two identity static TFs, `ekf_node` with `config/ekf.yaml` (output remapped to `/odometry/filtered/global`), `fused_pose_relay` (→ `esp/fused_pose`), and `path_visualizer`.
+- `robot.launch.xml` starts the two identity static TFs, `ekf_node` with `config/ekf.yaml` (output remapped to `/odometry/filtered/global`), `fused_pose_relay` (→ `esp/fused_pose`), `path_visualizer`, and `web_ui` (unless `ui:=false`).
 - `path_visualizer` unpacks `algo/path_data` into MarkerArrays in frame `odom`:
   - `algo/markers/outlines`
   - `algo/markers/infill`
   - `algo/markers/obstacles` (islands as filled triangles)
+- `web_ui` (2026-10-30): the drive page (§10) on port 8080 (`port`, `host`, `world` parameters), page in `web/drive.html` (installed to `share/robot_package/web`). Subscribes `esp/log`, `/odometry/filtered/global`, `imu/data` (link age only), `esp/wall_map`, `esp/datum` and, with `world`, `/sim/greentitan/ground_truth`; publishes `esp/console`. `robot.launch.xml` args `ui` (true) and `ui_port`; `hil.launch.py` starts its own copy with the world instead.
 - `package.xml` doesn't declare the robot_localization or visualization_msgs dependencies (they're installed on the host).
 - History: on 2026-06-11 the dual EKF (local + global) with navsat_transform and the `datum_relay` node was replaced by the single EKF that runs on local ENU metres.
 
