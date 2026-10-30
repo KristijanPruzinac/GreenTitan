@@ -110,6 +110,9 @@ typedef struct {
 // Coverage planner (src/algorithm, ARCHITECTURE ง8). Rows and laps are MOWER_BLADE_DIAMETER less
 // MOWER_OVERLAP (cm, settings) apart, so a tracking error under the overlap leaves no gap.
 #define PLANNER_MIN_ROW                   0.10   // m, shorter pieces of row are left out
+// Infill U-turns: 0 = mow the neighbouring row next, turning on the spot at both ends (safe in the
+// turn zone; 2026-10-30). > 0 = skip rows so the U-turn is two arcs of this radius (2026-10-28..30)
+#define PLANNER_ROW_TURN_RADIUS           0.0    // m
 #define PLANNER_MARGIN                    0.02   // m, ways between pieces keep this far inside the turn zone
 // A lap corner turning away from the outline by more than this needs a straight run-in (NavPath's
 // edge corner); slants and steps between laps turn by at most this where the lap bends
@@ -127,6 +130,19 @@ typedef struct {
 // aims back at the path (4e26468: 0.8 and MOTION_CORRECTION_GAIN 0.3)
 #define MOTION_HEADING_GAIN               0.8f   // rad/s per rad
 #define MOTION_APPROACH_DISTANCE          0.3f   // m
+// 1 = steer on the path with TinyMPC (NavMpcTracker, default since 2026-10-30), 0 = NavTracker (ARCHITECTURE ยง6)
+#ifndef MOTION_USE_MPC
+#define MOTION_USE_MPC 1
+#endif
+#if MOTION_USE_MPC
+// MPC weights (NavMpcTracker). The curvature-rate weight makes the curvature reach an arc's only
+// after ~0.3 m of path (arcs entered ~6 cm late on the native bench); 0.001 fixes that there but
+// is unjudged in HIL (its runs were made off real time).
+#define MOTION_MPC_Q_LATERAL              400.0f
+#define MOTION_MPC_Q_HEADING              20.0f
+#define MOTION_MPC_Q_CURVATURE            0.1f
+#define MOTION_MPC_R_CURVATURE_RATE       0.01f
+#endif
 #define MOTION_TURN_DONE                  0.05f  // rad, ~3 deg: then hand over to the tracker
 #define MOTION_ROTATE_GAIN                1.5f   // rad/s per rad of heading error
 #define CONTROL_YAW_TAU                   1.0f   // s, control heading follows the EKF yaw this slowly, gyro in between

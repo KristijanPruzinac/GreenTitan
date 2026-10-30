@@ -21,6 +21,7 @@ PID controller - Philip Salmony - https://github.com/pms67
 #### LIBRARIES  
 Adafruit MPU6050 - https://github.com/adafruit/Adafruit_MPU6050
 Clipper2 - Angus Johnson - Boost Software License - https://github.com/AngusJohnson/Clipper2
+TinyMPC - MIT - https://tinympc.org
 
 # Development process
 The project is currently under development and expected to be finished in october.

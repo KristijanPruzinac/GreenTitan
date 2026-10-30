@@ -2,6 +2,9 @@
 #include "../sensor/imu_task.h"
 #include "../navigation/nav_path.h"
 #include "../navigation/nav_tracker.h"
+#if MOTION_USE_MPC
+#include "../navigation/nav_mpc_tracker.h"
+#endif
 
 // Mower glue around the navigation core (src/navigation): fills its robot description, feeds it
 // the planner's points, drives the motors from its output and switches the blade per leg.
@@ -51,7 +54,16 @@ static double   teleport_target_x = 0;
 static double   teleport_target_y = 0;
 
 static NavPath&   path = *new NavPath();   // on the heap: static DRAM is full
+#if MOTION_USE_MPC
+// On-path steering by TinyMPC instead of NavTracker (A/B build, ARCHITECTURE §6)
+static const NavMpcWeights mpc_weights = {
+    MOTION_MPC_Q_LATERAL, MOTION_MPC_Q_HEADING, MOTION_MPC_Q_CURVATURE, MOTION_MPC_R_CURVATURE_RATE,
+};
+static NavMpcTracker tracker;
+static float      last_curvature = 0.0f;   // what is being commanded: the MPC's third state
+#else
 static NavTracker tracker;
+#endif
 static bool       turning = false;      // on the spot: path start, a sharp corner, or far off heading
 static float      last_speed = 0.0f;
 static uint8_t    applied_tool = NAV_TOOL_KEEP;
@@ -106,6 +118,9 @@ static void start_turn() {
     turning = true;
     rotate_since_ms = millis();
     last_speed = 0.0f;
+#if MOTION_USE_MPC
+    last_curvature = 0.0f;
+#endif
 }
 
 // Stop the wheels and drop the path; also drops queued messages (a real stop)
@@ -213,7 +228,12 @@ static void pose_updated_callback(dds_callback_context_t* context) {
         }
     }
     if (!turning) {
+#if MOTION_USE_MPC
+        float curvature = tracker.solve(ref, last_curvature);
+        last_curvature = curvature;
+#else
         float curvature = tracker.solve(ref, fmaxf(last_speed, nav_config.v_min));
+#endif
         // Planned speed, ramped up no faster than the path acceleration (the wheel ramps then
         // keep the commanded curvature), never below creep speed so the end still closes
         linear_cmd = fmaxf(nav_config.v_min,
@@ -298,7 +318,12 @@ void motion_task(void* parameter) {
     // ------- THREAD SETUP CODE START -------
 
     path.configure(nav_config);
+#if MOTION_USE_MPC
+    SerialDebug.printf("[MOTION] Tracker: TinyMPC (MOTION_USE_MPC)\r\n");
+    if (!tracker.begin(mpc_weights)) {
+#else
     if (!tracker.begin(nav_config)) {
+#endif
         SerialDebug.printf("[MOTION] Tracker setup failed\r\n");
     }
 
