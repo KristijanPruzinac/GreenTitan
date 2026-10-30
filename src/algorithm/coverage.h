@@ -71,6 +71,12 @@ public:
     // Next waypoint towards the goal; false when the goal is reached (or there is none)
     bool next(CoveragePoint* p);
     bool mowed() const;                  // every piece done
+    // Mow only rows first .. first + count - 1 (numbered as in pieces(), rows only, from 0): the
+    // laps and the other rows count as done, so a mission goes to the nearest of these rows and
+    // ends after them. Kept over reset(), stops and replans until the next build. count <= 0 or
+    // first out of range: all pieces again. Returns the number of rows that are mowed.
+    int only_rows(int first, int count);
+    int rows() const { return (int)pieces_.size() - laps_; }
 
     struct Piece {
         bool lap;           // a lap around a ring, else an infill row
@@ -83,6 +89,7 @@ public:
         double start;       // lap: where mowing began, mm along the ring
         int8_t dir;         // row: +1 mowed from pts[0], -1 from pts[1]
         double mowed;       // mm mowed from the start
+        bool left_out;      // not to be mowed (only_rows)
     };
     const LawnMap& map() const { return map_; }
     const std::vector<Piece>& pieces() const { return pieces_; }
@@ -104,7 +111,7 @@ private:
         double mowed;       // ... and how much of it the step mowed
     };
 
-    bool done(int i) const { return pieces_[i].mowed >= pieces_[i].length - 1.0; }
+    bool done(int i) const { return pieces_[i].left_out || pieces_[i].mowed >= pieces_[i].length - 1.0; }
     int  pick() const;
     int  next_row() const;
     double join_distance(int i) const;
@@ -129,6 +136,7 @@ private:
     std::vector<std::vector<int>> cells_;   // row pieces, in row order
     std::vector<MapZone> levels_;           // lap depth steps: the lawn this far in (area only)
     int skip_ = 1;                          // rows apart for a U-turn of arcs
+    int laps_ = 0;                          // pieces_ holds the laps first, then the rows
     MapPoint base_;
     bool built_ = false;
 

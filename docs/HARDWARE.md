@@ -7,7 +7,7 @@ The physical mower: mechanics, electronics, sensors, the phone, CAD and print ru
 - **Source of truth:** the Fusion 360 cloud design **Mower V3** in project "GreenTitan Mower". Save milestones as new *versions* of Mower V3. Don't create "V4" files. Milestones so far: v25 (drive bracket/gearbox fit) and v26 (Blender cover, later rejected).
 - The frame is four 2020 aluminium extrusions with printed parts.
 - **Front = the big drive-wheel end.** The caster(s) are at the rear.
-- Two driven wheels (differential drive) and a rear caster. The wheels are **plastic**, so expect slip on grass.
+- Two driven wheels (differential drive) and two rear **swivel casters** (wheel r 30.6 mm trailing 34.4 mm behind the swivel axis). The wheels are **plastic**, so expect slip on grass.
 - Blade motor: MY1016-type DC motor, switched by a relay.
 - The GNSS antenna sits directly **above the blade motor**, at Fusion world (61.8, 266.1). The software treats that point as `base_link`.
 - Battery: Einhell 18 V Power X-Change pack in a printed holder. The Einhell adapter is the mating surface: it mounts under the battery with its rails along X. The battery model only marks the clearance envelope.
@@ -33,17 +33,21 @@ Current design (2026-10-26):
 - **Speed budget:** STEP comes from the ESP32 LEDC hardware since 2026-10-27 (ARCHITECTURE Known issue #1), so there's no firmware step-rate cap. At full step, 0.3 m/s is ~1275 steps/s (≈380 motor rpm), and the 0.5 m/s limit is ~2125 steps/s (≈640 rpm), where the 23HS32's torque is well down. Line following cruises at 0.3 m/s since 2026-10-27 (ARCHITECTURE §6).
 - StepperOnline STEP models download from `files.omc-stepperonline.com/<model>.STEP`.
 
-### Geometry used by firmware and sim (from Mower V3 CAD, 2026-10-27; not yet measured)
+### Geometry used by firmware and sim (from Mower V3 CAD, 2026-10-30; not yet measured)
 
-Origin: midpoint between the drive wheel centres, x forward (big-wheel end), y left.
+Origin: midpoint between the drive wheel centres on the ground, x forward (big-wheel end), y left, z up. Read from body bounding boxes of Mower V3 v23 plus the 2026-10-26 wheel move; ground = drive wheel bottom (Fusion z 874.2). The design has no materials, so masses are estimates. The sim model (`ros2_ws/src/greentitan_sim/config/mower.yaml`) uses these numbers.
 
 | Item | Value |
 |---|---|
-| Drive wheel radius | 74.9 mm (`WHEEL_RADIUS`) |
+| Drive wheel radius, width | 74.9 mm (`WHEEL_RADIUS`), 37.5 mm |
 | Track (wheel centre to centre) | 364.7 mm (`WHEEL_BASE`) |
-| Casters | x −384.5 mm, y ±135.9 mm, r 30.6 mm |
-| GNSS antenna | x −180 mm, z 280 mm (est.) |
-| IMU (MPU6050) | x −250 mm, z 130 mm, mounted upside down (`IMU_INVERT`) |
+| Casters (swivel) | axis x −350.1 mm, y ±135.9 mm, fork top 102 mm up; wheel r 30.6 mm, 50 mm wide (CAD box), centre 34.4 mm behind the axis (x −384.5 when trailing); swing radius 65 mm, so the body ends 415 mm behind the axle |
+| Blade motor (MY1016) | x −180 mm, y 0: the mower's centre |
+| Blade | Ø 254 mm holder, 61–73 mm above the ground |
+| Blade guard (BladeFrame) | x −42 to −333 mm, bottom 44.5 mm up: the lowest part of the body |
+| GNSS antenna | straight above the blade motor: x −180 mm, y 0, z 280 mm (est.) |
+| IMU (MPU6050) | on the centreline above the axle midpoint, z ~110 mm on the drive bracket (est.), mounted upside down (`IMU_INVERT`). Decided 2026-10-30: the turning centre, so spins put no centripetal acceleration on it (`IMU_X_BEHIND_AXLE` 0; was x −250 mm in the electronics bay) |
+| Mass, centre of mass (sim, est.) | 11.2 kg, x −91 mm, z 115 mm: ~24 % of the weight on the casters |
 
 ## 3. Electronics
 
@@ -135,7 +139,8 @@ These are what the software must survive:
 - [ ] Verify DM542T supply voltage against the 18 V Einhell pack. Choose and record the microstep setting.
 - [ ] Measure and record the Mower V3 wheel radius and wheel base for the firmware.
 - [ ] Bring-up checks for the firmware constants (`src/definitions.h`): the gear ratio is exactly 10:1 (mark the wheel and count 10 motor turns), `MOTOR_MICROSTEPS` matches the DM542T DIP, both wheels turn forward on `w` (stepper wiring sign), and the STEP pulses look clean on a scope at 100 and 2000 steps/s.
-- [ ] Record where the MPU6050 is mounted and which way it faces, and confirm `IMU_INVERT`.
+- [ ] Mount the MPU6050 above the axle midpoint (2026-10-30, §2), record which way it faces, and confirm `IMU_INVERT`.
+- [ ] Weigh the mower and its main parts (drive units, blade motor, battery) and check the casters' wheel width; the sim masses are estimates (§2).
 - [ ] Battery voltage divider for GPIO36, and a rain sensor on GPIO39 (or the phone's camera or other sensors).
 - [ ] Bump/obstacle sensing (phone accelerometer and cameras are candidates).
 - [ ] Cover: final shape, phone wet compartment, GNSS radome, cable-coil guides.

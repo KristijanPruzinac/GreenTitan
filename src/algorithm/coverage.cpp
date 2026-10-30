@@ -118,6 +118,7 @@ bool CoveragePlan::build(const MapPaths& outlines, const CoverageConfig& cfg) {
     pieces_.clear();
     cells_.clear();
     levels_.clear();
+    laps_ = 0;
     if (outlines.empty() || outlines[0].empty() ||
         !map_.build(outlines, MM(2 * cfg.turn_inset), MM(cfg.edge_inset), MM(cfg.turn_inset), MM(cfg.margin), MM(cfg.tolerance))) {
         logf("No lawn left %.2f m inside the outlines", cfg.edge_inset);
@@ -224,9 +225,9 @@ bool CoveragePlan::build(const MapPaths& outlines, const CoverageConfig& cfg) {
     const MapZone& home = map_.turn_zone().empty() ? map_.edge_zone() : map_.turn_zone();
     if (!home.contains(base_)) base_ = home.nearest_inner(base_);
 
-    int laps = 0;
-    for (const Piece& p : pieces_) laps += p.lap ? 1 : 0;
-    logf("Plan: %d laps, %d rows in %d cells", laps, (int)pieces_.size() - laps, (int)cells_.size());
+    laps_ = 0;
+    for (const Piece& p : pieces_) laps_ += p.lap ? 1 : 0;
+    logf("Plan: %d laps, %d rows in %d cells", laps_, rows(), (int)cells_.size());
     built_ = true;
     reset();
     return true;
@@ -247,6 +248,24 @@ void CoveragePlan::reset() {
     sent_.clear();
     end_ = base_;
     sent_from_ = base_;
+}
+
+int CoveragePlan::only_rows(int first, int count) {
+    int n = rows();
+    bool all = count <= 0 || first < 0 || first >= n;
+    int last = all ? n : std::min(n, first + count);
+    for (int k = 0; k < (int)pieces_.size(); k++) {
+        int row = k - laps_;
+        pieces_[k].left_out = !all && (row < first || row >= last);
+    }
+    if (all) {
+        logf("All %d laps and %d rows", laps_, n);
+        return n;
+    }
+    const MapPath& q = pieces_[laps_ + first].pts;
+    logf("Only rows %d..%d of %d (pieces %d..%d, row %d from (%.2f, %.2f) to (%.2f, %.2f) m), laps and other rows left out",
+         first, last - 1, n, laps_ + first, laps_ + last - 1, first, q[0].x / 1000.0, q[0].y / 1000.0, q[1].x / 1000.0, q[1].y / 1000.0);
+    return last - first;
 }
 
 bool CoveragePlan::mowed() const {

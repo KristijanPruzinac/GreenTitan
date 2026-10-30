@@ -1,6 +1,6 @@
 """Robot SDF builder.
 
-``type: wheeled`` builds a rigid body with any number of driven wheels and ball casters from a
+``type: wheeled`` builds a rigid body with any number of driven wheels and casters (sphere or swivel) from a
 YAML description. ``type: file`` uses an existing SDF model unchanged and only declares its
 interface (joints and sensor topics) so the rest of the tooling can bridge it.
 
@@ -16,6 +16,9 @@ All positions are in the robot frame (x forward, y left, z up); its origin is th
         - {name: left,  position: [0,  0.18, 0.075], radius: 0.075, width: 0.04, mass: 0.4, driven: true}
         - {name: right, position: [0, -0.18, 0.075], radius: 0.075, width: 0.04, mass: 0.4, driven: true}
         - {name: caster, position: [-0.3, 0, 0.03], radius: 0.03, mass: 0.1, caster: true}
+        # or a swivel caster: wheel centre trailing behind a free vertical axis at swivel.position
+        # - {name: caster, position: [-0.33, 0, 0.03], radius: 0.03, width: 0.02, mass: 0.05, caster: true,
+        #    caster_joint: swivel, swivel: {position: [-0.3, 0, 0.08], mass: 0.05, damping: 0.001}}
       actuators: {mode: servo, max_torque: 5.0}     # servo | pid (pid: {p, i, d})
       sensors:
         - {type: imu, name: imu, position: [0, 0, 0.1], rpy: [0, 0, 0], rate: 200}
@@ -83,7 +86,52 @@ def _base_link(cfg):
     return el('link', children, name='base_link')
 
 
+def _swivel_caster(w):
+    """Swivel caster: a fork that turns freely about a vertical axis at ``swivel.position`` and a
+    wheel (cylinder, axle along y) that rolls freely in it. ``position`` is the wheel centre at
+    rest, trailing behind the axis; bumps and side forces then act through the real lever arms."""
+    sw = w['swivel']
+    fork_name = f"{w['name']}_fork"
+    fork_shape = {'box': sw.get('size', [0.02, 0.02, 0.02])}
+    fork_mass = float(sw.get('mass', 0.05))
+    fork = el('link', sdf.pose(sw['position']), sdf.inertial(fork_mass, fork_shape),
+              el('visual', sdf.pose([0, 0, 0]), sdf.geometry(fork_shape),
+                 sdf.color(w.get('color', [0.1, 0.1, 0.1])), name='visual'),
+              name=fork_name)
+    swivel = el('joint', el('parent', text='base_link'), el('child', text=fork_name),
+                el('axis', el('xyz', text=[0, 0, 1], expressed_in='__model__'),
+                   el('limit', el('lower', text=-1e16), el('upper', text=1e16)),
+                   el('dynamics', el('damping', text=sw.get('damping', 0.0)),
+                      el('friction', text=sw.get('friction', 0.0)))),
+                type='revolute', name=f"{w['name']}_swivel_joint")
+    shape = {'cylinder': [float(w['radius']), float(w['width'])]}
+    axle_pose = sdf.pose([0, 0, 0, math.pi / 2, 0, 0])
+    inertial = sdf.inertial(float(w.get('mass', 0.05)), shape)
+    ine = inertial.find('inertia')  # cylinder inertia is about z; rotate to the y axle
+    ine.find('iyy').text, ine.find('izz').text = ine.find('izz').text, ine.find('ixx').text
+    contact_shape, contact_pose = shape, axle_pose
+    if w.get('collision', 'cylinder') == 'sphere':
+        contact_shape, contact_pose = {'sphere': float(w['radius'])}, sdf.pose([0, 0, 0])
+    wheel = el('link', sdf.pose(w['position']), inertial,
+               el('collision', contact_pose, sdf.geometry(contact_shape),
+                  sdf.surface(w.get('friction', DEFAULT_WHEEL_FRICTION), w.get('contact')), name='collision'),
+               el('visual', axle_pose, sdf.geometry(shape), sdf.color(w.get('color', [0.1, 0.1, 0.1])),
+                  name='visual'),
+               name=w['name'])
+    dyn = w.get('dynamics', {})
+    axle = el('joint', el('parent', text=fork_name), el('child', text=w['name']),
+              el('axis', el('xyz', text=[0, 1, 0]),  # joint frame = wheel frame: turns with the fork
+                 el('limit', el('lower', text=-1e16), el('upper', text=1e16)),
+                 el('dynamics', el('damping', text=dyn.get('damping', 0.0)),
+                    el('friction', text=dyn.get('friction', 0.0)))),
+              type='revolute', name=f"{w['name']}_joint")
+    return [fork, wheel], [swivel, axle]
+
+
 def _wheel(w, max_torque):
+    """Links and joints of one wheel: a driven or free wheel, a caster sphere or a swivel caster."""
+    if w.get('caster') and w.get('caster_joint') == 'swivel':
+        return _swivel_caster(w)
     link_pose = sdf.pose(w['position'])
     if w.get('caster'):
         shape = {'sphere': float(w['radius'])}
@@ -119,7 +167,7 @@ def _wheel(w, max_torque):
               el('visual', sdf.pose([0, 0, 0, math.pi / 2, 0, 0]) if not w.get('caster') else sdf.pose([0, 0, 0]),
                  sdf.geometry(shape), sdf.color(w.get('color', [0.1, 0.1, 0.1])), name='visual'),
               name=w['name'])
-    return link, joint
+    return [link], [joint]
 
 
 def _sensor(s, t):
@@ -173,9 +221,9 @@ def build(cfg, out_dir):
         torque = float(act.get('max_torque', 5.0))
         links, joint_els = [], []
         for w in wheels:
-            link, joint = _wheel(w, torque)
-            links.append(link)
-            joint_els.append(joint)
+            wheel_links, wheel_joints = _wheel(w, torque)
+            links += wheel_links
+            joint_els += wheel_joints
         joints = [f'{n}_joint' for n in driven]
         plugins = []
         for j in joints:

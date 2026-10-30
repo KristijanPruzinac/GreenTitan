@@ -15,7 +15,16 @@ Config (``terrain:`` section of a world file)::
       - {type: slope, gradient: [0.02, 0.0]}
       - {type: mound, position: [3, 2], radius: 0.15, height: 0.08}
       - {type: random_mounds, count: 20, radius: [0.1, 0.2], height: [0.04, 0.1]}
+      - {type: plateau, position: [2, 2], size: [1.5, 1.0], yaw: 20, height: 0.15,
+         slope_deg: 15, fillet: 0.15}
       - {type: flatten, position: [0, 0], radius: 1.5}
+
+``plateau``: a raised rectangle, ``size`` the flat top (metres, along its own axes, turned ``yaw``
+degrees from x). Each flank holds ``slope_deg`` (default 15); the slope builds up from level over
+``fillet`` (default 0.15 m) below the lip and eases back to level over ``fillet`` at the toe
+(constant curvature, slope/fillet), so a flank is height/tan(slope) + fillet long. The height is
+taken over the largest distance outside the top's two axes (a frustum), so the corners stay sharp
+creases rather than being rounded off.
 """
 import math
 import os
@@ -46,6 +55,23 @@ def _bump(xx, yy, cx, cy, radius, height):
     return height * np.exp(-r2)
 
 
+def _plateau(xx, yy, feat):
+    cx, cy = feat['position']
+    lx, ly = feat['size']
+    height = float(feat['height'])
+    s = math.tan(math.radians(float(feat.get('slope_deg', 15.0))))
+    f = min(float(feat.get('fillet', 0.15)), height / s)  # a short flank has no straight part
+    run = height / s + f  # lip to toe
+    yaw = math.radians(float(feat.get('yaw', 0.0)))
+    u = (xx - cx) * math.cos(yaw) + (yy - cy) * math.sin(yaw)
+    v = -(xx - cx) * math.sin(yaw) + (yy - cy) * math.cos(yaw)
+    d = np.clip(np.maximum(np.abs(u) - lx / 2, np.abs(v) - ly / 2), 0.0, run)  # down from the lip
+    lip = height - s * d * d / (2 * f)
+    flank = height - s * (d - f / 2)
+    toe = s * (run - d) ** 2 / (2 * f)
+    return np.where(d < f, lip, np.where(d > run - f, toe, flank))
+
+
 def generate(cfg):
     """Return (heights[row=y, col=x] in metres, cell size, side length). Row 0 is +y (north)."""
     size = cfg.get('size', [20.0, 20.0])
@@ -69,6 +95,8 @@ def generate(cfg):
         elif kind == 'mound':
             cx, cy = feat['position']
             h += _bump(xx, yy, cx, cy, float(feat['radius']), float(feat['height']))
+        elif kind == 'plateau':
+            h += _plateau(xx, yy, feat)
         elif kind == 'random_mounds':
             for _ in range(int(feat['count'])):
                 cx, cy = rng.uniform(-side / 2, side / 2, 2)

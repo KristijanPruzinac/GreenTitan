@@ -2,7 +2,9 @@
 # Robot frame: origin = midpoint of the drive axle on the ground, x forward (towards the big
 # drive wheels = front), y left, z up.
 # Dimensions: Fusion "Mower V3" v23 body bounding boxes + the 2026-10-26 wheel move (+54.5 mm per
-# side). Values marked "est." are estimates; replace them with measurements (docs/HARDWARE.md §8).
+# side); ground = drive wheel bottom (Fusion z 874.2, axle z 949.1). Fusion has no materials, so
+# masses are estimates. Values marked "est." are estimates; replace them with measurements
+# (docs/HARDWARE.md §8).
 robot:
   name: greentitan
   type: wheeled
@@ -11,27 +13,39 @@ robot:
     - {name: drive_left, shape: {box: [0.057, 0.137, 0.057]}, position: [0.0, 0.092, 0.0755], mass: 2.2, color: [0.15, 0.15, 0.15]}
     - {name: drive_right, shape: {box: [0.057, 0.137, 0.057]}, position: [0.0, -0.092, 0.0755], mass: 2.2, color: [0.15, 0.15, 0.15]}
     - {name: blade_motor, shape: {cylinder: [0.045, 0.100]}, position: [-0.180, 0.0, 0.122], mass: 1.4, color: [0.3, 0.3, 0.3]}
-    - {name: blade, shape: {cylinder: [0.100, 0.010]}, position: [-0.180, 0.0, 0.067], mass: 0.3, friction: {mu: 0.3}, color: [0.8, 0.8, 0.8]}  # est. diameter
+    - {name: blade, shape: {cylinder: [0.127, 0.012]}, position: [-0.180, 0.0, 0.067], mass: 0.3, friction: {mu: 0.3}, color: [0.8, 0.8, 0.8]}  # blade holder 254 mm, 61-73 mm up; mass est.
+    # BladeFrame: printed guard around the blade, the lowest part of the body (44.5 mm up); masses est.
+    - {name: guard_left,  shape: {box: [0.2214, 0.0465, 0.0834]}, position: [-0.1524,  0.1173, 0.0862], mass: 0.1, friction: {mu: 0.4}, color: [0.3, 0.3, 0.3]}
+    - {name: guard_right, shape: {box: [0.2214, 0.0465, 0.0834]}, position: [-0.1524, -0.1173, 0.0862], mass: 0.1, friction: {mu: 0.4}, color: [0.3, 0.3, 0.3]}
+    - {name: guard_rear,  shape: {box: [0.0778, 0.2415, 0.1034]}, position: [-0.2936, 0.0, 0.0962], mass: 0.12, friction: {mu: 0.4}, color: [0.3, 0.3, 0.3]}
+    - {name: caster_bracket_left,  shape: {box: [0.100, 0.080, 0.026]}, position: [-0.3125,  0.110, 0.115], mass: 0.05, collide: false, color: [0.3, 0.3, 0.3]}  # mass est.
+    - {name: caster_bracket_right, shape: {box: [0.100, 0.080, 0.026]}, position: [-0.3125, -0.110, 0.115], mass: 0.05, collide: false, color: [0.3, 0.3, 0.3]}
     - {name: battery, shape: {box: [0.115, 0.080, 0.075]}, position: [-0.080, 0.0, 0.170], mass: 0.7, collide: false, color: [0.1, 0.5, 0.1]}       # est. position
     - {name: electronics, shape: {box: [0.120, 0.160, 0.050]}, position: [-0.260, 0.0, 0.155], mass: 0.8, collide: false, color: [0.2, 0.2, 0.6]}  # est.
     - {name: cover, shape: {box: [0.480, 0.300, 0.140]}, position: [-0.120, 0.0, 0.220], mass: 1.5, friction: {mu: 0.4}, color: [0.85, 0.45, 0.1]}  # est. envelope
   wheels:
     - {name: left,  position: [0.0,  0.18235, 0.0749], radius: 0.0749, width: 0.0375, mass: 0.35, driven: true, friction: {mu: 0.5}}   # plastic on grass, est.
     - {name: right, position: [0.0, -0.18235, 0.0749], radius: 0.0749, width: 0.0375, mass: 0.35, driven: true, friction: {mu: 0.5}}
-    - {name: caster_left,  position: [-0.3845,  0.1359, 0.0306], radius: 0.0306, mass: 0.1, caster: true, friction: {mu: 0.08}}
-    - {name: caster_right, position: [-0.3845, -0.1359, 0.0306], radius: 0.0306, mass: 0.1, caster: true, friction: {mu: 0.08}}
+    # Swivel casters ("SteeringWheel"): vertical axis at x -350.1 mm, wheel r 30.6 mm trailing 34.4 mm
+    # behind it (swing radius 65 mm), fork top 102 mm up. Width = CAD wheel box. Masses, mu est.
+    - {name: caster_left,  position: [-0.3845,  0.1359, 0.0306], radius: 0.0306, width: 0.050, mass: 0.05, caster: true, caster_joint: swivel,
+       swivel: {position: [-0.3501,  0.1359, 0.066], size: [0.058, 0.050, 0.070], mass: 0.06, damping: 0.002}, dynamics: {damping: 0.0005}, friction: {mu: 0.5}}
+    - {name: caster_right, position: [-0.3845, -0.1359, 0.0306], radius: 0.0306, width: 0.050, mass: 0.05, caster: true, caster_joint: swivel,
+       swivel: {position: [-0.3501, -0.1359, 0.066], size: [0.058, 0.050, 0.070], mass: 0.06, damping: 0.002}, dynamics: {damping: 0.0005}, friction: {mu: 0.5}}
   # 23HS32 (~2.4 Nm holding, ~1.3 Nm pull-out at low speed on 18 V, est.) x 10:1 MG23 x ~0.9
   actuators: {mode: servo, max_torque: 12.0}
   sensors:
-    # MPU6050, est. position in the electronics bay; mounted upside down (matches IMU_INVERT=true)
-    - {type: imu, name: imu, position: [-0.25, 0.0, 0.13], rpy: [3.14159265, 0.0, 0.0], rate: 200}
+    # MPU6050 on the centreline above the drive axle midpoint (2026-10-30): the turning centre, so a
+    # spin adds no centripetal acceleration (IMU_X_BEHIND_AXLE 0). On top of the drive bracket, height
+    # est.; mounted upside down (matches IMU_INVERT=true)
+    - {type: imu, name: imu, position: [0.0, 0.0, 0.11], rpy: [3.14159265, 0.0, 0.0], rate: 200}
     # Phone rear camera looking forward (needs rendering; enable when testing vision):
     # - {type: camera, name: phone_cam, position: [-0.05, 0.0, 0.40], rpy: [0, 0.35, 0], rate: 10, width: 640, height: 480, hfov: 1.2}
   ground_truth: {rate: 50}
   spawn: {position: [0.0, 0.0], yaw: 0.0, clearance: 0.01}
 
 devices:
-  # u-blox C94-M8P rover: antenna above the blade motor, on the centreline. Height est.
+  # u-blox C94-M8P rover: antenna straight above the blade motor (mower centre), on the centreline. Height est.
   - model: gnss
     name: gnss
     antenna_position: [-0.180, 0.0, 0.28]

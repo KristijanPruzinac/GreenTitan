@@ -51,7 +51,7 @@ typedef struct {
 #define GYRO_SCL_PIN 22
 
 #define IMU_TILT_TAU 2.0f   // s, roll/pitch follow the accelerometer this slowly, the gyro in between
-#define IMU_X_BEHIND_AXLE 0.25f   // m, MPU6050 behind the wheel axle (Mower V3 CAD, est.)
+#define IMU_X_BEHIND_AXLE 0.0f   // m, MPU6050 behind the wheel axle: on the axle midpoint since 2026-10-30 (no centripetal part in spins; HARDWARE §2)
 #define IMU_GYRO_Z_VARIANCE 4e-4f   // (rad/s)^2 for the EKF, ~0.02 rad/s over one /imu interval. Was 0.01 until 2026-10-28: the EKF yaw rate lagged the gyro in every turn
 #define GNSS_ANTENNA_BEHIND_AXLE 0.180f   // m, antenna (base_link) behind the wheel axle, Mower V3 CAD
 #define GNSS_ANTENNA_HEIGHT 0.28f   // m, antenna above the ground (est.): tilt moves it sideways by this x the angle

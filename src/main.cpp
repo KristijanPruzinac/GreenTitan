@@ -1065,6 +1065,7 @@ void setup() {
     SerialDebug.println("--- Other ---");
     SerialDebug.println("  g       capture GPS datum");
     SerialDebug.println("  t       start mowing");
+    SerialDebug.println("  r<f>,<n> mow only rows f..f+n-1 (r: all)");
     SerialDebug.println("  x       stop mowing");
     SerialDebug.println("  l       line test: 1.5 m straight ahead");
     SerialDebug.println("  h       task stacks / heap");
@@ -1216,6 +1217,24 @@ void loop() {
                     } else {
                         AlgorithmCaptureNewPoint();
                         SerialDebug.println("[DEBUG] Point added");
+                    }
+                }
+                else if (c == 'r') {  // Rows: "r<first>,<count>\n" mows only those infill rows, "r\n" all
+                    char buf[24]; int len = 0;
+                    while (SerialDebug.available() && len < (int)sizeof(buf) - 1) {
+                        char ch = SerialDebug.read();
+                        if (ch == '\n' || ch == '\r') break;
+                        buf[len++] = ch;
+                    }
+                    buf[len] = '\0';
+                    int first = 0, count = 0;
+                    if (len > 0 && sscanf(buf, "%d,%d", &first, &count) != 2) {
+                        SerialDebug.println("[DEBUG] Usage: r<first row>,<count>  e.g. r4,3 (r alone: all rows)");
+                    } else if (!controller_path_edit_allowed() || !AlgorithmPlan().built()) {
+                        SerialDebug.println("[DEBUG] Rows rejected: needs a plan and IDLE");
+                    } else {
+                        int n = AlgorithmOnlyRows(first, count);
+                        SerialDebug.printf("[DEBUG] Rows set: %d of %d to mow\r\n", n, AlgorithmPlan().rows());
                     }
                 }
                 else if (c == 'e') {  // End path capture & save

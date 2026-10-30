@@ -42,6 +42,12 @@ bool AlgorithmMowingDone() {
     return plan.mowed();
 }
 
+int AlgorithmOnlyRows(int first, int count) {
+    int n = plan.only_rows(first, count);
+    plan.replan();
+    return n;
+}
+
 std::vector<double> AlgorithmNextPoint() {
     CoveragePoint p;
     uint32_t t0 = micros();

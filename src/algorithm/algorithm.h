@@ -42,6 +42,9 @@ void AlgorithmSetGoal(coverage_goal goal);   // COVERAGE_MOW / COVERAGE_HOME / C
 void AlgorithmStoppedAt(bool skip);
 void AlgorithmReplan();                      // constraints changed: plan again from what was handed out
 bool AlgorithmMowingDone();
+// Mow only rows first .. first + count - 1 (CoveragePlan::only_rows), until the next plan build;
+// count <= 0: everything. Returns the number of rows that are mowed.
+int AlgorithmOnlyRows(int first, int count);
 std::vector<double> AlgorithmNextPoint();    // {x m, y m, tool (nav_tool), edge}; empty = goal reached
 void AlgorithmMotionSetTargetPoint(double x_m, double y_m, uint8_t tool, int8_t edge);   // edge: see motion_command_t
 void AlgorithmSeedStartPosition();           // the next leg starts at the current position
