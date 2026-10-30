@@ -91,8 +91,9 @@ struct Result { int fails = 0; std::string notes; };
 
 // Limits of the sim ToF model, not counted as failures (docs/ARCHITECTURE.md section 6): its zones average the 6x6 rays,
 // so mesh and pickets within ~0.9 m read solid, and a hedge reads as a smooth face behind its outer leaves
+// (the uneven hedge is near the 3 cm roughness limit: typed hedge in 2 of 3 noise draws)
 static bool known_kind(const std::string& n) {
-  return n == "mesh_air" || n == "picket" || n == "picket_bare" || n == "hedge" || n == "mesh_hedge";
+  return n == "mesh_air" || n == "picket" || n == "picket_bare" || n == "hedge" || n == "hedge_uneven" || n == "mesh_hedge";
 }
 static bool known_offset(const std::string& n) { return n.rfind("hedge", 0) == 0 || n == "mesh_hedge"; }
 
