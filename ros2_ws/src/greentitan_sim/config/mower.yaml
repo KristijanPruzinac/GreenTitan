@@ -64,6 +64,35 @@ devices:
     gyro_angle: true
     gyro: {range: 8.727, resolution: 0.000266}
     accel: {range: 39.23, resolution: 0.0012}
+  # Two ST VL53L8CX 8x8 multizone ToF sensors at the front corners, for wall following while
+  # recording outlines. No bench data yet: the zone model is deliberately pessimistic and every
+  # number below is est. Mount not designed: position, height and the +-20 deg yaw are est.
+  # hil/tof: per sensor 1 byte index, 64 x (uint16 LE mm, uint8 status 5/4/255); see sim_env tof.py.
+  - model: tof
+    name: tof
+    output_topic: hil/tof
+    points_topic: sim/tof/points
+    frame_id: odom         # world = odom while the datum is the world origin (lawn origin)
+    rate: 15.0
+    latency: 0.05          # s, est.: ranging mid-frame to the ESP32 having both 8x8 results over I2C
+    resolution: 8
+    fov_deg: 45.0
+    rays_per_zone_side: 6
+    max_range: 4.0
+    merge_distance: 0.6    # est. (VL53L5CX/L8CX minimum target separation)
+    range_17: 2.0          # est. full-zone 17 % target in the dark
+    ambient: shade         # dark | shade | sun (sun: range_17 x 0.5, noise x 1.6), est.
+    noise_mm: 4.0          # datasheet DS14161: +-11 mm at 20..200 mm, 2.7 sigma
+    noise_frac: 0.015      # with bias_frac: datasheet +-5 % (dark) at 2.7 sigma
+    bias_frac: 0.01        # fixed per zone, est.
+    dropout: 0.02          # est.
+    grass_height: 0.03     # est., mowed lawn
+    reflectance: {ground: 0.15, wall: 0.5, curb: 0.3, picket: 0.3, rail_fence: 0.3, wire_mesh: 0.35, object: 0.3}  # est.
+    sensors:
+      # est., 20 deg in the firmware (the fields overlap 5 deg ahead); the sim mounts them 1.5 / 1 deg
+      # off that, as a printed holder would be
+      - {name: left,  position: [0.11,  0.15, 0.09], rpy: [0.0, 0.0,  0.3752458]}
+      - {name: right, position: [0.11, -0.15, 0.09], rpy: [0.0, 0.0, -0.3316126]}
   # DM542T + 23HS32 + MG23-G10. microsteps must match the driver DIP switches (HARDWARE.md §8).
   # No max_step_rate: STEP comes from LEDC hardware (2026-10-27), the firmware clamps speed itself.
   - model: stepper

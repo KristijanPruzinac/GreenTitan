@@ -29,4 +29,11 @@ int hil_gnss_read();
 void hil_imu_set(const hil_imu_sample_t& sample);
 bool hil_imu_get(hil_imu_sample_t* sample);
 
+// ToF frames from hil/tof: blocks of 1 sensor byte (0 left, 1 right) + 64 zones x (range mm
+// uint16 LE, status uint8), zone order as tof_frame_t. hil_tof_get returns the latest frame of
+// that sensor once (false until a new one has arrived).
+#define HIL_TOF_BLOCK (1 + 3 * TOF_ZONES)
+void hil_tof_push(const uint8_t* data, size_t len);
+bool hil_tof_get(int sensor, tof_frame_t* frame);
+
 #endif

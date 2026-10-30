@@ -3,7 +3,7 @@
     ros2 launch sim_env sim.launch.py world:=<world.yaml> robot:=<robot.yaml> [gui:=true]
 
 Device models are listed in the robot file under ``devices:``; each entry is
-``{model: gnss|imu|stepper|diff_drive, name: ..., <config>}`` or
+``{model: gnss|imu|tof|stepper|diff_drive, name: ..., <config>}`` or
 ``{package: pkg, executable: exe, name: ..., <config>}`` for devices from other packages.
 Each node receives its entry (plus scene facts under ``scene``) as the JSON parameter ``config``.
 """
@@ -17,7 +17,7 @@ from launch_ros.actions import Node
 
 from sim_env import scene as scene_builder
 
-BUILTIN_DEVICES = {'gnss': 'gnss_model', 'imu': 'imu_model', 'stepper': 'stepper_model',
+BUILTIN_DEVICES = {'gnss': 'gnss_model', 'imu': 'imu_model', 'tof': 'tof_model', 'stepper': 'stepper_model',
                    'diff_drive': 'diff_drive_mixer'}
 
 
@@ -31,6 +31,8 @@ def _scene_facts(s):
         'sensor_topics': s['sensor_topics'],
         'wheels': {w['name']: w for w in s['robot_cfg']['robot'].get('wheels', [])},
         'gnss_zones': s['world_cfg'].get('gnss_zones', []),
+        # geometry for models that cast rays themselves (tof): terrain recipe and objects
+        'world': {k: s['world_cfg'].get(k) for k in ('terrain', 'objects')},
     }
 
 

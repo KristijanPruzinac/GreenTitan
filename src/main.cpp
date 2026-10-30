@@ -32,6 +32,7 @@ bool ENABLE_IMU = true;
 bool ENABLE_GPS = true;
 
 bool ENABLE_MOTION = true;
+bool ENABLE_TOF = true;     // ToF sensors + wall assist; a missing sensor is logged, not fatal
 
 // -------------------------------------------------------- GLOBALS ---------------------------------------------------------------
 DebugSerial SerialDebug(1);
@@ -84,6 +85,8 @@ volatile int      LAST_DATUM_CAPTURE_RESULT  = DATUM_RESULT_NONE;
 
 //Motion
 #include "motion/motion_task.h"
+#include "motion/wall_assist.h"
+#include "sensor/tof_task.h"
 
 //Controller
 #include "controller/controller_task.h"
@@ -287,7 +290,7 @@ void init_micro_ros(){
     imu_msg.header.frame_id.size = strlen(imu_frame_id_buf);
 
     // create executor
-    const size_t hil_handles = (HIL_ENABLED ? 2 : 0) + (DEBUG_OVER_ROS ? 1 : 0);
+    const size_t hil_handles = (HIL_ENABLED ? 3 : 0) + (DEBUG_OVER_ROS ? 1 : 0);
     RCCHECK(rclc_executor_init(&executor, &support.context, 2 + hil_handles, &allocator));
 
     RCCHECK(rclc_executor_add_subscription(
@@ -658,10 +661,11 @@ void fused_pose_callback(const void* msgin) {
 }
 
 // -------------------------------------------------------- HIL / ROS console --------------------------------------------------------
-// Simulator link (HIL_ENABLED): GNSS bytes and IMU samples in, stepper rates out.
+// Simulator link (HIL_ENABLED): GNSS bytes, IMU samples and ToF frames in, stepper rates out.
 // Console mirror (DEBUG_OVER_ROS): SerialDebug output on esp/log, input from esp/console.
 rcl_subscription_t hil_gnss_subscriber;
 rcl_subscription_t hil_imu_subscriber;
+rcl_subscription_t hil_tof_subscriber;
 rcl_subscription_t console_subscriber;
 rcl_publisher_t hil_stepper_publisher;
 rcl_publisher_t log_publisher;
@@ -670,6 +674,8 @@ static std_msgs__msg__UInt8MultiArray hil_gnss_msg;
 static uint8_t hil_gnss_buf[256];
 static sensor_msgs__msg__Imu hil_imu_msg;
 static char hil_imu_frame_buf[16];
+static std_msgs__msg__UInt8MultiArray hil_tof_msg;
+static uint8_t hil_tof_buf[2 * HIL_TOF_BLOCK + 8];   // both sensors in one message (386 B)
 static std_msgs__msg__Float32MultiArray hil_stepper_msg;
 static float hil_stepper_buf[2];
 static std_msgs__msg__String console_msg;
@@ -691,6 +697,11 @@ static void hil_imu_callback(const void* msgin) {
         msg->orientation_covariance[0] < 0 ? 0.0 : msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9,
     };
     hil_imu_set(sample);
+}
+
+static void hil_tof_callback(const void* msgin) {
+    const std_msgs__msg__UInt8MultiArray* msg = (const std_msgs__msg__UInt8MultiArray*)msgin;
+    hil_tof_push(msg->data.data, msg->data.size);
 }
 
 static void console_callback(const void* msgin) {
@@ -718,6 +729,17 @@ void hil_ros_init() {
             ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu), "hil/imu"));
         RCCHECK(rclc_executor_add_subscription(&executor, &hil_imu_subscriber, &hil_imu_msg,
                                                &hil_imu_callback, ON_NEW_DATA));
+
+        // Best effort: a lost frame is replaced by the next one 67 ms later. The sender leaves
+        // layout.dim empty (no dim buffers here) so one message fits the 512 B serial MTU.
+        hil_tof_msg.data.data = hil_tof_buf;
+        hil_tof_msg.data.capacity = sizeof(hil_tof_buf);
+        hil_tof_msg.data.size = 0;
+        RCCHECK(rclc_subscription_init_best_effort(
+            &hil_tof_subscriber, &node,
+            ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8MultiArray), "hil/tof"));
+        RCCHECK(rclc_executor_add_subscription(&executor, &hil_tof_subscriber, &hil_tof_msg,
+                                               &hil_tof_callback, ON_NEW_DATA));
 
         hil_stepper_msg.data.data = hil_stepper_buf;
         hil_stepper_msg.data.capacity = 2;
@@ -773,6 +795,7 @@ static void destroy_micro_ros() {
     if (HIL_ENABLED) {
         RCSOFTCHECK(rcl_subscription_fini(&hil_gnss_subscriber, &node));
         RCSOFTCHECK(rcl_subscription_fini(&hil_imu_subscriber, &node));
+        RCSOFTCHECK(rcl_subscription_fini(&hil_tof_subscriber, &node));
         RCSOFTCHECK(rcl_publisher_fini(&hil_stepper_publisher, &node));
     }
     if (DEBUG_OVER_ROS) {
@@ -819,7 +842,7 @@ static bool ros_link_check() {
 // -------------------------------------------------------- INIT FUNCTIONS ---------------------------------------------------------------
 
 // Stack headroom report (console 'h'): FreeRTOS high-water mark per task, in bytes.
-static TaskHandle_t task_handles[5];   // motor, imu, gps, motion, controller
+static TaskHandle_t task_handles[6];   // motor, imu, gps, motion, controller, tof
 static void print_task_report() {
     for (TaskHandle_t t : task_handles) {
         if (t) SerialDebug.printf("[SYS] %-14s stack free min %u B\r\n", pcTaskGetName(t), (unsigned)uxTaskGetStackHighWaterMark(t));
@@ -873,6 +896,18 @@ void init_freertos() {
             NULL,
             1,
             &task_handles[3],
+            0
+        );
+    }
+
+    if (ENABLE_TOF) {
+        xTaskCreatePinnedToCore(
+            tof_task,
+            "ToFTask",
+            6144,   // ULD init + RANSAC; check with 'h'
+            NULL,
+            1,
+            &task_handles[5],
             0
         );
     }
@@ -962,13 +997,18 @@ static void init_test_path() {
     }
 }
 
+static bool capture_active = false;   // between 'c' and 'e': the wall assist's points go into the outline
+
 static void publish_manual_move(float lin, float ang) {
     if (!MANUAL_MODE_ACTIVE) {
         SerialDebug.println("[DEBUG] Not in manual mode (press 'm' first)");
         return;
     }
-    motor_data_t cmd = { MOTOR_MOVE, lin, ang };
-    DDS_PUBLISH("/motor", cmd);
+    // The wall assist (when locked on a wall) drives with this command instead
+    if (!wall_assist_manual(lin, ang)) {
+        motor_data_t cmd = { MOTOR_MOVE, lin, ang };
+        DDS_PUBLISH("/motor", cmd);
+    }
     LAST_MANUAL_MOVE_MS = millis();
     MANUAL_MOTORS_STOPPED = false;
 }
@@ -1057,10 +1097,12 @@ void setup() {
     SerialDebug.println("  w/s     forward / backward");
     SerialDebug.println("  a/d     turn left / right");
     SerialDebug.println("  space   immediate stop");
+    SerialDebug.println("  f       toggle wall assist (on at boot)");
+    SerialDebug.println("  i       wall assist / ToF status");
     SerialDebug.println("--- Path Recording ---");
     SerialDebug.println("  c       start new path (clears)");
     SerialDebug.println("  o       start new outline");
-    SerialDebug.println("  p       add point to outline");
+    SerialDebug.println("  p       add point to outline (wall assist adds its own)");
     SerialDebug.println("  e       end path & save");
     SerialDebug.println("--- Other ---");
     SerialDebug.println("  g       capture GPS datum");
@@ -1178,6 +1220,7 @@ void loop() {
                     else SerialDebug.println("[DEBUG] Usage: v<lin>,<ang>  e.g. v0.2,-0.4");
                 }
                 else if (c == ' ') {
+                    wall_assist_release();
                     if (MANUAL_MODE_ACTIVE) {
                         motor_data_t stop = { MOTOR_STOP, 0.0f, 0.0f };
                         DDS_PUBLISH("/motor", stop);
@@ -1194,6 +1237,7 @@ void loop() {
                     AlgorithmCaptureStart();
                     CONFIG_PATH = false;
                     SaveConfiguration();
+                    capture_active = true;
                     SerialDebug.println("[DEBUG] Path capture started");
                 }
                 else if (c == 'o') {  // New outline
@@ -1238,6 +1282,7 @@ void loop() {
                     }
                 }
                 else if (c == 'e') {  // End path capture & save
+                    capture_active = false;
                     if (AlgorithmCaptureEnd()) {
                         CONFIG_PATH = true;
                         SaveConfiguration();
@@ -1274,6 +1319,12 @@ void loop() {
                 else if (c == 'h') {  // Health: stack headroom and heap
                     print_task_report();
                 }
+                else if (c == 'f') {  // Wall assist on / off
+                    wall_assist_toggle();
+                }
+                else if (c == 'i') {  // Wall assist / ToF status
+                    wall_assist_print_status();
+                }
                 else if (c == 'x') {  // Stop mowing: halt, blade off, back to IDLE
                     SerialDebug.println("[DEBUG] Triggering mowing stop via serial");
                     controller_signal_t signal = { SIGNAL_STOP_MOWING };
@@ -1289,6 +1340,15 @@ void loop() {
                     controller_signal_t signal = { SIGNAL_RAIN };
                     DDS_PUBLISH("/controller/signal", signal);
                 }
+            }
+
+            // Outline points the wall assist took on the followed wall (kept only while capturing)
+            long long wx, wy;
+            bool wcorner;
+            while (wall_assist_take_point(&wx, &wy, &wcorner)) {
+                if (!capture_active) continue;
+                AlgorithmCaptureSetNewPoint(wx, wy);
+                SerialDebug.printf("[WALL] Point added (%lld, %lld) cm%s\r\n", wx, wy, wcorner ? " (corner)" : "");
             }
 
             if (ros_link_check()) {

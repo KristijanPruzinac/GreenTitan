@@ -1,0 +1,50 @@
+# Fence course for the ToF wall-following tests (outline recording): lawn.yaml's origin, a mowed
+# lawn with small turf noise only, the flat base pad at the origin (spawn there, facing +x), and
+# a ~10 x 6.5 m lawn bounded by every edge type the mower will meet. Polylines run counter-clockwise
+# around the lawn, so their left side faces the lawn. Every feature has >= 1.5 m of free lawn in front.
+#   south: a long straight wall, an inner 90 deg corner, an outer 90 deg corner (the wall steps
+#     out), an inner 120 deg corner, a slanted run into an inner 60 deg corner, then the wall ends
+#     in open air; a 1.5 m gap;
+#   north: wire mesh, with open air behind the east half and a hedge 0.3 m behind the west half;
+#     a picket fence with rails, round the NW corner (inner 90 deg);
+#   west: picket without rails, then a horizontal rail fence that meets the wall's start;
+#   inside: a garden bed with a 0.08 m curb on its S and E sides and a 0.12 m curb on N and W.
+# Reflectances (objects' and the ToF defaults in mower.yaml) are est.
+# Use: hil.launch.py world:=<share>/config/fences.yaml
+world:
+  name: fences
+  physics: {engine: dart, step: 0.001, real_time_factor: 1.0}
+  origin: {latitude: 45.5, longitude: 18.0, altitude: 90.0}
+
+terrain:
+  type: mesh
+  size: [30.0, 30.0]
+  resolution: 0.05
+  tile_size: 5.0
+  seed: 42
+  friction: {mu: 0.5}
+  layers:
+    - {wavelength: 8.0,  amplitude: 0.01}    # barely undulating
+    - {wavelength: 1.5,  amplitude: 0.006}   # uneven turf
+    - {wavelength: 0.25, amplitude: 0.003}   # tufts
+  features:
+    - {type: flatten, position: [0.0, 0.0], radius: 1.0, blend: 1.0}                # base station
+
+objects:
+  # A -> B long straight, B inner 90, C outer 90, D inner 120, F inner 60, G open end
+  - {name: wall, type: wall, height: 1.0, thickness: 0.15,
+     points: [[-1.5, -2.5], [4.5, -2.5], [4.5, -1.0], [6.0, -1.0], [8.887, 4.0], [6.5, 4.0]]}
+  - {name: mesh, type: wire_mesh, points: [[5.0, 4.0], [1.0, 4.0]], height: 1.0, wire_diameter: 0.0025,
+     cell: 0.05, post_spacing: 2.0, post_diameter: 0.05, jitter: 0.005, sag: 0.02, bulge: 0.02, seed: 3}
+  - {name: hedge, shape: {box: [2.0, 0.5, 1.2]}, position: [2.0, 4.55], reflectance: 0.2, roughness: 0.15,
+     color: [0.15, 0.35, 0.12]}                                                     # foliage, est.: rays get up to 15 cm in
+  - {name: picket_rails, type: picket, points: [[1.0, 4.0], [-1.5, 4.0], [-1.5, 2.0]], height: 0.9,
+     board_width: 0.09, gap: 0.05, jitter: 0.01, thickness: 0.02, rails: [0.15, 0.8], rail_height: 0.07,
+     rail_prob: 1.0, rail_side: left, seed: 4}
+  - {name: picket_bare, type: picket, points: [[-1.5, 2.0], [-1.5, 0.0]], height: 0.9,
+     board_width: 0.09, gap: 0.05, jitter: 0.01, thickness: 0.02, rail_prob: 0.0, seed: 5}
+  - {name: rail_fence, type: rail_fence, points: [[-1.5, 0.0], [-1.5, -2.5]], board_height: 0.10,
+     gap: 0.08, count: 4, thickness: 0.025, post_spacing: 2.0, post_size: 0.08, side: left}
+  # garden bed 1.5 x 1.0 m
+  - {name: curb_low, type: curb, points: [[2.0, 1.0], [3.5, 1.0], [3.5, 2.0]], height: 0.08, thickness: 0.06}
+  - {name: curb_high, type: curb, points: [[3.5, 2.0], [2.0, 2.0], [2.0, 1.0]], height: 0.12, thickness: 0.06}

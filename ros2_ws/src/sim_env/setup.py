@@ -26,6 +26,7 @@ setup(
             'build_scene = sim_env.scene:main',
             'gnss_model = sim_env.devices.gnss:main',
             'imu_model = sim_env.devices.imu:main',
+            'tof_model = sim_env.devices.tof:main',
             'stepper_model = sim_env.devices.stepper:main',
             'diff_drive_mixer = sim_env.devices.diff_drive:main',
         ],

@@ -28,6 +28,37 @@ int hil_gnss_read() {
   return b;
 }
 
+static portMUX_TYPE tof_mux = portMUX_INITIALIZER_UNLOCKED;
+static tof_frame_t tof_frames[2];
+static bool tof_new[2] = { false, false };
+
+void hil_tof_push(const uint8_t* data, size_t len) {
+  for (size_t at = 0; at + HIL_TOF_BLOCK <= len; at += HIL_TOF_BLOCK) {
+    int sensor = data[at];
+    if (sensor < 0 || sensor > 1) continue;
+    tof_frame_t f;
+    const uint8_t* z = data + at + 1;
+    for (int k = 0; k < TOF_ZONES; k++, z += 3) {
+      f.range_mm[k] = (uint16_t)(z[0] | (z[1] << 8));
+      f.status[k] = z[2];
+    }
+    f.t_ms = millis();
+    portENTER_CRITICAL(&tof_mux);
+    tof_frames[sensor] = f;
+    tof_new[sensor] = true;
+    portEXIT_CRITICAL(&tof_mux);
+  }
+}
+
+bool hil_tof_get(int sensor, tof_frame_t* frame) {
+  portENTER_CRITICAL(&tof_mux);
+  bool fresh = tof_new[sensor];
+  if (fresh) *frame = tof_frames[sensor];
+  tof_new[sensor] = false;
+  portEXIT_CRITICAL(&tof_mux);
+  return fresh;
+}
+
 void hil_imu_set(const hil_imu_sample_t& sample) {
   portENTER_CRITICAL(&imu_mux);
   imu_sample = sample;

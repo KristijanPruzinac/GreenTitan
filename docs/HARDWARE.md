@@ -58,6 +58,7 @@ Origin: midpoint between the drive wheel centres on the ground, x forward (big-w
 | ANN-MS patch antenna | GNSS antenna | 5 m RG174 cable, kept as a coil (ID 70 / OD 98, bend radius ≥ ~25 mm) in printed guides. Ø100 ground plane on top, away from the drivers, buck and UHF whip |
 | C94 UHF whip | correction link | Folded inside the cover along the mower. No holes in the cover |
 | MPU6050 | gyro (yaw rate) | I2C. **Kept**, because the phone has no gyro. `IMU_INVERT=true` flips z |
+| 2× ST **VL53L8CX** 8×8 multizone ToF | wall following while recording outlines (ARCHITECTURE §6) | Own I2C bus (Wire1, 400 kHz). LPn pins bring them up one at a time; left 0x54, right keeps 0x52 (8-bit). Front corners at x 0.11, y ±0.15, z 0.09 m from the axle midpoint, turned **20° outward** (the 45° fields overlap 5° ahead; 20° beat 45° and 60° in HIL, 2026-10-30). Position and height **proposed** until the holder is designed. Not tested on hardware: the sim zone model is an estimate |
 | 2× DM542T + 23HS32 + MG23-G10 | drive | see §2 |
 | Relay module (single channel) | blade motor on/off | GPIO18 |
 | Waterproof DC-DC buck → 5 V | logic and phone power | |
@@ -81,6 +82,8 @@ Wiring rules (user decisions, 2026-10):
 | GPS UART2 RX / TX | 16 / 17 |
 | Debug UART1 RX / TX | 13 / 27 |
 | MPU6050 SDA / SCL | 21 / 22 |
+| ToF SDA / SCL (Wire1) | 25 / 23 |
+| ToF LPn left / right | 4 / 14 |
 | Battery level (ADC, unused) | 36 |
 | Rain sensor (unused) | 39 |
 | Status LED | 2 |
@@ -131,7 +134,7 @@ These are what the software must survive:
 - **Terrain:** roughness tilts and shakes the chassis. This shows up in the gyro and accelerometer, and a 2D simulation can't reproduce it.
 - **Compass:** unreliable on this robot (motors, steel, currents). Not used.
 - **Weather:** rain means return home. The phone and electronics must stay dry, and the cameras must still see.
-- **Ground hazards:** molehills, toys, people and pets. There is no physical obstacle sensor yet, so the cameras and the accelerometer are the candidates.
+- **Ground hazards:** molehills, toys, people and pets. There is no physical obstacle sensor yet, so the cameras and the accelerometer are the candidates (the ToF sensors only look at walls beside the front, and their ground filter drops anything under ~3 cm).
 
 ## 8. Open hardware items
 
@@ -143,6 +146,7 @@ These are what the software must survive:
 - [ ] Weigh the mower and its main parts (drive units, blade motor, battery) and check the casters' wheel width; the sim masses are estimates (§2).
 - [ ] Battery voltage divider for GPIO36, and a rain sensor on GPIO39 (or the phone's camera or other sensors).
 - [ ] Bump/obstacle sensing (phone accelerometer and cameras are candidates).
+- [ ] ToF holders at the front corners (20° outward, clear view past the cover and wheels), wired to GPIO25/23 and LPn 4/14. Then bench data for the sim model: range noise and dropouts on grass, a wall, wire mesh and a hedge, in shade and in sun.
 - [ ] Cover: final shape, phone wet compartment, GNSS radome, cable-coil guides.
 - [ ] Charging/docking station: not designed yet.
 - [ ] Phone link: ROS 2 + agent + EKF run on the A12 (2026-10-30); still to prove: USB serial to the real ESP32 over the OTG splitter (ARCHITECTURE §15).

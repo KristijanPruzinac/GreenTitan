@@ -11,13 +11,14 @@ World file layout::
     terrain: {...}               # see terrain.py (type: mesh); omit or ``type: flat`` for a ground plane
     objects:
       - {name: wall, shape: {box: [10, 0.2, 1]}, position: [0, 5], yaw: 0, on_ground: true, color: [.6,.6,.6]}
+      - {name: fence, type: picket, points: [[0, -3], [6, -3], [6, 2]], height: 0.9}   # see obstacles.py
     gnss_zones:                  # sky-view obstructions, read by the GNSS device model
       - {center: [0, 4], radius: 3, max_state: float}
 """
 import math
 import os
 
-from . import sdf, terrain
+from . import obstacles, sdf, terrain
 from .sdf import el
 
 PHYSICS_ENGINES = {'dart': 'gz-physics-dartsim-plugin', 'bullet': 'gz-physics-bullet-featherstone-plugin'}
@@ -51,28 +52,28 @@ def ground_z(scene, x, y):
 
 
 def _object(obj, scene):
-    x, y = obj['position'][:2]
-    z = obj['position'][2] if len(obj['position']) > 2 else 0.0
-    if obj.get('on_ground', True):
-        z += ground_z(scene, x, y)
-        shape = obj['shape']
-        if 'box' in shape:
-            z += shape['box'][2] / 2
-        elif 'cylinder' in shape:
-            z += shape['cylinder'][1] / 2
-        elif 'sphere' in shape:
-            z += shape['sphere']
-    geom = sdf.geometry(obj['shape'])
-    link_children = [
-        el('collision', geom, sdf.surface(obj.get('friction')), name='collision'),
-        el('visual', sdf.geometry(obj['shape']), sdf.color(obj.get('color', [0.6, 0.6, 0.6])), name='visual'),
-    ]
-    static = obj.get('static', True)
-    if not static:
-        link_children.insert(0, sdf.inertial(obj.get('mass', 1.0), obj['shape']))
-    return el('model', el('static', text=static),
-              sdf.pose([x, y, z, obj.get('roll', 0), obj.get('pitch', 0), obj.get('yaw', 0)]),
-              el('link', *link_children, name='link'), name=obj['name'])
+    gz = lambda x, y: ground_z(scene, x, y)  # noqa: E731
+    parts, collisions = obstacles.expand(obj, gz)
+    if 'type' not in obj:  # plain shape object: one collision, one visual, optionally dynamic
+        part = parts[0]
+        link_children = [
+            el('collision', sdf.geometry(obj['shape']), sdf.surface(obj.get('friction')), name='collision'),
+            el('visual', sdf.geometry(obj['shape']), sdf.color(part['color']), name='visual'),
+        ]
+        static = obj.get('static', True)
+        if not static:
+            link_children.insert(0, sdf.inertial(obj.get('mass', 1.0), obj['shape']))
+        return el('model', el('static', text=static), sdf.pose(part['pose']),
+                  el('link', *link_children, name='link'), name=obj['name'])
+    # polyline object (wall, fence, curb): parts posed in the world frame, one static link
+    link_children = [el('collision', sdf.pose(c['pose']), sdf.geometry(c), sdf.surface(obj.get('friction')),
+                        name=f'collision_{i}') for i, c in enumerate(collisions)]
+    for i, p in enumerate(parts):
+        rgba = list(p['color']) + ([p['alpha']] if p['alpha'] is not None else [])
+        link_children.append(el('visual', sdf.pose(p['pose']), sdf.geometry(p), sdf.color(rgba),
+                                el('transparency', text=1.0 - p['alpha']) if p['alpha'] is not None else None,
+                                name=f'visual_{i}'))
+    return el('model', el('static', text=True), el('link', *link_children, name='link'), name=obj['name'])
 
 
 def build(cfg, out_dir):

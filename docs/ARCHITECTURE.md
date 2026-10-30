@@ -47,6 +47,7 @@ The ESP32 owns everything that acts: mission logic, the planner, motion control 
 | `gps_task` | 200 ms | 4096 | – | `/gps` |
 | `motion_task` | 100 ms (logic runs per pose) | 4096 | `/fused_pose`, `/motion/command` | `/motor`, `/controller/signal` |
 | `controller_task` | 200 ms | 4096 | `/controller/signal`, `/gps`, `/fused_pose` | `/motor`, `/motion/command`, `/datum/set` |
+| `tof_task` (`ENABLE_TOF`, 2026-10-30) | 20 ms (frames 15 Hz) | 6144 | `/fused_pose`, `/imu` | `/motor` (wall assist, manual mode only) |
 
 The algorithm isn't a task. Its functions run inside controller_task (`AlgorithmNextPoint`, and the robot position from `/fused_pose`) and the console (capture functions). It publishes `/motion/command` and `/motor` (blade on/off) directly.
 
@@ -55,9 +56,9 @@ The algorithm isn't a task. Its functions run inside controller_task (`Algorithm
 | Topic | Struct | Producers → consumers |
 |---|---|---|
 | `/gps` | `gps_data_t` | gps_task → bridge, controller |
-| `/imu` | `IMU_data_t` | imu_task → bridge |
-| `/fused_pose` | `fused_pose_data_t` (x, y, yaw, vx, omega) | bridge (from EKF), teleport mode → motion, controller |
-| `/motor` | `motor_data_t` {instruction, linear_vel, angular_vel} | motion, controller, algorithm, manual → motor_task |
+| `/imu` | `IMU_data_t` | imu_task → bridge, tof (roll, pitch) |
+| `/fused_pose` | `fused_pose_data_t` (x, y, yaw, vx, omega) | bridge (from EKF), teleport mode → motion, controller, tof (3 subscribers, the limit) |
+| `/motor` | `motor_data_t` {instruction, linear_vel, angular_vel} | motion, controller, algorithm, manual, wall assist → motor_task |
 | `/motion/command` | `motion_command_t` {mode, start xy, end xy} (metres) | algorithm, controller → motion |
 | `/controller/signal` | `controller_signal_t` | motion, console → controller |
 | `/datum/set` | `datum_data_t` | controller → bridge |
@@ -74,6 +75,7 @@ The algorithm isn't a task. Its functions run inside controller_task (`Algorithm
 | `esp/fused_pose` | std_msgs/Float64MultiArray | host→ESP | – | **Best effort.** EKF output (`/odometry/filtered/global`) reduced by `fused_pose_relay` to `[stamp_sec, stamp_nanosec, x, y, yaw, yaw_var, vx, vy, omega]` (body-frame twist). The full 724 B Odometry is larger than the 512 B MTU; the agent sometimes sent it on a stream that cannot fragment it ("serialization error") and dropped the session for 15–50 s (HIL 2026-10-28) |
 | `hil/gnss_ubx` | std_msgs/UInt8MultiArray | host→ESP | – | **HIL build only.** Raw UBX bytes from the simulated receiver; replaces UART2 |
 | `hil/imu` | sensor_msgs/Imu | host→ESP | – | **HIL build only.** Simulated MPU6050 sample; replaces I2C |
+| `hil/tof` | std_msgs/UInt8MultiArray | host→ESP | – | **HIL build only.** Both 8×8 ToF frames in one message, best effort: per sensor 1 byte index + 64 × (uint16 mm LE, uint8 status), 386 B. Replaces the I2C reads |
 | `hil/stepper_rate` | std_msgs/Float32MultiArray | ESP→host | – | **HIL build only.** [left, right] `ContinuousStepper::speed()` in steps/s, 100 Hz |
 | `esp/log` | std_msgs/String | ESP→host | – | `DEBUG_OVER_ROS` only. Everything printed to `SerialDebug` |
 | `esp/console` | std_msgs/String | host→ESP | – | `DEBUG_OVER_ROS` only. Keys fed to the debug console as if typed on UART1 |
@@ -163,6 +165,67 @@ Since 2026-10-27 the mower follows a **smooth trajectory** (replaced pure pursui
 - It runs once per fused pose (10 Hz) and only drives forward.
 - **Teleport mode** (`MOTION_TELEPORT_MODE`): skips driving; after 1 s it fakes the pose at the target, to test planner and controller without motion.
 - `motor_task` turns (v, ω) into wheel speeds (`WHEEL_BASE` 0.3647, `WHEEL_RADIUS` 0.0749, clamped to ±0.5 m/s and ±1 rad/s). Motor A = left, B = right.
+
+### Wall assist (`src/sensor/tof_task`, `src/motion/wall_assist`, 2026-10-30)
+
+For recording outlines along walls and fences by hand. The user drives with the joystick (manual mode). Near a wall, the mower locks on and follows it at a safe distance, turns at inner corners, and records outline points from the wall line. Everything runs in `tof_task`. The assist only shapes manual commands; missions are unchanged.
+
+**Points.**
+- Two VL53L8CX 8×8 sensors at the front corners (HARDWARE §3) give 15 Hz frames.
+- Each valid zone becomes a point along its zone-centre ray.
+- The point is placed with the fused pose (predicted to the frame time minus `TOF_FRAME_DELAY`) and the IMU roll and pitch.
+- **Ground** is dropped: anything below `TOF_MIN_HEIGHT` 3 cm, plus 0.15 m per m ahead for ground rising in front.
+- The points go into a grid memory: one point per 2.5 cm cell, 400 points, kept 10 s and within 2.5 m. A pose jump over 0.2 m (RTK fix change) clears it.
+
+**Fits.**
+- **Side walls:** RANSAC plus least squares on each side, over points from 0.5 m behind to 1.0 m ahead of the axle and up to 1.2 m out. A fit is valid with ≥ 10 inliers within 3 cm, ≤ 2 cm rms and ≥ 0.3 m of wall.
+- **Wall ahead:** a line across the path, from points seen in the last `TOF_AHEAD_AGE_MS` (1 s) only.
+  - The age limit is needed because a zone half on a wall's foot reports a blend of ground and wall distance.
+  - Driving toward the wall, these blended returns pile up along one ray and look like a wall across the path. HIL: a false "wall ahead 0.30 m" and a 127° pivot. A wall really ahead is in view and seen every frame.
+
+**States** (FREE → LOCKED → CORNER → PIVOT → LOCKED):
+- **Lock.** A side fit stays good for 300 ms, closer than 0.8 m to the centreline and within 30° of the heading, while the user drives forward. The wall must go on ≥ 0.3 m past the front, and there must be ≥ 5 cm of room beside the body.
+- **LOCKED:**
+  - The assist steers to keep `TOF_WALL_CLEARANCE` 0.35 m from body side to wall (centreline 0.55 m; the tail swings out to 0.46 m when turning).
+  - The user's forward speed is capped at 0.2 m/s and the turn rate at 0.5 rad/s, and there is no turning on the spot.
+  - A point within 5 cm beside the body blocks only the turn that would swing that part of the body toward it (a body point at x moves sideways at ω·x). Right after a corner turn, the tail is ~5 cm from the old wall.
+  - Reverse is straight at 0.1 m/s.
+  - An outline point is queued from the wall line every 0.25 m of wall (`wall_assist_take_point`, added to the capture in progress).
+- **CORNER.** A wall ahead within 1.0 m means an inner corner.
+  - The mower brakes to stop with the axle `TOF_CORNER_STOP` 0.55 m from the new wall, and queues the intersection of the two walls as a corner point.
+  - It then turns on the spot toward the new wall's direction, but only if the **sweep** is clear. The body plus 2 cm is checked every 5° of the turn against two sources:
+    - the points of the last 3 s, at least `TOF_SWEEP_MIN_POINTS` 2 of them (a lone point is a blended return in front of a wall face; anything solid fills several cells);
+    - the followed wall's line, frozen at the stop and reaching 0.7 m behind the axle, which the sensors no longer see.
+  - The sweep is checked again on every frame during the turn.
+- **PIVOT** at 0.6 rad/s, then LOCKED on the new wall.
+
+**Back to FREE** (stop, the user drives again):
+- the user turns away at ≥ 0.4 rad/s for 300 ms (the unlock nudge);
+- wall end: wall seen less than 0.15 m past the front, or open space ahead;
+- wall fit bad for 500 ms;
+- a point within 0.15 m ahead of the body, or braked to a standstill by one for 1 s;
+- no room to turn at a corner;
+- turn timeout (10 s), or the user releasing the stick during the turn;
+- the stop key;
+- no ToF frame for 300 ms.
+
+Whenever the assist is unsure it stops rather than guessing. People and animals ahead are left to the cameras (**proposed**, §15).
+
+**Mount: 20° outward (decided 2026-10-30).** The two 45° fields overlap 5° straight ahead. On the fences course (HIL, below), 45° and 60° mounts were tried for seeing side openings earlier:
+- 45° failed the south lap twice: it missed corner B and saw false corners.
+- 60° has a ±37.5° blind wedge ahead. It missed corner D and pivoted early (53°) at the NW corner.
+- 20° passed both laps.
+
+**HIL results (fences.yaml, 2026-10-30, firmware with the fresh ahead fit and the 2-point sweep).** Two south laps, two north laps and two unlock nudges, all passed:
+- Corners: B 90°, D 55–57°, F 118–120°, NW 87–90°, SW 89°.
+- Wall ends: C (outer corner) and the wall's open end G.
+- Wall types: wire mesh with air and with a hedge behind, pickets with and without rails, the rail fence.
+- Clearance: body to wall at least 4.3–7.1 cm in pivots and 5.6–7.7 cm while locked, 31–33 cm median; axle to wall 54–55 cm median. No contact.
+- Outline points: 1.4–2.6 cm median off the true surface, up to 13.7 cm.
+- Gap between G and the mesh (one north lap): a 0.7 s lock across the 1.5 m gap recorded one point there, on the fence line.
+- Before the 2-point sweep, a single point ~17 cm inside the wall, beside the axle, refused the F turn on one south lap and the SW turn on one north lap.
+
+Curbs don't lock (§14 item 27).
 
 ## 7. Mission controller (`controller_task`)
 
@@ -279,13 +342,15 @@ The body stays within 1 cm of the outline on the square, L-shape, neck and islan
 | `m` | toggle manual |
 | `w` `s` `a` `d` | drive (manual) |
 | `v<lin>,<ang>` + newline | drive (manual) with any m/s and rad/s, e.g. `v0.2,-0.4` |
-| space | stop |
+| space | stop (also releases the wall assist) |
 | `c` `o` `p` `e` | path capture: start, new outline, add point, end. `p<x>,<y>` + newline adds a point at x, y cm instead of the mower position |
 | `g` | capture datum |
 | `t` | start mowing |
 | `r<first>,<count>` + newline | mow only infill rows first .. first + count − 1, no laps (IDLE or manual, after the plan is built; numbering in §8). `r` + newline: all again. Answers `Rows set: n of N to mow`. Kept until the next plan build |
 | `x` | stop mowing (back to IDLE), also ends a line test |
 | `l` | line test (IDLE, not manual): follow a 1.5 m line straight ahead from the current pose, then stop. For tuning braking and line following without a mission |
+| `f` | wall assist on/off (§6; on at boot) |
+| `i` | wall assist status: state, sensors, the side and ahead fits |
 | `h` | task stack headroom (FreeRTOS high-water marks) and free heap |
 | `k` | fake obstacle |
 | `b` | fake rain |
@@ -309,7 +374,7 @@ Earlier 2D ROS simulations had trouble with global coordinates and couldn't mode
 
 Two ROS packages in `ros2_ws/src`:
 
-- **`sim_env`**: generic and robot-agnostic. YAML world (procedural terrain: FFT noise layers, slopes, mounds, plateaus, flat pads; objects; GNSS degradation zones) and YAML robot (body parts, wheels, sensors, device models) are turned into SDF at launch, cached in `~/.cache/sim_env/scenes/`. Device models are ROS nodes that turn Gazebo ground truth into what a real part would output: `gnss` (RTK fix/float/single Markov states, correlated bias, latency, UBX NAV-PVT bytes), `imu` (bias, drift, noise density, scale error, DLPF, range clipping, quantisation), `stepper` (steps/s → wheel rad/s through microsteps and gearbox, rate cap, command timeout), `diff_drive`.
+- **`sim_env`**: generic and robot-agnostic. YAML world (procedural terrain: FFT noise layers, slopes, mounds, plateaus, flat pads; objects; GNSS degradation zones) and YAML robot (body parts, wheels, sensors, device models) are turned into SDF at launch, cached in `~/.cache/sim_env/scenes/`. Device models are ROS nodes that turn Gazebo ground truth into what a real part would output: `gnss` (RTK fix/float/single Markov states, correlated bias, latency, UBX NAV-PVT bytes), `imu` (bias, drift, noise density, scale error, DLPF, range clipping, quantisation), `stepper` (steps/s → wheel rad/s through microsteps and gearbox, rate cap, command timeout), `diff_drive`, `tof` (below).
 - **`greentitan_sim`**: only config and launch for this mower: `config/mower.yaml` (Mower V3 geometry from the CAD, HARDWARE §2; masses marked *est.*), `config/lawn.yaml`, `config/hills.yaml` (rough lawn, below), `launch/hil.launch.py`, and the `console` tool.
 
 Data flow: Gazebo → `gnss`/`imu` device nodes → `hil/gnss_ubx`, `hil/imu` → micro-ROS → firmware (`env:esp32dev_hil`) → `hil/stepper_rate` → `stepper` node → Gazebo joints. The EKF and everything downstream are the normal ones.
@@ -323,6 +388,7 @@ Findings that shaped the models:
 - Console keys on `esp/console` were dropped regularly. Cause: micro-ROS has one shared pool of `RMW_UXRCE_MAX_HISTORY` (default 4) received messages for all subscriptions, and `fused_pose` (10 Hz, 2 slots each), `hil/gnss_ubx` and `hil/imu` kept it full. Fixed 2026-10-27: `microros.meta` raises it to 10 (+12 kB RAM), and the loop runs a second zero-timeout `spin_some` per tick. The real build gets the same change (fewer subscriptions there).
 - Link stalls (2026-10-28), three causes. (1) socat without `nodelay`: Nagle plus delayed ACKs made every micro-ROS round trip ~70 ms; `hil.launch.py` and `serial_tcp_bridge.py` now set TCP_NODELAY. (2) The 724 B EKF Odometry broke the agent session (see `esp/fused_pose`). (3) A pose timeout every ~31.5 s for 0.8–0.9 s: the WSL2 clock ran 2.3 % fast (WSL slews it toward Windows time) and `systemd-timesyncd` stepped it back ~0.7 s at each 32 s poll, so every wall-time ROS timer (GNSS model, EKF output) paused. `install_ubuntu.sh` disables timesyncd under WSL. The phone host must slew its clock, not step it, for the same reason.
 - Link stalls and clock (2026-10-30), three more causes. (4) The ESP sends everything from one loop. A reliable publish that got no ack within the 1000 ms default froze it, so every ESP topic stopped for ~1.05 s at once and the pose timed out (4–5 times per 150 s run). Now 50 ms (see above), and the UART0 receive buffer is `SERIAL_RX_BUFFER` (4 KB) instead of 256 B, which filled in ~3 ms. After the fix: no gap over 0.25 s on any topic, the ESP gets 10.0 poses/s (longest gap ~0.12 s), the EKF runs at 10 Hz. (5) `serial_tcp_bridge.py` read the serial port in 4096-byte calls with a 10 ms timeout, so ESP → host bytes waited up to 10 ms while the other way went straight through. The clock sync assumes both ways take equally long and set the ESP clock ahead. It now reads what is waiting. That change made (4) show up more often, which is how (4) was found. (6) The WSL clock swung ±40 ms on a 32 s cycle: the re-enabled `systemd-timesyncd` pulled it ~0.2 s toward NTP every 32 s and WSL's own chronyd (system distro, on the Hyper-V PTP clock) pulled it back at ~6000 ppm. The ESP resync could not follow, so `/imu` (ESP clock) and GPS (sim UTC = host clock) stamps disagreed by 20–55 ms. `install_ubuntu.sh` now also masks timesyncd. Afterwards chronyd ran at ~20 ppm, the ESP clock stayed within ~2 ms, and the `/imu`-to-GPS stamp mismatch was −2 ms.
+- **ToF sensors** (2026-10-30, `sim_env/devices/tof.py`, `raycast.py`, `obstacles.py`). Rays are cast in numpy against the world file's geometry (no Gazebo rendering), so walls, fences and curbs in a world YAML (`type: wall | curb | picket | rail_fence | wire_mesh`, polylines) are both Gazebo collisions and ToF targets from the same parts. Each zone is 6×6 rays re-jittered per frame. Per ray: Lambertian return (reflectance × cos / d²), hedge-like `roughness` (returns from inside the part), grass raising the ground up to 3 cm. Hits closer together than `merge_distance` 0.6 m merge into one target at the signal-weighted distance, so a zone half on a wall's foot reads a blended distance in front of the wall and wire mesh in front of a hedge reads in between. The closest detected target is reported with a fixed per-zone bias (1 %), noise 4 mm + 1.5 %, 2 % dropouts, 0.05 s latency. The sim mounts the sensors 1.5° and 1° off the firmware's 20°, as a printed holder would be. Every number is an estimate (no bench data). `config/fences.yaml` is the test course: a wall with inner 90°, 56° and 120° corners, an outer corner and an open end, wire mesh (air and hedge behind), pickets with and without rails, a rail fence and a garden bed with 8 and 12 cm curbs.
 - **Several boards in parallel (2026-10-28).** Each HIL instance gets its own ROS domain (`ROS_DOMAIN_ID`, and the firmware build flag `MICRO_ROS_DOMAIN_ID`, which the agent takes from the client), `GZ_PARTITION`, `tcp_port`, and a pty per port in `hil.launch.py`. Good for builds and setup, **not for measuring**: with two Gazebo instances on the PC the sim ran at 0.8–1.2× real time, and since the firmware runs on wall time every run weaved ±25 cm and spins were miscounted by up to 54 %, including a control run on the old firmware. One instance holds 1.00 (brief 1.15 catch-ups). Measure on one instance and log the RTF.
 - Mission test (2026-10-27): drove a ~2 m square, recorded it with `c o p … e`, then pressed `t`. The first run (Kp 0.8 gains, 0.5 m/s, L 0.3) weaved ±50° and left the outline by ~0.4 m. After the twist-frame, PID and braking fixes, a full mission (76 segments) finished in 373 s with "Mowing complete", and a second `t` started a new mission. Braking and line tracking are now tested with console `l` (one 1.5 m line straight ahead) instead of full missions; the results are in Known issue #19. Agent kill → `[ROS] Agent lost` → `[ROS] Agent reconnected` ~10 s later, with all streams back at normal rates.
 - **Rough lawn** (2026-10-30, `config/hills.yaml`, `world:=` on `hil.launch.py`): lawn.yaml with bumps ~6 cm crest to dip ~0.5 m apart (noise slopes 6° median, up to ~20°) and one `plateau` feature: 15 cm high, 1.5 × 1.0 m top, 15° flanks with 0.15 m fillets at toe and lip, sharp corners, turned 20° so east–west rows cross its corners. It sits in a 4 × 4 m test lawn (corner at the base, +x +y); a 3 m lawn can't hold it clear of the flat base pad. Tests mow six rows each with console `r` (§10): rows 14–19 over the lower corner, 6–11 over the top and both long flanks, 0–5 over the upper corner, ~2 min each, swivel casters, firmware unchanged. Results: tilt up to 23.5°, no stalls (truth speed 0.98 of commanded on the flanks); axle off the row 1.6–2.7 cm median and 6.3–8.0 cm max on the flanks, the same as on the bumpy flat (1.8–3.6 cm median, up to 8 cm at row ends); EKF yaw error 0.9–1.8° median, 3.7–4.5° p95 on the flanks; GPS after the tilt correction (§5) 1.3 cm median from the true ground point on the flanks (it would be off by up to 7 cm without it); gyro angle in spins on the flank within 1 % of truth. Scored with truth from the bag (roll/pitch), zones by the hill's own slope.
@@ -338,6 +404,7 @@ Findings that shaped the models:
 | Steppers | ramp in `motor_task`, STEP pulses from LEDC | same, still running; `speed()` is also published | Real missed steps/stall are not modelled beyond the torque cap |
 | Stepper wiring sign | real wiring | assumed +1 both sides | Check on hardware |
 | Debug console | UART1 | also mirrored to `esp/log` / `esp/console` (`DEBUG_OVER_ROS`) | Extra ~400 B publishes per 10 ms tick when there is output |
+| ToF frames | 2× VL53L8CX over I2C (Wire1), ST ULD driver | `hil/tof` (both sensors, 15 Hz) into the same frame queue | Real I2C timing, sun and target reflectance are only modelled; the sim's `fences.yaml` walls are ideal geometry |
 | Datum | saved or `HARDCODED_DATUM_AND_PATH` | same; lawn origin is 45.5 / 18.0 to match the hardcoded datum. A board with nothing saved publishes no `gps/odom` or `imu/data` until console `g` | – |
 
 ## 12. ROS 2 package (`ros2_ws/src/robot_package`)
@@ -413,6 +480,8 @@ Ordered roughly by impact. Fix them inside the existing architecture.
 
 26. **Row weave from the heading (found 2026-10-29).** HIL rows weave about ±5 cm (3.5 cm sd, ~11 cm peak to peak, wavelength ~1 m, true heading ±6–8°). Cause chain, measured: the drive follows the commanded yaw rate (correlation 0.99, no lag), and with an ideal pose the tracker drives a row within 0.1 cm, also with 0.4 s of pose delay (native bench, lane-change step). Replaying the recorded HIL pose error into the bench reproduces the weave from the **yaw** error alone (2.9 cm sd); the recorded position error alone gives 0.8 cm. The heading the ESP steers on (EKF yaw + gyro prediction + `CONTROL_YAW_TAU`, rebuilt from a bag) was off 4.2° sd / 9.7° p95 while driving. One source was a 0.04 rad/s deadband on the gyro z rate in imu_task, left from before the boot calibration: it dropped every slow steering correction from the heading (the gyro saw 97.5 % of the true turn while driving) until the GPS heading pulled it back over ~2 s. Removed 2026-10-29. Full HIL mission on the 3 m lawn, before → after: EKF yaw error on straights 5.4° → 3.6° sd (p95 10.9° → 7.2°), row weave 3.7 → 3.5 cm sd, mission 318 → 285 s, body past the lawn edge at most 24 → 8 cm, cut 83 % both. Swing per row (straight-line fit over one pass, HIL, 3 m lawn): TinyMPC 9.5 cm median / 22.5 cm worst; the heading tracker (2026-10-29) 8.1 / 14.6 cm; at gain 0.4 7.8 / 17.3 cm, so the gain changes the weave's shape, not its size. With the sim's true pose fed to the ESP instead of the EKF (diagnostic, first 140 s) rows still swing 3.4 / 10.9 cm: about half the weave is the drive and terrain, half the heading estimate. Single runs differ by ~1–2 cm, so smaller changes need repeated runs. Tried and dropped 2026-10-29: a course observer in the tracker (removes a constant heading bias or slope slide, but not the wander, and goes unstable when made fast), and EKF yaw process noise 0.001 → 1e-4 (heading error on rows 3.3° → 1.5° after removing the lag, row swing 4.4 cm, but the body went up to 12.6 cm past the edge). **Link timing (fixed 2026-10-30).** The ESP used to get 6–7 poses/s instead of 10, with gaps up to 0.4 s, and the EKF ran at 5.6–6.9 Hz because its inputs came unevenly. The causes were the 1 s reliable-publish freeze, the 256 B RX buffer, the bridge read and the WSL clock fight (bullet "Link stalls and clock" above). After the fixes: 10.0 poses/s, no gap over 0.25 s, EKF 10 Hz, `/imu` vs GPS stamps within 2 ms. In HIL the ESP sends at most one `/imu` per sim IMU sample (20 Hz); the real MPU6050 gives the full 25. Steering on a 20 Hz ESP timer (tried 2026-10-29) did not help and was dropped. **Causes found (2026-10-30)**, HIL 3 m lawn, 150 s, axle off the straight path (truth) median / p95: 2.9 / 8.2 cm before; the stepper ramp fix (item 1) 2.6 / 5.6 cm, heading sd on rows 4.2°; the `/imu` measure-time stamp (§5) 2.0 / 4.9 cm, 3.8°. The stamp was the cause of the swing after each curve: `/imu` arrived ~0.1 s late against the GPS (≈0.05 s sim filter and link, ≈0.045 s ESP clock ahead of the host), so the EKF heading overshot each curve exit by ~5° and recovered over ~1.5 s, and the mower followed it (true heading −6° at 1.4 s after the exit). With the fix the EKF error after an exit is ≤3° and gone within 1 s, true heading −1.4°. Ruled out: gyro scale, robot_localization itself, the analysis. A tracker gain sweep on the native bench (360 + 180 settings, best 2× better there) did not carry over to HIL and was dropped: the bench drive model is more forgiving than the sim's. Single runs; the sim IMU draws a new ±1 % scale at every Gazebo start. With the link and clock fixed (2026-10-30): 2.6 / 9.4 cm, 5.2° (`FUSED_YAW_LAG` 0.10), then 1.2 / 4.0 cm, 2.8°, curve-exit EKF error ≤1.4° after 0.2 s, with `FUSED_YAW_LAG` 0.15. The EKF yaw lag while turning measured 0.147 s in the first run and 0.055 s in the second, so 0.15 is not settled; measure it on the robot. The lever-arm gyro history now interpolates rates at the interval midpoint. Still open (**proposed**): the GPS heading itself (~±4° per 5 Hz fix at 0.3 m/s). (A row comparison of 3.8 → 8.6 cm against the 2 m lawn runs was a metric error: rows 0.2 m apart fell in each other's window.)
 
+27. **Wall assist: curbs don't lock, and pivots are tight (found 2026-10-30, HIL).** The ground filter (3 cm + 0.15 m per m ahead) keeps a 12 cm curb only within ~0.6 m and an 8 cm curb within ~0.33 m, too few points for a side fit, so the assist never locks on the garden bed. Curbs are recorded by driving by hand. **Proposed:** loosen the filter for low points that line up along an edge. In corner pivots the body passes 4–7 cm from the wall (the tail swing at `TOF_CORNER_STOP`); a sensor that reads 5 cm short there stops the turn instead (it is refused, not hit). A run on the earlier firmware (ws11) had the EKF heading drift during a pivot; not seen again and not explained.
+
 ## 15. Planned direction (proposed, not yet decided unless dated)
 
 - **Android phone as ROS 2 host (decided 2026-10):** a Galaxy A12 replaces the RPi. Keep the same nodes, EKF config and topics.
@@ -434,7 +503,7 @@ Ordered roughly by impact. Fix them inside the existing architecture.
   - Dense infill rows (12.5 cm) are far tighter than any smooth U-turn. The planner skipped rows for arc U-turns (2026-10-27..30); since 2026-10-30 it mows neighbouring rows and turns on the spot at the row ends, inside the turn zone (§8).
   - On a curve the blade swings outside the axle's path (radius √(r² + 0.18²)), and it reaches a row end 0.18 m after the axle does. Infill turns therefore belong in a headland strip the outline pass has already mowed, as farm coverage planners do.
   - The uncut corner triangles are covered by lead-outs (**proposed**): the outline pass knows the corners, so each cut runs a little past its own start (an outline ends beyond where it began), and the infill rows run out past the outline.
-- **Assisted manual driving and wall following** (raised 2026-10-27). Driving by hand next to a wall should not be able to hit it. While recording an outline, the mower should help the user follow a wall or terrain edge, because steering by hand and capturing points is finicky. Known edges: the safety filter above. Unknown walls need obstacle sensing (none yet, see Status).
+- **Assisted manual driving and wall following** (raised 2026-10-27). Driving by hand next to a wall should not be able to hit it. Unknown walls: the ToF wall assist (implemented 2026-10-30, §6). Known edges: the safety filter above (**proposed**). Still open: curbs and terrain edges (§14 item 27).
 - **Simulation (implemented 2026-10-27, section 11):** Gazebo Harmonic HIL with procedural mesh terrain, the mower with gearbox/step-rate limits, MPU6050 and RTK GNSS device models at the real datum. Cameras are supported by `sim_env` but not yet on the mower. Gaussian-plus-Markov GNSS noise is still not field RTK behaviour, so keep tuning the filter with **rosbags recorded in the field**, and record a bag on every field test.
 - **Sim-to-real validation** (**proposed**, 2026-10-28). HIL proves the firmware, link, EKF and timing, not the physics: slip on grass, motor torque, terrain, real GPS/IMU noise and latency are modelled, and a sim artifact can create or hide a problem (the HIL gyro over-counted spins by 20–30 %, §11). Before trusting sim tuning on the V3:
   1. Calibrate the sim from the real mower: logs at rest for GPS noise/latency and gyro noise/bias; straight, spin and stop tests on grass, measured with RTK, for commanded vs real speed, turn rate and slip. Put the numbers into `mower.yaml` / `lawn.yaml`.

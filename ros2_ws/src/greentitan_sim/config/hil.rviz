@@ -58,6 +58,20 @@ Visualization Manager:
         Value: /algo/markers/obstacles
         Durability Policy: Volatile
         Reliability Policy: Reliable
+    - Class: rviz_default_plugins/PointCloud2
+      Name: ToF zones (sim)
+      Enabled: true
+      Topic:
+        Value: /sim/tof/points
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Best Effort
+        History Policy: Keep Last
+      Style: Flat Squares
+      Size (m): 0.03
+      Color Transformer: AxisColor
+      Axis: Z
+      Decay Time: 0
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

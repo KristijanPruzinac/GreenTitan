@@ -75,6 +75,90 @@ typedef struct {
 //Rain sensor
 #define RAIN_SENSOR_PIN 39
 
+//ToF: 2x VL53L8CX 8x8 multizone at the front corners, own I2C bus (Wire1), wall-follow assist in
+//manual mode (ARCHITECTURE §6, wall assist). Not wired yet: a missing sensor is logged and ToF stays off.
+#define TOF_SDA_PIN 25
+#define TOF_SCL_PIN 23
+#define TOF_LPN_LEFT_PIN 4      // LPn low = sensor off the bus; raised one at a time to set the addresses
+#define TOF_LPN_RIGHT_PIN 14
+#define TOF_I2C_FREQUENCY 400000   // Hz; the sensor takes 1 MHz with short wires and strong pull-ups
+#define TOF_I2C_ADDRESS_LEFT 0x54  // 8-bit ULD convention; the right one keeps the default 0x52
+#define TOF_RANGING_FREQUENCY 15   // Hz, 8x8 zones
+#define TOF_ZONES 64
+#define TOF_FOV 0.7854f            // rad, 45 deg square field of view, 8 zones of 5.6 deg
+#define TOF_STATUS_VALID 5         // tof_frame_t status: 5 valid (ULD 5 and 9), 255 no target, else invalid
+#define TOF_STATUS_NO_TARGET 255
+// ULD zone order -> tof_frame_t (row 0 = top, col 0 = left seen from the sensor looking out).
+// Assumed from ST UM3109 / SparkFun examples (the ULD image is mirrored left-right); verify on hardware
+#define TOF_ULD_MIRROR_COLS 1
+#define TOF_ULD_FLIP_ROWS 0
+// Mount, robot frame (x forward, y left, z up, origin = axle midpoint on the ground), level (est.).
+// The right sensor is the mirror image (y and yaw negated)
+#define TOF_MOUNT_X 0.11f
+#define TOF_MOUNT_Y 0.15f
+#define TOF_MOUNT_Z 0.09f
+#define TOF_MOUNT_YAW 0.3491f      // rad, 20 deg outward: the two 45 deg fields overlap 5 deg straight ahead
+#define TOF_FRAME_DELAY 0.04f      // s, a frame is this old when read (integration + I2C or link; est.)
+#define TOF_FRAME_TIMEOUT_MS 300   // no frame for this long while the assist drives: stop
+#define TOF_MIN_HEIGHT 0.03f       // m above the plane the wheels stand on: lower is ground (mowed grass, est.)
+#define TOF_GROUND_SLOPE 0.15f     // plus this per m ahead of the axle: ground rising up to ~8.5 deg against the
+                                   // wheels' plane (bump, slope starting ahead) is still ground; walls are seen higher up
+#define TOF_MIN_RANGE 0.03f        // m
+#define TOF_MAX_RANGE 1.5f         // m, farther returns are dropped (only counted as open space)
+// Point memory: world frame, one point per grid cell, forgotten when old or far
+#define TOF_GRID 0.025f            // m
+#define TOF_MEMORY_POINTS 400
+#define TOF_MEMORY_AGE_MS 10000
+#define TOF_MEMORY_RADIUS 2.5f     // m from the axle
+#define TOF_POSE_JUMP 0.20f        // m, a pose jump this big (RTK fix change) clears the memory
+// Wall lines beside the mower: fitted over memory points from TOF_WALL_BEHIND behind the axle to
+// TOF_WALL_AHEAD ahead, up to TOF_WALL_MAX_DIST out (RANSAC + least squares on the inliers)
+#define TOF_WALL_BEHIND 0.5f
+#define TOF_WALL_AHEAD 1.0f
+#define TOF_WALL_MAX_DIST 1.2f
+#define TOF_FIT_TOLERANCE 0.03f    // m, inlier band
+#define TOF_FIT_ITERATIONS 40
+#define TOF_WALL_MIN_INLIERS 10
+#define TOF_WALL_MAX_RESIDUAL 0.02f   // m rms
+#define TOF_WALL_MIN_SPAN 0.30f    // m of wall along the inliers
+// Assist state machine (manual mode only): FREE -> LOCKED -> CORNER -> LOCKED
+#define TOF_LOCK_TIME_MS 300       // a side good this long ...
+#define TOF_LOCK_MAX_DIST 0.8f     // ... closer than this (centreline to wall) ...
+#define TOF_LOCK_MAX_ANGLE 0.52f   // ... and within 30 deg of the heading, while driving forward: lock
+#define TOF_WALL_CLEARANCE 0.35f   // m, body side to wall when locked: centreline 0.55, tail swing 0.46 + ToF noise (HIL: 0.30 refused corners)
+#define TOF_WALL_MAX_SPEED 0.2f    // m/s, the user's speed is cut to this
+#define TOF_WALL_REVERSE_SPEED 0.1f   // m/s, backwards straight
+#define TOF_WALL_MAX_TURN 0.5f     // rad/s
+#define TOF_WALL_MIN_SPEED 0.05f   // m/s, slowest forward speed while braking toward a stop point
+#define TOF_UNLOCK_TURN 0.4f       // rad/s away from the wall, held TOF_UNLOCK_TIME_MS: back to FREE
+#define TOF_UNLOCK_TIME_MS 300
+#define TOF_QUALITY_TIMEOUT_MS 500 // wall estimate bad this long: stop, FREE
+#define TOF_WALL_END_AHEAD 0.15f   // m: wall seen less than this past the front = wall end (stop, FREE)
+#define TOF_BODY_STOP 0.15f        // m, a point this close ahead of the body: stop, FREE
+#define TOF_BLOCKED_MS 1000        // braked to a standstill by a point ahead this long: stop, FREE
+#define TOF_CORNER_DETECT 1.0f     // m, a wall across the path this close to the axle = inner corner
+#define TOF_CORNER_STOP (TOF_WALL_CLEARANCE + MOWER_HALF_WIDTH)   // m, axle to the new wall when turning
+#define TOF_AHEAD_MIN_INLIERS 6
+#define TOF_AHEAD_AGE_MS 1000      // the wall across the path from points seen this recently: it is in the field of
+                                   // view and seen every frame; older points ahead were mixed returns at a wall's foot
+                                   // (zone half on the ground), which pile up along one ray when driving toward it (HIL)
+#define TOF_PIVOT_MARGIN 0.02f     // m around the body: the turn is refused if a point is in its sweep
+#define TOF_SWEEP_MIN_POINTS 2    // points in the sweep that refuse a turn: a lone one is a mixed return in front of a
+                                   // wall face (zone half on its foot); anything solid fills several grid cells
+#define TOF_SIDE_STOP 0.05f        // m: a point beside the body this close blocks turning toward it; locking needs
+                                   // this much room (stop: TOF_PIVOT_MARGIN beside, TOF_BODY_STOP ahead)
+#define TOF_LOCK_MIN_RUN 0.30f     // m: lock only on a wall that goes on at least this far past the front
+#define TOF_SWEEP_AGE_MS 3000      // the sweep checks only points this fresh, plus the followed wall's line
+#define TOF_SWEEP_WALL_BACK 0.7f   // m behind the axle: the followed wall's line reaches back this far
+#define TOF_PIVOT_SPEED 0.6f       // rad/s
+#define TOF_OUTLINE_SPACING 0.25f  // m of wall between outline points recorded while locked
+
+typedef struct {
+    uint16_t range_mm[TOF_ZONES];  // radial range along the zone centre direction
+    uint8_t status[TOF_ZONES];     // TOF_STATUS_*; zone k = row * 8 + col, row 0 = top, col 0 = left
+    uint32_t t_ms;                 // millis() when read
+} tof_frame_t;
+
 //CONSTANTS
 #define LEFT 0
 #define RIGHT 1
