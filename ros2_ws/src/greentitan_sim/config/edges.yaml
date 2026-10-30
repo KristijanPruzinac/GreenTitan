@@ -1,0 +1,61 @@
+# Edge-case course for the wall assist (outline recording): fences.yaml's lawn and base pad (spawn
+# at the origin, facing +x), with one isolated feature per edge case the assist must handle. About
+# 14 x 15 m: every feature has >= 1.5 m of free lawn in front, and >= ~2 m on the side the mower
+# follows it (the side fits look 1.2 m out). Walls are 1.0 m high and 0.15 m thick unless noted.
+# Inner corners are named by the angle between the walls (fences.yaml's convention: "inner 120"
+# is a 60 deg turn), outer corners by how far the mower turns round them.
+#   south: a straight wall (-7, -6.5)..(2.5, -6.5), lawn north of it, for approaches at any angle;
+#     a hedge 3 m east of it, 2 m on (x 4.5..7.5);
+#   island (outer corners): a trapezoid A(-6.5, -3.5) B(-3, -3.5) C(-3, -2) D(-5, -2); round it
+#     anticlockwise (island on the left): A 135, B 90, C 90, D 45 deg turns;
+#   thin wall (free wall end, 180 deg round its end): (-1, -3)..(1.5, -3), 0.08 m thick;
+#   pocket: a dead end 0.9 m wide (between faces) and 1.5 m deep, opening west in a wall on x 4.5
+#     (wings north and south of it);
+#   gap wall on y 1.5: (-6, 1.5)..(-3.5, 1.5), a 0.35 m gap (narrower than the mower), then
+#     (-3.15, 1.5)..(-0.65, 1.5), a 1.5 m gap, then (0.85, 1.5)..(3.35, 1.5);
+#   curbs on y 3.5: 0.08 m high (-5.5..-2.5) and 0.12 m high (0..3), 0.06 m thick;
+#   north, inner corners opening south: 45 deg at x -4.5 (2.4 m arms), 60 deg at x -0.5 (2.0 m),
+#     90 deg at x 3.5 (1.8 m), vertices on y 8.4; east, a 120 deg one opening west, vertex
+#     (7, 1.1), 2.0 m arms;
+#   a lone post, 0.1 m diameter, at (5.5, 4.5).
+# The wire mesh, pickets and rail fence are in fences.yaml. Reflectances (objects' and the ToF
+# defaults in mower.yaml) are est.
+# Use: hil.launch.py world:=<share>/config/edges.yaml
+world:
+  name: edges
+  physics: {engine: dart, step: 0.001, real_time_factor: 1.0}
+  origin: {latitude: 45.5, longitude: 18.0, altitude: 90.0}
+
+terrain:
+  type: mesh
+  size: [30.0, 30.0]
+  resolution: 0.05
+  tile_size: 5.0
+  seed: 42
+  friction: {mu: 0.5}
+  layers:
+    - {wavelength: 8.0,  amplitude: 0.01}    # barely undulating
+    - {wavelength: 1.5,  amplitude: 0.006}   # uneven turf
+    - {wavelength: 0.25, amplitude: 0.003}   # tufts
+  features:
+    - {type: flatten, position: [0.0, 0.0], radius: 1.0, blend: 1.0}                # base station
+
+objects:
+  - {name: long_wall, type: wall, height: 1.0, thickness: 0.15, points: [[-7.0, -6.5], [2.5, -6.5]]}
+  - {name: hedge, shape: {box: [3.0, 0.6, 1.2]}, position: [6.0, -6.5], reflectance: 0.2, roughness: 0.15,
+     color: [0.15, 0.35, 0.12]}                                                     # foliage, est.: rays get up to 15 cm in
+  - {name: island, type: wall, height: 1.0, thickness: 0.15, closed: true,
+     points: [[-6.5, -3.5], [-3.0, -3.5], [-3.0, -2.0], [-5.0, -2.0]]}
+  - {name: thin_wall, type: wall, height: 1.0, thickness: 0.08, points: [[-1.0, -3.0], [1.5, -3.0]]}
+  - {name: pocket, type: wall, height: 1.0, thickness: 0.15,
+     points: [[4.5, -1.2], [4.5, -2.525], [6.075, -2.525], [6.075, -3.575], [4.5, -3.575], [4.5, -4.6]]}
+  - {name: gap_wall_w, type: wall, height: 1.0, thickness: 0.15, points: [[-6.0, 1.5], [-3.5, 1.5]]}
+  - {name: gap_wall_m, type: wall, height: 1.0, thickness: 0.15, points: [[-3.15, 1.5], [-0.65, 1.5]]}
+  - {name: gap_wall_e, type: wall, height: 1.0, thickness: 0.15, points: [[0.85, 1.5], [3.35, 1.5]]}
+  - {name: curb_8, type: curb, points: [[-5.5, 3.5], [-2.5, 3.5]], height: 0.08, thickness: 0.06}
+  - {name: curb_12, type: curb, points: [[0.0, 3.5], [3.0, 3.5]], height: 0.12, thickness: 0.06}
+  - {name: corner_45, type: wall, height: 1.0, thickness: 0.15, points: [[-5.4184, 6.1827], [-4.5, 8.4], [-3.5816, 6.1827]]}
+  - {name: corner_60, type: wall, height: 1.0, thickness: 0.15, points: [[-1.5, 6.6679], [-0.5, 8.4], [0.5, 6.6679]]}
+  - {name: corner_90, type: wall, height: 1.0, thickness: 0.15, points: [[2.2272, 7.1272], [3.5, 8.4], [4.7728, 7.1272]]}
+  - {name: corner_120, type: wall, height: 1.0, thickness: 0.15, points: [[6.0, 2.8321], [7.0, 1.1], [6.0, -0.6321]]}
+  - {name: post, shape: {cylinder: [0.05, 1.0]}, position: [5.5, 4.5], reflectance: 0.3, color: [0.42, 0.32, 0.2]}
