@@ -131,7 +131,7 @@ typedef struct {
 #define MOTION_ROTATE_GAIN                1.5f   // rad/s per rad of heading error
 #define CONTROL_YAW_TAU                   1.0f   // s, control heading follows the EKF yaw this slowly, gyro in between
 #define CONTROL_YAW_SNAP                  0.5f   // rad, ~30 deg: further off, take the EKF yaw directly
-#define FUSED_YAW_LAG                     0.10   // s, EKF yaw behind its own stamp (0.15 until the gyro got its measure time, 2026-10-30; check in HIL, measure on the robot)
+#define FUSED_YAW_LAG                     0.15   // s, EKF yaw behind its own stamp while turning (HIL 2026-10-30 with host and ESP clocks in step: 0.147 s; measure on the robot)
 #define GPS_YAW_RELOCK                    10     // GPS yaws in a row outside the gate (2 s of driving): fuse the next anyway
 #define MOTION_POSE_TIMEOUT_MS            500    // stop driving if /fused_pose (10 Hz) goes quiet
 #define MOTION_STALL_DIST                0.10f  // m: driving forward but moved less than this ...
@@ -156,6 +156,8 @@ typedef struct {
 #define MICRO_ROS_DOMAIN_ID 0   // ROS domain of the micro-ROS node; HIL builds for parallel boards override it
 #endif
 #define CLOCK_SYNC_ATTEMPTS 10  // boot clock sync with the agent: the shortest round trip wins
+#define CLOCK_RESYNC_PERIOD_MS 2000   // while running: one sync attempt this often (crystal drift, host clock steps)
+#define CLOCK_RESYNC_TIMEOUT_MS 100   // an attempt blocks the micro-ROS loop at most this long
 #define MOTION_UPDATE_FREQUENCY 10
 #define MOTION_POSE_GAP_LONG_MS 150   // ms, a pose gap longer than this counts as late in the report
 #define MOTION_POSE_GAP_REPORT_MS 10000
@@ -174,6 +176,9 @@ typedef struct {
 
 //COMMUNICATION
 #define SERIAL_BAUDRATE 921600
+#define SERIAL_RX_BUFFER 4096   // micro-ROS link input; the 256 B default fills in ~3 ms at 921600 and loses frames
+#define ROS_RELIABLE_PUBLISH_TIMEOUT_MS 50   // a reliable publish waits this long for the ack (default 1000: one lost
+                                           // frame froze the whole micro-ROS loop for 1 s, HIL 2026-10-30)
 #define DEBUG_BAUDRATE 115200
 #define GPS_BAUDRATE 19200
 #define COMMUNICATION_TIMEOUT 150

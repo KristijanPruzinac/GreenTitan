@@ -147,6 +147,8 @@ void error_loop() {
 // +-0.2 s (HIL 2026-10-28). IMU messages carry this clock while GPS carries receiver time, so
 // the EKF put gyro and GPS out of order. Keep the attempt with the shortest round trip: its
 // error is at most half of it.
+static int64_t sync_rtt_us = INT64_MAX;   // the boot sync's round trip; set again on every reconnect
+
 bool sync_time()
 {
     const int timeout_ms = 1000;
@@ -165,8 +167,52 @@ bool sync_time()
     tp.tv_sec = time_ns / 1000000000;
     tp.tv_nsec = time_ns % 1000000000;
     clock_settime(CLOCK_REALTIME, &tp);
+    sync_rtt_us = best_rtt_us;
     SerialDebug.printf("[TIME] Synced, round trip %.0f ms (error < %.0f ms)\r\n", best_rtt_us * 1e-3, best_rtt_us * 0.5e-3);
     return true;
+}
+
+// The crystal drifts ~30 ppm against the host, 0.1 s an hour, and the gyro stamps would drift
+// away from the GPS stamps with it. So the sync keeps running: one attempt every
+// CLOCK_RESYNC_PERIOD_MS, taken only if its round trip is near the boot sync's (a slow one can be
+// lopsided), and only an error bigger than half the round trip moves the clock. adjtime() slews it
+// (runs it 1/64 faster or slower, ~15 ms/s) instead of stepping: one 30 ms step back made the /imu
+// stamps go backwards and timed out the pose (HIL 2026-10-30; the WSL host clock wanders by tens of
+// ms a minute). Each attempt holds the micro-ROS loop for one round trip.
+
+void clock_resync()
+{
+    static uint32_t last_ms = 0;
+    if (millis() - last_ms < CLOCK_RESYNC_PERIOD_MS || sync_rtt_us == INT64_MAX) return;
+    last_ms = millis();
+
+    int64_t t0 = esp_timer_get_time();
+    if (RMW_RET_OK != rmw_uros_sync_session(CLOCK_RESYNC_TIMEOUT_MS) || !rmw_uros_epoch_synchronized()) return;
+    int64_t rtt_us = esp_timer_get_time() - t0;
+    if (rtt_us > 2 * sync_rtt_us + 2000) return;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    int64_t error_ns = rmw_uros_epoch_nanos() - ((int64_t)ts.tv_sec * 1000000000LL + ts.tv_nsec);   // agent - ESP
+    if (llabs(error_ns) * 2 < rtt_us * 1000) return;   // inside what the round trip can resolve
+    // timeval with tv_usec in [0, 1e6): -10 ms is -1 s + 990000 us (0 s and -10000 us did nothing)
+    int64_t error_us = error_ns / 1000;
+    int64_t sec = error_us >= 0 ? error_us / 1000000 : -((-error_us + 999999) / 1000000);
+    struct timeval delta = { (time_t)sec, (suseconds_t)(error_us - sec * 1000000) };
+    adjtime(&delta, NULL);   // replaces a slew still under way: error_ns is measured against the clock as it is now
+    // Seldom: in HIL every line is one more reliable esp/log publish on the loop
+    static uint32_t report_ms = 0;
+    if (millis() - report_ms > 30000 || llabs(error_ns) > 50000000LL) {
+        SerialDebug.printf("[TIME] Resync: clock %+.1f ms off, round trip %.0f ms\r\n", error_ns * 1e-6, rtt_us * 1e-3);
+        report_ms = millis();
+    }
+}
+
+// A reliable publish runs the session until the agent acks it. All ESP output goes out from this
+// loop, so one lost frame stopped every topic for the 1 s default (HIL 2026-10-30). Not 0: then
+// esp/log backed up and stopped for good (2026-10-27). The stream still resends what is not acked.
+static void limit_reliable_wait(rcl_publisher_t* publisher)
+{
+    (void)rmw_uros_set_publisher_session_timeout(rcl_publisher_get_rmw_handle(publisher), ROS_RELIABLE_PUBLISH_TIMEOUT_MS);
 }
 
 void init_micro_ros(){
@@ -191,6 +237,7 @@ void init_micro_ros(){
         &datum_publisher, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, NavSatFix),
         "esp/datum"));
+    limit_reliable_wait(&datum_publisher);
 
     // IMU publisher: best effort like the EKF subscription. A reliable publish waits for the
     // agent's ack (one serial round-trip each), which stalled this loop.
@@ -204,6 +251,7 @@ void init_micro_ros(){
         &gps_publisher, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
         "gps/odom"));
+    limit_reliable_wait(&gps_publisher);
     
     // Compact and best effort: the EKF's 724-byte Odometry does not fit the serial MTU, and the
     // agent dropped the session when it could not split it (HIL 2026-10-28). An old pose is no use.
@@ -220,6 +268,7 @@ void init_micro_ros(){
         &path_data_publisher, &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float64MultiArray),
         "algo/path_data"));
+    limit_reliable_wait(&path_data_publisher);
     
     // GPS
     strcpy(gps_frame_id_buf, "odom");
@@ -282,27 +331,30 @@ void datum_set_callback(dds_callback_context_t* context) {
 // Recent /imu messages: mean gyro rates over the interval before each (rad/s, body axes), the
 // integrated gyro yaw and the tilt at it, with their stamps, so the GPS fix can use the motion at
 // the GPS epoch (the fix arrives ~0.2 s late). 1.6 s of messages cover the EKF's 1 s history.
+// The mean rates belong to the middle of their interval (tr), the yaw and tilt to its end (t): a
+// rate looked up at its end time came half an interval (~0.02-0.035 s) late (2026-10-30).
 #define GYRO_HISTORY (IMU_UPDATE_FREQUENCY * 8 / 5)
-struct ImuSample { double t; float gz, gx, gy, roll, pitch; double yaw; };
+struct ImuSample { double t, tr; float gz, gx, gy, roll, pitch; double yaw; };
 static ImuSample gyro_hist[GYRO_HISTORY];
 static int gyro_hist_n = 0, gyro_hist_head = 0;   // head = next slot to write
 
-// One field of the history at time t, interpolated. *spread = change between the two samples
-// around t: how far the true value can be off there (0 in a steady turn, large where one starts).
-static float imu_at(double t, float ImuSample::*field, float* spread) {
+// One field of the history at time t, interpolated over the samples' time `when` (t or tr).
+// *spread = change between the two samples around t: how far the true value can be off there
+// (0 in a steady turn, large where one starts).
+static float imu_at(double t, float ImuSample::*field, double ImuSample::*when, float* spread) {
     *spread = 0.0f;
     if (gyro_hist_n == 0) return 0.0f;
     int newest = (gyro_hist_head + GYRO_HISTORY - 1) % GYRO_HISTORY;
     int prev = (newest + GYRO_HISTORY - 1) % GYRO_HISTORY;
-    if (t >= gyro_hist[newest].t) {
+    if (t >= gyro_hist[newest].*when) {
         if (gyro_hist_n > 1) *spread = fabsf(gyro_hist[newest].*field - gyro_hist[prev].*field);
         return gyro_hist[newest].*field;
     }
     for (int k = 1; k < gyro_hist_n; k++) {
         int a = (newest + GYRO_HISTORY - k) % GYRO_HISTORY;      // older sample
         int b = (a + 1) % GYRO_HISTORY;
-        if (t >= gyro_hist[a].t) {
-            double f = (t - gyro_hist[a].t) / (gyro_hist[b].t - gyro_hist[a].t);
+        if (t >= gyro_hist[a].*when) {
+            double f = (t - gyro_hist[a].*when) / (gyro_hist[b].*when - gyro_hist[a].*when);
             *spread = fabsf(gyro_hist[b].*field - gyro_hist[a].*field);
             return gyro_hist[a].*field + f * (gyro_hist[b].*field - gyro_hist[a].*field);
         }
@@ -384,7 +436,9 @@ void imu_topic_callback(dds_callback_context_t* context) {
     double t = data->timestamp_sec + data->timestamp_nsec * 1e-9;
     int newest = (gyro_hist_head + GYRO_HISTORY - 1) % GYRO_HISTORY;
     if (gyro_hist_n == 0 || t > gyro_hist[newest].t) {           // keep stamps strictly increasing
+        double since = gyro_hist_n > 0 ? t - gyro_hist[newest].t : 1.0;
         gyro_hist[gyro_hist_head].t = t;
+        gyro_hist[gyro_hist_head].tr = t - 0.5 * (since < 0.5 ? since : 1.0 / IMU_UPDATE_FREQUENCY);
         gyro_hist[gyro_hist_head].gz = data->gyro_z;
         gyro_hist[gyro_hist_head].gx = data->gyro_x;
         gyro_hist[gyro_hist_head].gy = data->gyro_y;
@@ -418,8 +472,8 @@ void gps_topic_callback(dds_callback_context_t* context) {
     // point under the antenna, as if the mower stood level. base_link stays that point.
     double gps_t = data->timestamp_sec + data->timestamp_nsec * 1e-9;
     float spread_x, unused;
-    float roll = imu_at(gps_t, &ImuSample::roll, &unused), pitch = imu_at(gps_t, &ImuSample::pitch, &unused);
-    float roll_rate = imu_at(gps_t, &ImuSample::gx, &spread_x), pitch_rate = imu_at(gps_t, &ImuSample::gy, &unused);
+    float roll = imu_at(gps_t, &ImuSample::roll, &ImuSample::t, &unused), pitch = imu_at(gps_t, &ImuSample::pitch, &ImuSample::t, &unused);
+    float roll_rate = imu_at(gps_t, &ImuSample::gx, &ImuSample::tr, &spread_x), pitch_rate = imu_at(gps_t, &ImuSample::gy, &ImuSample::tr, &unused);
     float cy = cosf(fused_yaw_for_twist), sy = sinf(fused_yaw_for_twist);
     double tilt_fwd = GNSS_ANTENNA_HEIGHT * cos(roll) * sin(pitch), tilt_left = -GNSS_ANTENNA_HEIGHT * sin(roll);
     x_east  -= cy * tilt_fwd - sy * tilt_left;
@@ -460,7 +514,7 @@ void gps_topic_callback(dds_callback_context_t* context) {
     //   changing between samples. Below 3 sigma the direction is noise and nothing is fused.
     float gyro_spread;
     double lever = -GNSS_ANTENNA_BEHIND_AXLE *                          // body-left speed of the antenna
-                   imu_at(gps_t, &ImuSample::gz, &gyro_spread);
+                   imu_at(gps_t, &ImuSample::gz, &ImuSample::tr, &gyro_spread);
     double lever_err = hypot(GNSS_ANTENNA_BEHIND_AXLE * gyro_spread, GNSS_ANTENNA_HEIGHT * spread_x);
     double axle_e = vel_east  + sy * lever;
     double axle_n = vel_north - cy * lever;
@@ -686,6 +740,7 @@ void hil_ros_init() {
         RCCHECK(rclc_publisher_init_default(
             &log_publisher, &node,
             ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, String), "esp/log"));
+        limit_reliable_wait(&log_publisher);
     }
 }
 
@@ -930,6 +985,7 @@ void setup() {
     dds_init();
     SerialDebug.println("[BOOT] DDS initialized");
 
+    Serial.setRxBufferSize(SERIAL_RX_BUFFER);   // before begin(), or it keeps 256 B
     Serial.begin(SERIAL_BAUDRATE);
 
     SerialDebug.println("[BOOT] Connecting to micro-ROS agent...");
@@ -1217,6 +1273,7 @@ void loop() {
             }
 
             if (ros_link_check()) {
+                clock_resync();
                 hil_ros_tick();
                 RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
                 // spin_some takes at most one message per subscription; a second pass drains

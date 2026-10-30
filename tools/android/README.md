@@ -113,6 +113,53 @@ The stream is also on the LAN at `https://<phone-ip>:4444/video/mjpeg` (self-sig
 
 adb over USB isn't affected. Check that it works: `adb shell 'printf "HEAD / HTTP/1.0\r\n\r\n" | toybox nc -w 5 1.1.1.1 80'` should time out, while `./termux.sh 'curl -sI http://1.1.1.1/'` answers.
 
+## GreenTitan ROS 2 host (micro-ROS agent + EKF)
+
+The phone replaces the Raspberry Pi: ROS 2 Jazzy, the micro-ROS agent and `robot_package` run in a proot Ubuntu 24.04 arm64 inside Termux. No root.
+
+The container is the official `microros/micro-ros-agent:jazzy` Docker image (arm64), which `proot-distro` installs straight from Docker Hub. It carries Ubuntu 24.04, ROS Jazzy ros-core and the prebuilt agent, the same one the PC runs in Docker, so nothing has to be compiled. Plain Ubuntu plus `micro_ros_setup` would also work but builds the agent and Fast DDS on the phone. RoboStack/conda doesn't target Android's Bionic libc.
+
+Install (about 15 min, mostly apt unpacking under proot; the container takes ~1.1 GB):
+
+```bash
+./termux.sh 'pkg install -y proot-distro socat libusb python && pip install libusb1'
+./termux.sh 'proot-distro install -n ros microros/micro-ros-agent:jazzy'
+./termux.sh 'proot-distro login ros -- bash -c "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ros-jazzy-ros-base ros-jazzy-robot-localization python3-colcon-common-extensions socat"'
+# robot_package into the container, then build it there
+tar -cf rp.tar -C ../../ros2_ws/src robot_package && adb push rp.tar /data/local/tmp/ && rm rp.tar
+./termux.sh 'R=$PREFIX/var/lib/proot-distro/containers/ros/rootfs/root/gt_ws/src; mkdir -p $R && tar -xf /data/local/tmp/rp.tar -C $R'
+./termux.sh 'proot-distro login ros -- bash -c "source /opt/ros/jazzy/setup.bash && cd /root/gt_ws && colcon build"'
+adb push gt_host.sh esp_usb_bridge.py /data/local/tmp/
+./termux.sh 'cp /data/local/tmp/gt_host.sh /data/local/tmp/esp_usb_bridge.py ~ && chmod +x ~/gt_host.sh ~/esp_usb_bridge.py'
+```
+
+(From Git Bash, prefix the `adb push` lines with `MSYS_NO_PATHCONV=1`.)
+
+Start and stop the stack:
+
+```bash
+./termux.sh 'nohup setsid ~/gt_host.sh > ~/gt_host.out 2>&1 < /dev/null &'   # or run ~/gt_host.sh in the Termux app
+./termux.sh '~/gt_host.sh stop'
+```
+
+For unattended runs: Android 12 kills app child processes beyond 32, or ones that use a lot of CPU in the background (the "phantom process killer"). The stack is ~15 processes. Lift the limit once with `adb shell device_config set_sync_disabled_for_tests persistent; adb shell device_config put activity_manager max_phantom_processes 2147483647`, and hold `termux-wake-lock` (not done yet, 2026-10-30).
+
+`gt_host.sh` runs socat (TCP port 8888 → pty `/tmp/esp32`), the agent in serial mode on that pty at 921600, and `ros2 launch robot_package robot.launch.xml`. It's the same chain as `hil.launch.py`. Logs go to `/root/gt_logs/` in the container. It sets `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`: everything runs on the phone, and Android's `lo` has no multicast. For a shell with ROS: `./termux.sh 'proot-distro login ros'`, then `source /opt/ros/jazzy/setup.bash`.
+
+### The ESP32 link
+
+The agent only sees a TCP socket, so the byte source can change:
+
+- **Board on a PC** (bench test): `python -u ros2_ws/src/sim_env/scripts/serial_tcp_bridge.py COMx --host <phone ip> --port 8888`. Wi-Fi and NetGuard's LAN access are enough.
+- **On the robot, ESP32 on the phone's USB-C through the OTG splitter**: proot can't see `/dev/ttyUSB*`, and without root Android gives USB access only to an app that holds the user's permission. Termux:API holds it and passes the open device to `esp_usb_bridge.py`, which drives the CH340/CP210x with libusb and relays to `127.0.0.1:8888`:
+
+  ```bash
+  termux-usb -l                                         # e.g. ["/dev/bus/usb/001/002"]
+  termux-usb -r -e ~/esp_usb_bridge.py /dev/bus/usb/001/002
+  ```
+
+  `-r` shows Android's USB permission dialog, which has to be accepted on the screen (or with a tap over adb/mobile-mcp). DTR/RTS stay low, so the bridge doesn't reset the ESP32. *Not yet tested on hardware* (2026-10-30: the only ESP32 was in use).
+
 ## Security notes
 
 Frozen devices don't receive security patches. Keep them off the public internet and don't port-forward to them.

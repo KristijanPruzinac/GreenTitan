@@ -140,4 +140,4 @@ These are what the software must survive:
 - [ ] Bump/obstacle sensing (phone accelerometer and cameras are candidates).
 - [ ] Cover: final shape, phone wet compartment, GNSS radome, cable-coil guides.
 - [ ] Charging/docking station: not designed yet.
-- [ ] Phone link: prove that ROS 2 + micro-ROS agent + USB serial work on the A12 (ARCHITECTURE §15).
+- [ ] Phone link: ROS 2 + agent + EKF run on the A12 (2026-10-30); still to prove: USB serial to the real ESP32 over the OTG splitter (ARCHITECTURE §15).

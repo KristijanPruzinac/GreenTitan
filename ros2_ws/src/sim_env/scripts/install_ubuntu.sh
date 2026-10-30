@@ -30,10 +30,13 @@ sudo apt-get install -y \
   ros-$DISTRO-rviz2 ros-$DISTRO-teleop-twist-keyboard ros-dev-tools \
   python3-numpy python3-yaml python3-pil socat
 
-# WSL2 keeps its clock on the Windows host time itself. systemd-timesyncd fights it: every 32 s it
-# stepped the clock back ~0.7 s, and every ROS timer on wall time (sensor models, EKF) stalled that long.
+# WSL2 keeps its clock on the Windows host time itself (chronyd in the WSL system distro, on the
+# Hyper-V PTP clock). systemd-timesyncd fights it: every 32 s it pulled the clock ~0.2 s toward NTP and
+# chronyd pulled it back, an 86 ms swing the ESP clock could not follow (2026-10-30). Masked, because
+# a plain disable came back enabled.
 if grep -qi microsoft /proc/version; then
   sudo systemctl disable --now systemd-timesyncd 2>/dev/null || true
+  sudo systemctl mask systemd-timesyncd 2>/dev/null || true
 fi
 
 if [ "$HIL" = 1 ]; then

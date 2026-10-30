@@ -57,7 +57,10 @@ def main():
             return data
 
         stop = threading.Event()
-        threads = [threading.Thread(target=pump, args=(lambda: ser.read(4096), sock.sendall, stop), daemon=True),
+        # Serial side: what is waiting, at once. read(4096) held every ESP message up to the 10 ms
+        # timeout while the other direction went straight through, so the ESP's clock sync (which
+        # assumes both ways take equally long) set its clock ahead of the host (2026-10-30).
+        threads = [threading.Thread(target=pump, args=(lambda: ser.read(max(1, ser.in_waiting)), sock.sendall, stop), daemon=True),
                    threading.Thread(target=pump, args=(sock_read, ser.write, stop), daemon=True)]
         for t in threads:
             t.start()
