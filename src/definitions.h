@@ -149,7 +149,7 @@ typedef struct {
                                    // TOF_GUARD_CLEARANCE + 4 cm
 #define TOF_CORNER_LOOKAHEAD 0.25f // m, pure pursuit toward a corner: out to TOF_CORNER_STOP from the side wall in time
 #define TOF_CORNER_CREEP 0.15f     // m past the stop the mower creeps on while the turn's sweep is not yet clear
-#define TOF_CORNER_CURVED 0.35f    // rad turned in CORNER when the wall ahead is lost: curved round it, a corner point
+#define TOF_CORNER_CURVED 0.35f    // rad turned since an inner corner was seen whose wall ahead was lost: curved round it, a corner point
 #define TOF_AHEAD_MIN_INLIERS 6
 #define TOF_AHEAD_MAX_GAP 0.35f    // m: a wall ahead has no longer gap between its points (else two ends in line)
 #define TOF_AHEAD_AGE_MS 1000      // the wall across the path from points seen this recently: it is in the field of
@@ -166,6 +166,8 @@ typedef struct {
 // Guard (manual mode, whenever the ToF sees): every command is slowed so the body keeps TOF_GUARD_CLEARANCE from
 // memory points (TOF_SWEEP_MIN_POINTS of them), map objects out of view and, backwards, stays in the trail
 #define TOF_GUARD_CLEARANCE 0.13f  // m, body to object: the 0.10 m reference + 3 cm for ToF and pose noise
+#define TOF_GUARD_MIN_Z_CM 6       // memory points lower than this don't stop the guard: bumps in the turf read as low
+                                   // faces (fences.yaml terrain: 3-4 cm); curbs are guarded as the map's low edges
 #define TOF_PIVOT_CLEARANCE 0.10f  // m, the guard's limit during a corner turn: the reference itself (its sweep was
                                    // checked with TOF_GUARD_CLEARANCE before; new noisy points must not stop it halfway)
 #define TOF_GUARD_HORIZON 0.40f    // m of the fastest body point's travel looked ahead

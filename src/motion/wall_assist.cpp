@@ -72,8 +72,9 @@ static bool sample_set = false;
 static WorldLine target;              // ALIGN: the wall approached; OUTER: the wall that ended
 static double end_x = 0.0, end_y = 0.0;   // OUTER: the wall's end point
 static double state_x = 0.0, state_y = 0.0;   // where the state was entered
-static float state_yaw = 0.0f;
 static double corner_x = 0.0, corner_y = 0.0;  // CORNER: the two walls' intersection (world), last seen
+static float corner_yaw = 0.0f;                // heading when that corner was first seen
+static bool corner_pending = false;            // LOCKED after "wall ahead gone": recorded once it curves round it
 static bool circling = false;         // OUTER: on the circle round the end
 static float outer_turned = 0.0f, outer_yaw = 0.0f;
 static bool past_end = false;          // LOCKED after OUTER: the ended wall still left out of the fits until it is behind
@@ -386,7 +387,9 @@ static float free_travel(float v, float w, float horizon, float* hit_x = nullptr
     }
     return n + 1;
   };
+  const TofPoint* mem = tof_memory();
   for (int k = 0; k < rn; k++) {
+    if (mem[ridx[k]].z_cm < TOF_GUARD_MIN_Z_CM) continue;   // turf the wheels go over (curbs: the map's low edges)
     int i = first_step(rx[k], ry[k]);
     if (i < first) { second = first; first = i; if (hit_x) { *hit_x = rx[k]; *hit_y = ry[k]; } }
     else if (i < second) second = i;
@@ -440,7 +443,9 @@ static void set_state(int next, const char* why) {
   state = next;
   bad_since = ahead_bad_since = away_since = blocked_since = outer_since = 0;
   state_since = millis();
-  state_x = P.x; state_y = P.y; state_yaw = P.yaw;
+  state_x = P.x; state_y = P.y;
+  if (next == WALL_CORNER && !corner_pending) corner_yaw = P.yaw;
+  if (next != WALL_CORNER && next != WALL_LOCKED) corner_pending = false;
 }
 
 static void stop_free(const char* why) {
@@ -826,13 +831,17 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
         if (corner) { ahead_bad_since = 0; to_world(ix, iy, &corner_x, &corner_y); }
         else if (ahead_bad_since == 0) ahead_bad_since = now;
         if (ahead_bad_since && now - ahead_bad_since > TOF_QUALITY_TIMEOUT_MS) {
-          if (fabsf(angle_diff(P.yaw, state_yaw)) > TOF_CORNER_CURVED) {   // curved round a wide corner: record it
-            float cx, cy;
-            to_robot(corner_x, corner_y, &cx, &cy);
-            queue_point(cx, cy, true);
-            set_state(WALL_LOCKED, "curved round the corner");
-          } else set_state(WALL_LOCKED, "wall ahead gone");
+          set_state(WALL_LOCKED, "wall ahead gone");
+          corner_pending = true;   // a wide corner the mower curves round loses the wall ahead from view
         }
+      }
+      if (state == WALL_LOCKED && corner_pending) {
+        if (fabsf(angle_diff(P.yaw, corner_yaw)) > TOF_CORNER_CURVED) {   // it curved round it: record the corner
+          float cx, cy;
+          to_robot(corner_x, corner_y, &cx, &cy);
+          queue_point(cx, cy, true);
+          corner_pending = false;
+        } else if (hypot(P.x - corner_x, P.y - corner_y) > TOF_CORNER_DETECT + TOF_CORNER_STOP) corner_pending = false;
       }
 
       if (good && lin > 0.01f) {
