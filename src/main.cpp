@@ -50,7 +50,7 @@ int GPS_STABILITY_CHECK_DURATION_SECONDS = 15; // 5 minutes TODO: Revert to 5 mi
 
 float MOTION_ACC_FACTOR = 1.0;
 
-int MOWER_OVERLAP = 5;
+float MOWER_OVERLAP = 12.5;   // cm: half the 25 cm blade, every spot cut twice
 int MAX_DEVIATION = 50;
 
 float BATTERY_LEVEL_MIN = 16;
@@ -923,7 +923,7 @@ static void init_test_path() {
     BASE_EXIT_X_CM = DATUM_BASE_EXIT_DISTANCE_CM;
     BASE_EXIT_Y_CM = 0;
 
-    MOWER_OVERLAP = 5;
+    MOWER_OVERLAP = 12.5;
 
     AlgorithmCaptureStart();
 

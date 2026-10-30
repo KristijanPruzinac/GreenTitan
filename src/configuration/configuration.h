@@ -27,7 +27,7 @@ extern bool CONFIG_DATUM;
 // Globals
 extern bool SETUP_COMPLETED;
 
-extern int MOWER_OVERLAP;
+extern float MOWER_OVERLAP;
 extern int MAX_DEVIATION;
 extern double BASE_LON;
 extern double BASE_LAT;

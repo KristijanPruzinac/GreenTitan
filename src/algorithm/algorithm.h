@@ -18,7 +18,7 @@
 
 #include "../debug/debug_serial.h"
 
-extern int MOWER_OVERLAP;
+extern float MOWER_OVERLAP;
 
 // Capture: outline 0 is the lawn boundary (its first point the base), the rest islands; cm
 void AlgorithmCaptureStart();

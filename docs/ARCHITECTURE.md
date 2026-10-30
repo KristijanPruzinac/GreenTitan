@@ -205,7 +205,7 @@ Three layers. Each one knows less about the mower than the one above it:
 
 **Pieces** (`CoveragePlan::build`):
 - **Laps** go round every outline, the outer boundary and the islands. The first lap runs at `MOWER_EDGE_INSET`, the next ones step inward by at most a row spacing, and the last runs on the turn-zone boundary. At the defaults that gives 3 laps, at 0.25, 0.38 and 0.51 m. The lap count follows from the mower width and the turn inset; it isn't a fixed number. Lap legs beside an outline are edge legs (§6 edge corners).
-- **Rows** fill the turn zone. They run east–west, the blade width `MOWER_BLADE_DIAMETER` (0.25 m) less `MOWER_OVERLAP` (5 cm) apart, i.e. 20 cm, and are cut by the zone (until 2026-10-28 they were `MOWER_OVERLAP`, 15 cm, apart regardless of the blade). Pieces of row that join end to end are grouped into cells. Pieces shorter than `PLANNER_MIN_ROW` (10 cm) are dropped.
+- **Rows** fill the turn zone. They run east–west, the blade width `MOWER_BLADE_DIAMETER` (0.25 m) less `MOWER_OVERLAP` (12.5 cm since 2026-10-30, was 5) apart, i.e. 12.5 cm, so every spot is cut twice (HIL 3 m lawn 2026-10-30, 5 → 12.5 cm: uncut interior 6.6 → 0.6 %, mowing ~1.6× longer), and are cut by the zone (until 2026-10-28 they were `MOWER_OVERLAP`, 15 cm, apart regardless of the blade). Pieces of row that join end to end are grouped into cells. Pieces shorter than `PLANNER_MIN_ROW` (10 cm) are dropped.
   - Rows are visited skip-row (`next_row`, 2026-10-28): the next row is at least k = ⌈2·`MOTION_MIN_CORNER_RADIUS`/spacing⌉ rows away (`CoverageConfig.turn_radius`), so the U-turn is two arcs, not pivots. The cell is swept one way and back: the nearest row k or more away in the sweep direction comes first, then rows behind, and closer rows only when nothing else is left.
   - Row ends lie 1 cm (`PLANNER_TOLERANCE`) inside the turn zone, so they need no special care. Exactly on its edge, integer rounding put them outside, and every move between rows hopped 2 cm in and back out.
 
@@ -253,7 +253,7 @@ The body stays within 1 cm of the outline on the square, L-shape, neck and islan
 
 ## 9. Persistence (`configuration.cpp`, ESP32 NVS Preferences)
 
-- Namespace `config`: SETUP_DONE, MOW_OVERLAP (overlap in cm; was MOWER_OVERLAP = spacing until 2026-10-28, so an old saved value is ignored), MAX_DEVIATION, BASE_LON/LAT (datum), BASE_EXIT_X/Y_CM, GPS_ACC_THR (mm), GPS_STAB_DUR, BAT_LVL_MIN/MAX, IMU_INVERT, MOT_ACC_FACT, CFG_PATH, CFG_BATTERY, CFG_MOTORS, CFG_GYRO, CFG_RAIN, CFG_DATUM.
+- Namespace `config`: SETUP_DONE, MOW_OVERLAP_CM (overlap in cm, float since 2026-10-30; the older int MOW_OVERLAP and MOWER_OVERLAP keys are ignored), MAX_DEVIATION, BASE_LON/LAT (datum), BASE_EXIT_X/Y_CM, GPS_ACC_THR (mm), GPS_STAB_DUR, BAT_LVL_MIN/MAX, IMU_INVERT, MOT_ACC_FACT, CFG_PATH, CFG_BATTERY, CFG_MOTORS, CFG_GYRO, CFG_RAIN, CFG_DATUM.
 - Namespace `config_alg`: ALG_PATH.
 - Many of these are saved but never read by the logic: MAX_DEVIATION, GPS_STAB_DUR, MOT_ACC_FACT, CFG_GYRO, CFG_MOTORS, CFG_RAIN, CFG_BATTERY, BASE_EXIT_*.
 - Defaults live in `main.cpp`. Note `GPS_ACC_THRESHOLD = 3000` (mm), a debug value. The intended value is 18.
