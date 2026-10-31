@@ -341,7 +341,12 @@ static void trail_add() {
   if (trail_n > 0) {
     float dx = P.x - trail[last][0], dy = P.y - trail[last][1];
     if (dx * dx + dy * dy > TOF_POSE_JUMP * TOF_POSE_JUMP) trail_n = 0;   // RTK fix change: start again
-    else if (dx * dx + dy * dy < TOF_TRAIL_SPACING * TOF_TRAIL_SPACING && fabsf(angle_diff(P.yaw, trail[last][2])) < 0.15f) return;
+    // Already there (any pose, not just the last): turning back and forth at a wall must not push the way in
+    // out of the trail, or reversing out is refused (HIL edges.yaml 2026-10-31: wedged nose-on at the island)
+    for (int i = 0; i < trail_n; i++) {
+      float ex = P.x - trail[i][0], ey = P.y - trail[i][1];
+      if (ex * ex + ey * ey < TOF_TRAIL_SPACING * TOF_TRAIL_SPACING && fabsf(angle_diff(P.yaw, trail[i][2])) < 0.15f) return;
+    }
   }
   trail[trail_head][0] = P.x; trail[trail_head][1] = P.y; trail[trail_head][2] = P.yaw;
   trail_head = (trail_head + 1) % TOF_TRAIL_POINTS;
@@ -352,7 +357,7 @@ static bool in_trail(double wx, double wy) {
   for (int i = 0; i < trail_n; i++) {
     float c = cosf(trail[i][2]), s = sinf(trail[i][2]);
     float dx = wx - trail[i][0], dy = wy - trail[i][1];
-    if (body_dist(c * dx + s * dy, -s * dx + c * dy) <= 0.0f) return true;
+    if (body_dist(c * dx + s * dy, -s * dx + c * dy) <= TOF_TRAIL_SLACK) return true;
   }
   return false;
 }

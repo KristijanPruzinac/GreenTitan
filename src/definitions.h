@@ -180,6 +180,8 @@ typedef struct {
 #define TOF_SOLID_SPACING 0.04f    // m between samples along a map segment
 #define TOF_TRAIL_POINTS 64        // axle poses kept for the trail, one per TOF_TRAIL_SPACING (or 9 deg of turn)
 #define TOF_TRAIL_SPACING 0.05f    // m
+#define TOF_TRAIL_SLACK 0.04f      // m a tail point may lie outside the trail when reversing (heading error moves the
+                                   // tail corners, which sit on the edge of the old footprints, a few cm off them)
 // Vertical faces in one zone column (src/sensor/tof_map.cpp): zones within TOF_FACE_TOL + TOF_FACE_TOL_FRAC x the
 // distance of each other's horizontal distance, at rising heights, are on one face (anything steeper than ~60 deg;
 // a 15 deg slope differs by 10..30 cm from zone to zone)

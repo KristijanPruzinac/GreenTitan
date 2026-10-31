@@ -216,6 +216,36 @@ add('gap_wide', 'edges', along(*GAP_M, 'left', 0.3, FOLLOW + WT), follow_to(lamb
 add('post_head_on', 'edges', (7.5, 4.5, 180), head_on(12), (), 'straight at the lone 0.1 m post',
     known='the post stays in the blind strip between the two fields of view (each 20 deg outward from y +-0.15 m): '
           'no ToF point of it in the whole run')
+def guard_only(tmax, lin=0.3):   # the assist off: only the guard keeps the body off what the sensors see
+    def script(r):
+        r.assist(False)
+        r.mark('go')
+        r.hold(tmax, lin, need_lock=0)
+        finish(r)
+    return script
+
+
+# HIL edges.yaml 2026-10-31: driving by hand (assist off) at 44.6 deg straight at the thin wall's free end, the
+# body touched it
+add('end_diagonal', 'edges', (-3.89, -5.81, 44.6), guard_only(14), (), 'assist off, diagonally at a thin wall end')
+def wiggle_back(r):   # nose-on at a wall, turning back and forth until held, then backing out the way it came
+    r.assist(False)
+    r.hold(14, 0.3, need_lock=0)
+    for k in range(12):
+        for _ in range(25):
+            r.v(0.0, 0.6 if k % 2 else -0.6)
+    r.aim(-150)
+    r.mark('back')
+    x0, y0 = r.plant.x, r.plant.y
+    for _ in range(30):
+        r.v(-0.1, 0.0)
+    r.backed = math.hypot(r.plant.x - x0, r.plant.y - y0)
+    finish(r)
+
+
+# HIL edges.yaml 2026-10-31: turning back and forth nose-on at the island pushed the way in out of the trail; the guard
+# then refused to reverse and the mower was wedged
+add('wiggle_back', 'edges', (-0.8, -1.8, -150), wiggle_back, ('backed',), 'nose-on at a wall, wiggle 60 s, back out')
 add('post_graze', 'edges', (7.5, 4.8, 180), head_on(12), (), 'passing the post with the body side 5 cm from it')
 
 # pull away / let go in each phase
@@ -351,6 +381,9 @@ def evaluate(r, m, checks):
                 out.append((c, False, f"contact with {m['contact']['part']} at {m['contact']['t']} s ({r.state})"))
             else:
                 out.append((c, mc['m'] >= bench.PASS_CLEARANCE, f"min {mc['m']*100:.1f} cm ({mc['part']}, {mc['t']} s)"))
+        elif c == 'backed':   # reversed at least 0.1 m out along its trail
+            b = getattr(r, 'backed', 0.0)
+            out.append((c, b >= 0.1, f'{b * 100:.0f} cm back'))
         elif c == 'lock':
             out.append((c, lock is not None, f"{m['time_to_lock']} s" if lock is not None else 'never locked'))
         elif c == 'parallel':
