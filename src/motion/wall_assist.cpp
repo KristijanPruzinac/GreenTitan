@@ -223,6 +223,9 @@ static WallLine fit_ahead(const WallLine* followed) {
   for (int k = 0; k < rn; k++) {
     if (rx[k] < MOWER_FRONT_OVERHANG || rx[k] > TOF_CORNER_DETECT + 0.5f || fabsf(ry[k]) > TOF_WALL_MAX_DIST) continue;
     if (!fresh(k, now, TOF_AHEAD_AGE_MS)) continue;
+    // Turf read as low faces lines up across the path just ahead (HIL fences.yaml 2026-10-31: false corners
+    // 0.25 m ahead); a wall across the path stands higher
+    if (tof_memory()[ridx[k]].z_cm < TOF_GUARD_MIN_Z_CM) continue;
     if (followed && followed->valid) {
       if (near_line(*followed, rx[k], ry[k], 2.0f * TOF_FIT_TOLERANCE)) continue;
       // Beyond the followed wall is not in the path: past an outer corner its other face would
