@@ -163,6 +163,7 @@ typedef struct {
 #define TOF_PIVOT_START_SPEED 0.07f // m/s: a corner turn starts (and its sweep is checked) only below this speed (creep: 0.05)
 #define TOF_PIVOT_NEAR_DONE 0.26f  // rad: a corner turn the guard holds this close to its end is done (LOCKED curves on)
 #define TOF_OUTLINE_SPACING 0.25f  // m of wall between outline points recorded while locked
+#define TOF_OUTLINE_SUPPORT 0.15f  // m along the wall: an outline point needs wall points this close beside the axle
 // Guard (manual mode, whenever the ToF sees): every command is slowed so the body keeps TOF_GUARD_CLEARANCE from
 // memory points (TOF_SWEEP_MIN_POINTS of them), map objects out of view and, backwards, stays in the trail
 #define TOF_GUARD_CLEARANCE 0.13f  // m, body to object: the 0.10 m reference + 3 cm for ToF and pose noise

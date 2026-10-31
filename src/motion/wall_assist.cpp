@@ -473,8 +473,15 @@ static void queue_point(float fx, float fy, bool corner) {
 static void sample_outline(const WallLine& L, bool force) {
   if (!force && sample_set && hypot(P.x - sample_x, P.y - sample_y) < TOF_OUTLINE_SPACING) return;
   float t = -(L.cx * L.ux + L.cy * L.uy);
-  if (L.cx + t * L.ux < L.x_min - TOF_FIT_TOLERANCE) return;
-  queue_point(L.cx + t * L.ux, L.cy + t * L.uy, false);
+  float fx = L.cx + t * L.ux, fy = L.cy + t * L.uy;
+  if (fx < L.x_min - TOF_FIT_TOLERANCE) return;
+  // Wall seen there: a fit across a gap (the end of one wall and the next in line) has no points beside the axle
+  // (HIL fences.yaml 2026-10-31: a point in the 1.5 m gap, 57 cm off)
+  int near = 0;
+  for (int k = 0; k < rn && near < 2; k++)
+    if (fabsf(rx[k] - fx) < TOF_OUTLINE_SUPPORT && near_line(L, rx[k], ry[k], TOF_FIT_TOLERANCE)) near++;
+  if (near < 2) return;
+  queue_point(fx, fy, false);
   sample_x = P.x; sample_y = P.y; sample_set = true;
 }
 
