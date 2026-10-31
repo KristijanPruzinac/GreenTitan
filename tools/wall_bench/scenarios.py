@@ -243,6 +243,15 @@ APP45 = (-3.0 - 1.607, FACE + 1.607, -45)                         # approach_45_
 add('let_go_align', 'edges', APP45,
     then(lambda r: r.state == 'ALIGN' and math.degrees(r.plant.yaw) > -35.0, let_go), ('stopped',),
     'stick released 10 deg into the curve onto the wall (ALIGN)')
+def spin_away(r):   # stops pushing and turns on the spot, away from the wall
+    r.mark('pull')
+    for _ in range(20):
+        r.v(0.0, 0.6)
+
+
+add('spin_in_align', 'edges', APP45,
+    then(lambda r: r.state == 'ALIGN' and math.degrees(r.plant.yaw) > -35.0, spin_away), ('released',),
+    'mid-curve onto the wall the user stops pushing and turns on the spot: FREE, the turn is driven (HIL 2026-10-31)')
 add('inner_45_head_on', 'edges', (-4.5, 5.0, 90), head_on(25), ('lock', 'turned'),
     'straight into the 45 deg inner corner along its bisector (22.5 deg to each arm): onto an arm, then round the corner')
 STEP = [(-11.0, -5.0), (-11.0, -2.0), (-11.8, -2.0), (-11.8, 1.0)]

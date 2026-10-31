@@ -711,6 +711,13 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
       }
     } else away_since = 0;
 
+    // Not driving on toward the wall (stopped, turning on the spot): hand the steering back (the guard stays)
+    if (state == WALL_ALIGN && user_fresh && lin <= 0.01f) {
+      set_state(WALL_FREE, "user stopped driving forward");
+      good_since[0] = good_since[1] = ahead_good_since = 0;
+      v = lin; w = ang;
+    }
+
     if (state == WALL_ALIGN) {
       // Keep the approached wall up to date from a fit of the same wall
       if (L.valid && same_wall(target, L.cx, L.cy, L.ux, L.uy)) {
