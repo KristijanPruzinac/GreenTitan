@@ -1,7 +1,7 @@
 """All wall-bench scenarios (or those matching --only) over several seeds, in parallel: a pass/fail
 table with the failing checks' reasons; a PNG per failing run goes to --out (never the repo).
 
-    python3 tools/wall_bench/run_all.py [--seeds 5] [--jobs N] [--only REGEX] [--out /tmp/wall_bench]
+    python3 tools/wall_bench/run_all.py [--seeds 5] [--jobs N] [--only REGEX] [--out /tmp/wall_bench] [--slip 0.1] [--terrain world]
 """
 import argparse
 import multiprocessing
@@ -14,9 +14,10 @@ import scenarios
 
 
 def _one(job):
-    name, seed, out = job
+    name, seed, out, slip, terrain = job
     try:
-        return scenarios.run(name, seed, plot=os.path.join(out, f'{name}_s{seed}.png'), plot_failed_only=True)
+        return scenarios.run(name, seed, plot=os.path.join(out, f'{name}_s{seed}.png'), slip=slip, terrain=terrain,
+                             plot_failed_only=True)
     except Exception as e:   # a crashed run is a failure, not the end of the table
         return {'name': name, 'seed': seed, 'pass': False, 'checks': [('run', False, repr(e))], 'metrics': {}, 'sim_s': 0.0}
 
@@ -27,11 +28,13 @@ def main():
     ap.add_argument('--jobs', type=int, default=os.cpu_count())
     ap.add_argument('--only', default='')
     ap.add_argument('--out', default='/tmp/wall_bench')
+    ap.add_argument('--slip', type=float, default=0.0, help='mean wheel slip, 0..0.9')
+    ap.add_argument('--terrain', choices=('flat', 'world'), default='flat', help="ToF rays against flat ground or the world's terrain")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     build.build()
     names = [n for n in scenarios.SCENARIOS if re.search(a.only, n)]
-    jobs = [(n, s, a.out) for n in names for s in range(a.seeds)]
+    jobs = [(n, s, a.out, a.slip, a.terrain) for n in names for s in range(a.seeds)]
     t0 = time.time()
     with multiprocessing.Pool(a.jobs) as pool:
         results = pool.map(_one, jobs, chunksize=1)
@@ -40,7 +43,7 @@ def main():
     for r in results:
         by.setdefault(r['name'], []).append(r)
     width = max(len(n) for n in names)
-    npass = 0
+    npass = nknown = 0
     for n in names:
         rs = by[n]
         ok = sum(r['pass'] for r in rs)
@@ -50,9 +53,14 @@ def main():
         if ok < len(rs):
             bad = next(r for r in rs if not r['pass'])
             why = f"seed {bad['seed']}: " + '; '.join(f'{c} {d}' for c, k, d in bad['checks'] if not k)
-        print(f"{n:{width}s} {'PASS' if ok == len(rs) else 'FAIL'} {ok}/{len(rs)}  min {min(mins) * 100 if mins else float('nan'):5.1f} cm  {why}")
+        known = scenarios.SCENARIOS[n]['known']
+        verdict = 'PASS' if ok == len(rs) else 'KNOWN' if known else 'FAIL'
+        nknown += verdict == 'KNOWN'
+        if verdict == 'KNOWN':
+            why = f'(known: {known}) ' + why
+        print(f"{n:{width}s} {verdict:5s} {ok}/{len(rs)}  min {min(mins) * 100 if mins else float('nan'):5.1f} cm  {why}")
     sim = sum(r['sim_s'] for r in results)
-    print(f'{npass}/{len(names)} scenarios pass all seeds; {len(results)} runs, {sim:.0f} s simulated in {wall:.0f} s '
+    print(f'{npass}/{len(names)} scenarios pass all seeds, {nknown} known limits; {len(results)} runs, {sim:.0f} s simulated in {wall:.0f} s '
           f'on {a.jobs} jobs ({sim / wall:.0f}x real time overall); failure plots in {a.out}')
 
 

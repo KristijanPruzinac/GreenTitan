@@ -1068,7 +1068,8 @@ static void publish_manual_move(float lin, float ang) {
         SerialDebug.println("[DEBUG] Not in manual mode (press 'm' first)");
         return;
     }
-    // The wall assist (when locked on a wall) drives with this command instead
+    // While the ToF sees, the wall assist drives with this command instead: guarded (10 cm body clearance),
+    // and steered along a wall when it follows one
     if (!wall_assist_manual(lin, ang)) {
         motor_data_t cmd = { MOTOR_MOVE, lin, ang };
         DDS_PUBLISH("/motor", cmd);

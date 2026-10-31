@@ -121,37 +121,64 @@ typedef struct {
 #define TOF_WALL_MIN_INLIERS 10
 #define TOF_WALL_MAX_RESIDUAL 0.02f   // m rms
 #define TOF_WALL_MIN_SPAN 0.30f    // m of wall along the inliers
-// Assist state machine (manual mode only): FREE -> LOCKED -> CORNER -> LOCKED
-#define TOF_LOCK_TIME_MS 300       // a side good this long ...
-#define TOF_LOCK_MAX_DIST 0.8f     // ... closer than this (centreline to wall) ...
-#define TOF_LOCK_MAX_ANGLE 0.52f   // ... and within 30 deg of the heading, while driving forward: lock
+// Assist state machine (manual mode only): FREE -> ALIGN -> LOCKED -> CORNER -> PIVOT -> LOCKED, LOCKED -> OUTER -> LOCKED
+#define TOF_LOCK_TIME_MS 300       // a fit good this long (driving forward) is a candidate to curve onto
+#define TOF_LOCK_MAX_DIST 0.8f     // m, centreline to wall: a side wall closer than this counts as followed
+#define TOF_LOCK_MAX_ANGLE 0.52f   // rad: a side fit within 30 deg of the heading ends the round of a wall end
 #define TOF_WALL_CLEARANCE 0.35f   // m, body side to wall when locked: centreline 0.55, tail swing 0.46 + ToF noise (HIL: 0.30 refused corners)
-#define TOF_WALL_MAX_SPEED 0.2f    // m/s, the user's speed is cut to this
-#define TOF_WALL_REVERSE_SPEED 0.1f   // m/s, backwards straight
+#define TOF_WALL_MAX_SPEED 0.2f    // m/s, the user's speed is cut to this while the assist steers
 #define TOF_WALL_MAX_TURN 0.5f     // rad/s
 #define TOF_WALL_MIN_SPEED 0.05f   // m/s, slowest forward speed while braking toward a stop point
+#define TOF_LOOKAHEAD 0.5f         // m: the assist steers by pure pursuit to a point this far along the follow path
+#define TOF_ALIGN_DETECT 1.3f      // m along the heading to a wall's follow line: curve onto it from here (ALIGN)
+#define TOF_ALIGN_HEAD_ON 0.52f    // rad: a wall ahead within 30 deg of head-on: the user's steer, else the side with
+                                   // more room, picks the way to turn; otherwise the smaller turn
+#define TOF_ALIGN_DONE_ANGLE 0.26f // rad: within 15 deg of the wall ...
+#define TOF_ALIGN_DONE_DIST 0.10f  // ... and of the follow distance: LOCKED
+#define TOF_ALIGN_MAX_RUN 2.5f     // m from where the curve started without locking: stop, FREE (any speed)
 #define TOF_UNLOCK_TURN 0.4f       // rad/s away from the wall, held TOF_UNLOCK_TIME_MS: back to FREE
 #define TOF_UNLOCK_TIME_MS 300
 #define TOF_QUALITY_TIMEOUT_MS 500 // wall estimate bad this long: stop, FREE
-#define TOF_WALL_END_AHEAD 0.15f   // m: wall seen less than this past the front = wall end (stop, FREE)
-#define TOF_BODY_STOP 0.15f        // m, a point this close ahead of the body: stop, FREE
-#define TOF_BLOCKED_MS 1000        // braked to a standstill by a point ahead this long: stop, FREE
-#define TOF_CORNER_DETECT 1.0f     // m, a wall across the path this close to the axle = inner corner
-#define TOF_CORNER_STOP (TOF_WALL_CLEARANCE + MOWER_HALF_WIDTH)   // m, axle to the new wall when turning
+#define TOF_WALL_END_AHEAD 0.15f   // m: wall seen less than this past the front = wall end (round it, OUTER)
+#define TOF_GAP_BRIDGE 1.3f        // m: a wall end whose line goes on within this (gap, pocket mouth) is driven past
+#define TOF_OUTER_MAX_TURN 4.71f   // rad round a wall end without finding the wall again: stop, FREE
+#define TOF_OUTER_END_DIST 0.2f    // m, the wall found round an end passes this close to the end point
+#define TOF_BLOCKED_MS 1000        // the guard holds the assist's command at a standstill this long: stop, FREE
+#define TOF_CORNER_DETECT 1.3f     // m, a wall across the path this close to the axle = inner corner
+#define TOF_CORNER_STOP 0.63f      // m, axle to both walls where a corner turn on the spot starts: tail swing 0.46 +
+                                   // TOF_GUARD_CLEARANCE + 4 cm
+#define TOF_CORNER_LOOKAHEAD 0.25f // m, pure pursuit toward a corner: out to TOF_CORNER_STOP from the side wall in time
+#define TOF_CORNER_CREEP 0.15f     // m past the stop the mower creeps on while the turn's sweep is not yet clear
+#define TOF_CORNER_CURVED 0.35f    // rad turned since an inner corner was seen whose wall ahead was lost: curved round it, a corner point
 #define TOF_AHEAD_MIN_INLIERS 6
+#define TOF_AHEAD_MAX_GAP 0.35f    // m: a wall ahead has no longer gap between its points (else two ends in line)
 #define TOF_AHEAD_AGE_MS 1000      // the wall across the path from points seen this recently: it is in the field of
                                    // view and seen every frame; older points ahead were mixed returns at a wall's foot
                                    // (zone half on the ground), which pile up along one ray when driving toward it (HIL)
-#define TOF_PIVOT_MARGIN 0.02f     // m around the body: the turn is refused if a point is in its sweep
-#define TOF_SWEEP_MIN_POINTS 2    // points in the sweep that refuse a turn: a lone one is a mixed return in front of a
+#define TOF_SWEEP_MIN_POINTS 2    // memory points that stop the guard: a lone one is a mixed return in front of a
                                    // wall face (zone half on its foot); anything solid fills several grid cells
-#define TOF_SIDE_STOP 0.05f        // m: a point beside the body this close blocks turning toward it; locking needs
-                                   // this much room (stop: TOF_PIVOT_MARGIN beside, TOF_BODY_STOP ahead)
-#define TOF_LOCK_MIN_RUN 0.30f     // m: lock only on a wall that goes on at least this far past the front
-#define TOF_SWEEP_AGE_MS 3000      // the sweep checks only points this fresh, plus the followed wall's line
-#define TOF_SWEEP_WALL_BACK 0.7f   // m behind the axle: the followed wall's line reaches back this far
+#define TOF_LOCK_MIN_RUN 0.30f     // m: curve onto a wall only if it goes on at least this far past the front
+#define TOF_SWEEP_WALL_BACK 0.7f   // m behind the axle: the followed wall's line, frozen for a corner turn, reaches back this far
 #define TOF_PIVOT_SPEED 0.6f       // rad/s
+#define TOF_PIVOT_START_SPEED 0.07f // m/s: a corner turn starts (and its sweep is checked) only below this speed (creep: 0.05)
+#define TOF_PIVOT_NEAR_DONE 0.26f  // rad: a corner turn the guard holds this close to its end is done (LOCKED curves on)
 #define TOF_OUTLINE_SPACING 0.25f  // m of wall between outline points recorded while locked
+// Guard (manual mode, whenever the ToF sees): every command is slowed so the body keeps TOF_GUARD_CLEARANCE from
+// memory points (TOF_SWEEP_MIN_POINTS of them), map objects out of view and, backwards, stays in the trail
+#define TOF_GUARD_CLEARANCE 0.13f  // m, body to object: the 0.10 m reference + 3 cm for ToF and pose noise
+#define TOF_GUARD_MIN_Z_CM 6       // memory points lower than this don't stop the guard: bumps in the turf read as low
+                                   // faces (fences.yaml terrain: 3-4 cm); curbs are guarded as the map's low edges
+#define TOF_PIVOT_CLEARANCE 0.10f  // m, the guard's limit during a corner turn: the reference itself (its sweep was
+                                   // checked with TOF_GUARD_CLEARANCE before; new noisy points must not stop it halfway)
+#define TOF_GUARD_HORIZON 0.40f    // m of the fastest body point's travel looked ahead
+#define TOF_GUARD_STEP 0.02f       // m, checked every
+#define TOF_GUARD_DECEL 0.25f      // m/s^2 at the wheels (the motor ramp does ~0.35)
+#define TOF_GUARD_DELAY 0.10f      // s, command to motion (tick, frame and pose age)
+#define TOF_GUARD_RANGE 1.3f       // m from the axle: solid samples (map, frozen wall) kept this close
+#define TOF_SOLID_POINTS 256       // solid samples (map, frozen wall) the guard checks at most
+#define TOF_SOLID_SPACING 0.04f    // m between samples along a map segment
+#define TOF_TRAIL_POINTS 64        // axle poses kept for the trail, one per TOF_TRAIL_SPACING (or 9 deg of turn)
+#define TOF_TRAIL_SPACING 0.05f    // m
 // Vertical faces in one zone column (src/sensor/tof_map.cpp): zones within TOF_FACE_TOL + TOF_FACE_TOL_FRAC x the
 // distance of each other's horizontal distance, at rising heights, are on one face (anything steeper than ~60 deg;
 // a 15 deg slope differs by 10..30 cm from zone to zone)

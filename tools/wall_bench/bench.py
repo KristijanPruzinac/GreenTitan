@@ -495,7 +495,7 @@ def metrics(run, maps=None):
         m['contact'] = {'t': round(run.contact[0], 2), 'part': run.contact[1],
                         'at': [round(run.contact[2][0], 2), round(run.contact[2][1], 2)]}
     m['transitions'] = [(round(a, 2), b, c, why) for a, b, c, why in run.trans]
-    lock = next((a for a, b, c, _ in run.trans if b == 'FREE' and c == 'LOCKED'), None)
+    lock = next((a for a, b, c, _ in run.trans if c == 'LOCKED'), None)
     go = run.marks.get('go', 0.0)
     m['time_to_lock'] = round(lock - go, 2) if lock is not None else None
     if len(t):
@@ -569,7 +569,7 @@ def plot(run, m, path, title=''):
         if poly[:, 0].max() < lo[0] or poly[:, 0].min() > hi[0] or poly[:, 1].max() < lo[1] or poly[:, 1].min() > hi[1]:
             continue
         ax[0].fill(poly[:, 0], poly[:, 1], color={'hedge': 'g', 'curb': '0.6'}.get(kind, '0.25'), lw=0)
-    col = {'FREE': 'tab:blue', 'LOCKED': 'tab:green', 'CORNER': 'tab:orange', 'PIVOT': 'tab:red'}
+    col = {'FREE': 'tab:blue', 'LOCKED': 'tab:green', 'CORNER': 'tab:orange', 'PIVOT': 'tab:red', 'ALIGN': 'tab:cyan', 'OUTER': 'tab:purple'}
     for s_, c_ in col.items():
         k = state == s_
         ax[0].scatter(g[k, 0], g[k, 1], s=2, color=c_, label=s_)

@@ -1,9 +1,12 @@
 #include "wall_assist.h"
 #include <new>
+#include "../sensor/tof_map.h"
 
-// States. PIVOT is the turn on the spot at an inner corner (CORNER = braking toward it).
-enum wall_state { WALL_FREE, WALL_LOCKED, WALL_CORNER, WALL_PIVOT };
-static const char* state_name[] = { "FREE", "LOCKED", "CORNER", "PIVOT" };
+// States. ALIGN curves onto a wall the mower drives toward; CORNER brakes toward an inner corner, PIVOT turns on
+// the spot there; OUTER goes round a wall's end (outer corner, opening, free end) at the follow distance and
+// looks for the wall to go on.
+enum wall_state { WALL_FREE, WALL_ALIGN, WALL_LOCKED, WALL_CORNER, WALL_PIVOT, WALL_OUTER };
+static const char* state_name[] = { "FREE", "ALIGN", "LOCKED", "CORNER", "PIVOT", "OUTER" };
 
 // A fitted line in the robot frame (x forward, y left, origin = axle midpoint)
 struct WallLine {
@@ -19,10 +22,14 @@ struct WallLine {
   float x_min;      // nearest inlier (behind the axle when the wall goes on past it)
 };
 
+// A wall face in the world frame: a point on it and the direction the mower follows it in
+struct WorldLine { double px, py; float ux, uy; };
+
 static bool available = false;
 static volatile bool enabled = true;
 static volatile int state = WALL_FREE;
-static int side = 0;                // locked side: 0 left, 1 right
+static volatile bool guarding = false;   // the guard shapes the manual commands (fused pose and frames fresh)
+static int side = 0;                     // wall side while following: 0 left, 1 right
 static float sigma(int s) { return s == 0 ? 1.0f : -1.0f; }
 
 // Shared with the main loop
@@ -43,12 +50,37 @@ static int* ridx = nullptr;    // memory slot of each
 static int rn = 0;
 static float* px = nullptr;    // candidates of one fit
 static float* py = nullptr;
+// Solid samples for the guard, robot frame: map objects out of the sensors' view and, in a corner turn, the
+// frozen followed wall. One counts as much as TOF_SWEEP_MIN_POINTS memory points.
+static float* sx = nullptr;
+static float* sy = nullptr;
+static int sn = 0;
+static MapObject* map_objs = nullptr;
+static int map_n = 0;
+static uint32_t map_version = 0xFFFFFFFFu;
+// Trail: axle poses of the last few metres (world). Where the body has just been is free, which is all the
+// guard knows behind the mower: the sensors only look forward.
+static float trail[TOF_TRAIL_POINTS][3];
+static int trail_n = 0, trail_head = 0;
 
-static uint32_t good_since[2] = { 0, 0 };
-static uint32_t bad_since = 0, ahead_bad_since = 0, away_since = 0, blocked_since = 0, pivot_start = 0, last_publish = 0;
+static TofPose P;   // this update's pose, carried to now
+static uint32_t good_since[2] = { 0, 0 }, ahead_good_since = 0;
+static uint32_t bad_since = 0, ahead_bad_since = 0, away_since = 0, blocked_since = 0, state_since = 0, last_publish = 0;
 static float pivot_target = 0.0f;
 static double sample_x = 0.0, sample_y = 0.0;   // where the last outline point was taken (axle)
 static bool sample_set = false;
+static WorldLine target;              // ALIGN: the wall approached; OUTER: the wall that ended
+static double end_x = 0.0, end_y = 0.0;   // OUTER: the wall's end point
+static double state_x = 0.0, state_y = 0.0;   // where the state was entered
+static double corner_x = 0.0, corner_y = 0.0;  // CORNER: the two walls' intersection (world), last seen
+static float corner_yaw = 0.0f;                // heading when that corner was first seen
+static bool corner_pending = false;            // LOCKED after "wall ahead gone": recorded once it curves round it
+static bool circling = false;         // OUTER: on the circle round the end
+static float outer_turned = 0.0f, outer_yaw = 0.0f;
+static bool past_end = false;          // LOCKED after OUTER: the ended wall still left out of the fits until it is behind
+static bool from_end = false;          // the followed wall starts at end_x/y (found round an end)
+static WorldLine outer_cand;            // OUTER: the wall that goes on, while it proves stable
+static uint32_t outer_since = 0;
 
 void wall_assist_init(bool avail) {
   rx = new (std::nothrow) float[TOF_MEMORY_POINTS];
@@ -56,8 +88,38 @@ void wall_assist_init(bool avail) {
   ridx = new (std::nothrow) int[TOF_MEMORY_POINTS];
   px = new (std::nothrow) float[TOF_MEMORY_POINTS];
   py = new (std::nothrow) float[TOF_MEMORY_POINTS];
-  available = avail && rx && ry && ridx && px && py;
+  sx = new (std::nothrow) float[TOF_SOLID_POINTS];
+  sy = new (std::nothrow) float[TOF_SOLID_POINTS];
+  map_objs = new (std::nothrow) MapObject[TOF_MAP_OBJECTS];
+  available = avail && rx && ry && ridx && px && py && sx && sy && map_objs;
   SerialDebug.printf("[WALL] Assist %s\r\n", available ? (enabled ? "ready (on; f toggles)" : "ready (off)") : "unavailable");
+}
+
+// ---------------------------------------------------------------- FRAMES
+
+static void to_robot(double wx, double wy, float* x, float* y) {
+  float c = cosf(P.yaw), s = sinf(P.yaw);
+  float dx = wx - P.x, dy = wy - P.y;
+  *x = c * dx + s * dy; *y = -s * dx + c * dy;
+}
+
+static void to_world(float x, float y, double* wx, double* wy) {
+  float c = cosf(P.yaw), s = sinf(P.yaw);
+  *wx = P.x + c * x - s * y; *wy = P.y + s * x + c * y;
+}
+
+static WorldLine line_to_world(float lx, float ly, float ux, float uy) {
+  WorldLine w;
+  to_world(lx, ly, &w.px, &w.py);
+  float c = cosf(P.yaw), s = sinf(P.yaw);
+  w.ux = c * ux - s * uy; w.uy = s * ux + c * uy;
+  return w;
+}
+
+static void line_to_robot(const WorldLine& w, float* lx, float* ly, float* ux, float* uy) {
+  to_robot(w.px, w.py, lx, ly);
+  float c = cosf(P.yaw), s = sinf(P.yaw);
+  *ux = c * w.ux + s * w.uy; *uy = -s * w.ux + c * w.uy;
 }
 
 // ---------------------------------------------------------------- LINES
@@ -131,12 +193,17 @@ static bool near_line(const WallLine& L, float x, float y, float tol) {
   return fabsf(L.ux * (y - L.cy) - L.uy * (x - L.cx)) < tol;
 }
 
-// Side s: points beside and ahead, the line outside the body and well supported
-static WallLine fit_side(int s) {
+// Side s: points beside and ahead, the line outside the body and well supported. Points on `skip` (the wall
+// that ended, while going round its end) are left out.
+static WallLine fit_side(int s, const WallLine* skip) {
   int n = 0;
   for (int k = 0; k < rn; k++) {
     float off = sigma(s) * ry[k];
     if (rx[k] < -TOF_WALL_BEHIND || rx[k] > TOF_WALL_AHEAD || off <= 0.0f || off > TOF_WALL_MAX_DIST) continue;
+    if (skip) {   // its face, seen from the mower's side; the back of a thin wall (8 cm behind) stays
+      float d = sigma(s) * (skip->uy * (rx[k] - skip->cx) - skip->ux * (ry[k] - skip->cy));
+      if (d > -TOF_FIT_TOLERANCE && d < 2.0f * TOF_FIT_TOLERANCE) continue;
+    }
     px[n] = rx[k]; py[n] = ry[k]; n++;
   }
   WallLine L = fit_line(n, true);
@@ -169,6 +236,25 @@ static WallLine fit_ahead(const WallLine* followed) {
   WallLine L = fit_line(n, false);
   L.valid = L.valid && L.inliers >= TOF_AHEAD_MIN_INLIERS && L.residual <= TOF_WALL_MAX_RESIDUAL &&
             L.span >= TOF_WALL_MIN_SPAN;
+  if (L.valid) {
+    // One wall, not two ends in line with open space between (the tips of a corner's arms seen from outside)
+    const int NB = 32;
+    const float bin = 0.1f;
+    uint32_t occ = 0;
+    float t0 = 1e9f;
+    for (int k = 0; k < n; k++)
+      if (near_line(L, px[k], py[k], TOF_FIT_TOLERANCE)) t0 = fminf(t0, (px[k] - L.cx) * L.ux + (py[k] - L.cy) * L.uy);
+    for (int k = 0; k < n; k++) {
+      if (!near_line(L, px[k], py[k], TOF_FIT_TOLERANCE)) continue;
+      int b = (int)(((px[k] - L.cx) * L.ux + (py[k] - L.cy) * L.uy - t0) / bin);
+      if (b < NB) occ |= 1u << b;
+    }
+    int run = 0;
+    for (int b = 0; b < NB && (occ >> b); b++) {
+      run = occ & (1u << b) ? 0 : run + 1;
+      if (run * bin > TOF_AHEAD_MAX_GAP) { L.valid = false; break; }
+    }
+  }
   return L;
 }
 
@@ -195,11 +281,20 @@ static bool sees_open_space(int s, const WallLine& L) {
   return open >= 3 && open > seen;
 }
 
-// ---------------------------------------------------------------- BODY CHECKS
-
-static bool under_body(float x, float y) {
-  return x > -MOWER_REAR_OVERHANG && x < MOWER_FRONT_OVERHANG && fabsf(y) < MOWER_HALF_WIDTH;
+// The wall goes on past its end across a gap the mower should not turn into: points on its line from
+// 0.1 m past the last inlier to TOF_GAP_BRIDGE past it
+static bool wall_goes_on(const WallLine& L) {
+  int n = 0;
+  float t_end = (L.x_max - L.cx) / L.ux;
+  for (int k = 0; k < rn; k++) {
+    if (!near_line(L, rx[k], ry[k], TOF_FIT_TOLERANCE)) continue;
+    float t = (rx[k] - L.cx) * L.ux + (ry[k] - L.cy) * L.uy - t_end;
+    if (t > 0.10f && t < TOF_GAP_BRIDGE && ++n >= TOF_AHEAD_MIN_INLIERS) return true;
+  }
+  return false;
 }
+
+// ---------------------------------------------------------------- GUARD
 
 // Seen within max_age ms. Older points carry the pose error of when they were seen: the EKF
 // pulling 13 cm sideways put a wall point 13 cm too close (HIL 2026-10-30)
@@ -207,96 +302,129 @@ static bool fresh(int k, uint32_t now, uint32_t max_age) {
   return now - tof_memory()[ridx[k]].t_ms <= max_age;
 }
 
-// Guard: a point closer to the body outline than allowed. Ahead of the front it is front_stop,
-// beside the body side_stop: driving forward doesn't close in on what is beside it, and right after a
-// corner turn the tail is only ~10 cm from the old wall. Points under the body were driven over and
-// don't count; with `ahead_only`, neither do those behind the tail, which driving forward can't reach.
-static bool guard_hit(int* nearest, float* clearance, float front_stop, float side_stop,
-                      uint32_t max_age = 0xFFFFFFFFu, bool ahead_only = false) {
-  float worst = 0.0f;
-  uint32_t now = millis();
-  *nearest = -1;
-  for (int k = 0; k < rn; k++) {
-    if (under_body(rx[k], ry[k]) || !fresh(k, now, max_age) || (ahead_only && rx[k] < -MOWER_REAR_OVERHANG)) continue;
-    float dx = fmaxf(fmaxf(-MOWER_REAR_OVERHANG - rx[k], rx[k] - MOWER_FRONT_OVERHANG), 0.0f);
-    float dy = fmaxf(fabsf(ry[k]) - MOWER_HALF_WIDTH, 0.0f);
-    float d = sqrtf(dx * dx + dy * dy);
-    float short_by = (rx[k] > MOWER_FRONT_OVERHANG ? front_stop : side_stop) - d;
-    if (short_by > worst) { worst = short_by; *nearest = k; *clearance = d; }
-  }
-  return *nearest >= 0;
+// Signed distance from a point (body frame) to the body outline, < 0 inside
+static float body_dist(float x, float y) {
+  float ex = fmaxf(-MOWER_REAR_OVERHANG - x, x - MOWER_FRONT_OVERHANG), ey = fabsf(y) - MOWER_HALF_WIDTH;
+  if (ex < 0.0f && ey < 0.0f) return fmaxf(ex, ey);
+  float dx = fmaxf(ex, 0.0f), dy = fmaxf(ey, 0.0f);
+  return sqrtf(dx * dx + dy * dy);
 }
 
-// Points beside the body closer than TOF_SIDE_STOP: the turn direction that would swing that part of
-// the body toward them is blocked (a body point at x moves sideways at w * x). Driving straight keeps
-// the gap; only TOF_PIVOT_MARGIN stops (right after a corner turn the tail is ~5 cm from the old wall)
-static void side_turn_block(bool* no_left, bool* no_right) {
-  *no_left = *no_right = false;
-  for (int k = 0; k < rn; k++) {
-    if (under_body(rx[k], ry[k]) || rx[k] < -MOWER_REAR_OVERHANG || rx[k] > MOWER_FRONT_OVERHANG) continue;
-    if (fabsf(ry[k]) - MOWER_HALF_WIDTH >= TOF_SIDE_STOP) continue;
-    if (rx[k] * ry[k] > 0.0f) *no_left = true;    // front left or rear right: w > 0 closes in
-    else *no_right = true;
+static void add_solid(float x, float y) {
+  if (sn < TOF_SOLID_POINTS && x * x + y * y < TOF_GUARD_RANGE * TOF_GUARD_RANGE) { sx[sn] = x; sy[sn] = y; sn++; }
+}
+
+// Map objects as solid samples, except where the sensors look now (there the fresh points tell, without the
+// map's few cm of error). Low edges are kept everywhere: the sensors see them only close up.
+static void map_solids() {
+  if (tof_map_version() != map_version) { map_version = tof_map_version(); map_n = tof_map_copy(map_objs, TOF_MAP_OBJECTS); }
+  for (int i = 0; i < map_n; i++) {
+    const MapObject& m = map_objs[i];
+    int n = m.kind == MAP_POST ? 8 : (int)ceilf(hypotf(m.x1 - m.x0, m.y1 - m.y0) / TOF_SOLID_SPACING);
+    for (int j = 0; j <= n; j++) {
+      double wx, wy;
+      if (m.kind == MAP_POST) { wx = m.x0 + m.x1 * cosf(j * 0.785f); wy = m.y0 + m.x1 * sinf(j * 0.785f); }
+      else { wx = m.x0 + (m.x1 - m.x0) * j / fmaxf(n, 1); wy = m.y0 + (m.y1 - m.y0) * j / fmaxf(n, 1); }
+      float x, y;
+      to_robot(wx, wy, &x, &y);
+      if (m.kind != MAP_LOW && x > 0.15f && x < 1.3f && fabsf(y) < 0.84f * x) continue;   // in view (+-40 deg)
+      add_solid(x, y);
+    }
   }
 }
 
-// Room to drive straight ahead: front to the nearest point in the body's corridor, less TOF_BODY_STOP
-static float room_ahead() {
-  float best = 1e9f;
-  for (int k = 0; k < rn; k++)
-    if (rx[k] > MOWER_FRONT_OVERHANG && fabsf(ry[k]) < MOWER_HALF_WIDTH + TOF_BODY_STOP)
-      best = fminf(best, rx[k] - MOWER_FRONT_OVERHANG - TOF_BODY_STOP);
-  return best;
+static void trail_add() {
+  int last = (trail_head + TOF_TRAIL_POINTS - 1) % TOF_TRAIL_POINTS;
+  if (trail_n > 0) {
+    float dx = P.x - trail[last][0], dy = P.y - trail[last][1];
+    if (dx * dx + dy * dy > TOF_POSE_JUMP * TOF_POSE_JUMP) trail_n = 0;   // RTK fix change: start again
+    else if (dx * dx + dy * dy < TOF_TRAIL_SPACING * TOF_TRAIL_SPACING && fabsf(angle_diff(P.yaw, trail[last][2])) < 0.15f) return;
+  }
+  trail[trail_head][0] = P.x; trail[trail_head][1] = P.y; trail[trail_head][2] = P.yaw;
+  trail_head = (trail_head + 1) % TOF_TRAIL_POINTS;
+  if (trail_n < TOF_TRAIL_POINTS) trail_n++;
 }
 
-// The followed wall, frozen in the world frame when a corner turn is decided: from beside the
-// tail to the corner. The sweep is checked against it, since the side wall beside the body is out
-// of both fields of view and only its old (pose-shifted) points remember it.
-static double wall_seg[2][2];
-
-static void freeze_wall(const TofPose& p, const WallLine& L, float ix, float iy) {
-  float t = (-TOF_SWEEP_WALL_BACK - L.cx) / fmaxf(L.ux, 0.5f);   // side lines point forward
-  float ax = L.cx + t * L.ux, ay = L.cy + t * L.uy;
-  float c = cosf(p.yaw), s = sinf(p.yaw);
-  wall_seg[0][0] = p.x + c * ax - s * ay; wall_seg[0][1] = p.y + s * ax + c * ay;
-  wall_seg[1][0] = p.x + c * ix - s * iy; wall_seg[1][1] = p.y + s * ix + c * iy;
-}
-
-static bool in_sweep(float x, float y, float turn, int steps) {
-  const float m = TOF_PIVOT_MARGIN;
-  if (under_body(x, y) || x * x + y * y > 0.8f * 0.8f) return false;
-  for (int i = 0; i <= steps; i++) {
-    float th = steps > 0 ? turn * i / steps : 0.0f, c = cosf(th), s = sinf(th);
-    float qx = c * x + s * y, qy = -s * x + c * y;   // in the turned body's frame
-    if (qx > -MOWER_REAR_OVERHANG - m && qx < MOWER_FRONT_OVERHANG + m && fabsf(qy) < MOWER_HALF_WIDTH + m) return true;
+static bool in_trail(double wx, double wy) {
+  for (int i = 0; i < trail_n; i++) {
+    float c = cosf(trail[i][2]), s = sinf(trail[i][2]);
+    float dx = wx - trail[i][0], dy = wy - trail[i][1];
+    if (body_dist(c * dx + s * dy, -s * dx + c * dy) <= 0.0f) return true;
   }
   return false;
 }
 
-// Turning on the spot by `turn`: no point may come inside the body + TOF_PIVOT_MARGIN at any angle
-// on the way (checked every 5 deg). Not the full circle of the tail (0.46 m): at a corner the walls
-// are TOF_CORNER_STOP from the axle, so only the actual sweep fits. Points: the frozen followed wall
-// and what the sensors saw in the last TOF_SWEEP_AGE_MS.
-static bool sweep_clear(const TofPose& p, float turn, float* hx, float* hy, int* hits_out) {
-  int steps = (int)ceilf(fabsf(turn) / 0.087f);
-  uint32_t now = millis();
-  int hits = 0;
-  for (int k = 0; k < rn; k++) {
-    if (fresh(k, now, TOF_SWEEP_AGE_MS) && in_sweep(rx[k], ry[k], turn, steps)) {
-      *hx = rx[k]; *hy = ry[k];
-      if (++hits >= TOF_SWEEP_MIN_POINTS) { *hits_out = hits; return false; }
-    }
-  }
-  float c = cosf(p.yaw), s = sinf(p.yaw);
-  float len = hypot(wall_seg[1][0] - wall_seg[0][0], wall_seg[1][1] - wall_seg[0][1]);
-  int n = (int)ceilf(len / 0.05f);
+// The guard's look ahead. Driving (v, w) for `horizon` m of the fastest body point's travel (checked every
+// TOF_GUARD_STEP): how far it gets before TOF_SWEEP_MIN_POINTS memory points or one solid sample come closer to
+// the body than TOF_GUARD_CLEARANCE. A point that is closer already only counts once it gets closer still (moving
+// away or along it stays allowed); points under the body were driven over. Backwards, the tail must also stay in
+// the trail. *hit: where it stops (robot frame).
+static float clearance = TOF_GUARD_CLEARANCE;   // TOF_PIVOT_CLEARANCE in a corner turn (its sweep was checked with the full one)
+static float free_travel(float v, float w, float horizon, float* hit_x = nullptr, float* hit_y = nullptr) {
+  const float rmax = hypotf(MOWER_REAR_OVERHANG, MOWER_HALF_WIDTH);
+  float q = fabsf(v) + fabsf(w) * rmax;
+  if (q < 1e-4f) return horizon;
+  int n = (int)ceilf(horizon / TOF_GUARD_STEP);
+  float step = TOF_GUARD_STEP;
+  if (n > 40) { n = 40; step = horizon / n; }   // a long sweep (a whole corner turn) in coarser steps
+  float xs[41], ys[41], cs[41], ss[41];
   for (int i = 0; i <= n; i++) {
-    double wx = wall_seg[0][0] + (wall_seg[1][0] - wall_seg[0][0]) * i / n - p.x;
-    double wy = wall_seg[0][1] + (wall_seg[1][1] - wall_seg[0][1]) * i / n - p.y;
-    float x = c * wx + s * wy, y = -s * wx + c * wy;
-    if (in_sweep(x, y, turn, steps)) { *hx = x; *hy = y; *hits_out = 0; return false; }   // 0: the followed wall
+    float t = i * step / q, th = w * t;
+    cs[i] = cosf(th); ss[i] = sinf(th);
+    if (fabsf(w) > 1e-4f) { xs[i] = v / w * ss[i]; ys[i] = v / w * (1.0f - cs[i]); }
+    else { xs[i] = v * t; ys[i] = 0.0f; }
   }
-  return true;
+  int first = n + 1, second = n + 1, solid = n + 1;
+  float reach = rmax + clearance + horizon;
+  auto first_step = [&](float x, float y) {
+    if (x * x + y * y > reach * reach) return n + 1;
+    float d0 = body_dist(x, y);
+    if (d0 <= 0.0f) return n + 1;
+    float lim = fminf(clearance, d0 - 0.002f);
+    for (int i = 1; i <= n; i++) {
+      float dx = x - xs[i], dy = y - ys[i];
+      if (body_dist(cs[i] * dx + ss[i] * dy, -ss[i] * dx + cs[i] * dy) < lim) return i;
+    }
+    return n + 1;
+  };
+  const TofPoint* mem = tof_memory();
+  for (int k = 0; k < rn; k++) {
+    if (mem[ridx[k]].z_cm < TOF_GUARD_MIN_Z_CM) continue;   // turf the wheels go over (curbs: the map's low edges)
+    int i = first_step(rx[k], ry[k]);
+    if (i < first) { second = first; first = i; if (hit_x) { *hit_x = rx[k]; *hit_y = ry[k]; } }
+    else if (i < second) second = i;
+  }
+  int block = TOF_SWEEP_MIN_POINTS > 1 ? second : first;
+  for (int k = 0; k < sn; k++) {
+    int i = first_step(sx[k], sy[k]);
+    if (i < solid) { solid = i; if (i < block && hit_x) { *hit_x = sx[k]; *hit_y = sy[k]; } }
+  }
+  if (solid < block) block = solid;
+  if (v < 0.0f && trail_n > 0) {
+    for (int i = 1; i <= n && i < block; i++) {
+      for (int j = -1; j <= 1; j++) {   // tail corners and middle
+        float bx = -MOWER_REAR_OVERHANG, by = j * MOWER_HALF_WIDTH;
+        double wx, wy;
+        to_world(xs[i] + cs[i] * bx - ss[i] * by, ys[i] + ss[i] * bx + cs[i] * by, &wx, &wy);
+        if (!in_trail(wx, wy)) { block = i; if (hit_x) { *hit_x = xs[i] + cs[i] * bx - ss[i] * by; *hit_y = ys[i] + ss[i] * bx + cs[i] * by; } break; }
+      }
+    }
+  } else if (v < 0.0f) block = 1;   // nothing known behind
+  if (block > n) return horizon;
+  return (block - 1) * step;
+}
+
+// Command (v, w) scaled so it can stop within its free travel: proportional slowing near objects, full speed
+// away from them. Braking at TOF_GUARD_DECEL at the wheels after TOF_GUARD_DELAY.
+static float guard_scale(float v, float w) {
+  const float rmax = hypotf(MOWER_REAR_OVERHANG, MOWER_HALF_WIDTH);
+  float q = fabsf(v) + fabsf(w) * rmax;                 // fastest body point
+  if (q < 1e-3f) return 1.0f;
+  float f = free_travel(v, w, TOF_GUARD_HORIZON);
+  if (f >= TOF_GUARD_HORIZON) return 1.0f;
+  float a = TOF_GUARD_DECEL * q / (fabsf(v) + fabsf(w) * 0.5f * WHEEL_BASE), t = TOF_GUARD_DELAY;
+  float qa = sqrtf(2.0f * a * f + a * a * t * t) - a * t;
+  return fminf(1.0f, qa / q);
 }
 
 // ---------------------------------------------------------------- OUTPUT
@@ -309,20 +437,28 @@ static void publish_motor(char instruction, float v, float w) {
 
 static void set_state(int next, const char* why) {
   SerialDebug.printf("[WALL] %s -> %s: %s\r\n", state_name[state], state_name[next], why);
+  past_end = state == WALL_OUTER && next == WALL_LOCKED;
+  if (past_end) from_end = true;
+  else if (next == WALL_FREE || next == WALL_ALIGN || next == WALL_OUTER || state == WALL_PIVOT) from_end = false;
   state = next;
-  bad_since = ahead_bad_since = away_since = blocked_since = 0;
+  bad_since = ahead_bad_since = away_since = blocked_since = outer_since = 0;
+  state_since = millis();
+  state_x = P.x; state_y = P.y;
+  if (next == WALL_CORNER && !corner_pending) corner_yaw = P.yaw;
+  if (next != WALL_CORNER && next != WALL_LOCKED) corner_pending = false;
 }
 
 static void stop_free(const char* why) {
   publish_motor(MOTOR_STOP, 0.0f, 0.0f);
   MANUAL_MOTORS_STOPPED = true;
   set_state(WALL_FREE, why);
-  good_since[0] = good_since[1] = 0;
+  good_since[0] = good_since[1] = ahead_good_since = 0;
 }
 
-static void queue_point(const TofPose& p, float fx, float fy, bool corner) {
-  float c = cosf(p.yaw), s = sinf(p.yaw);
-  OutlinePoint q = { llround((p.x + c * fx - s * fy) * 100.0), llround((p.y + s * fx + c * fy) * 100.0), corner };
+static void queue_point(float fx, float fy, bool corner) {
+  double wx, wy;
+  to_world(fx, fy, &wx, &wy);
+  OutlinePoint q = { llround(wx * 100.0), llround(wy * 100.0), corner };
   portENTER_CRITICAL(&mux);
   int next = (outline_head + 1) % 8;
   if (next != outline_tail) { outline_q[outline_head] = q; outline_head = next; }
@@ -331,12 +467,12 @@ static void queue_point(const TofPose& p, float fx, float fy, bool corner) {
 
 // Foot of the axle on the followed wall: the edge itself, not the mower's track. Only where the
 // wall has been seen beside the axle (after a relock the line runs on back past the wall's start)
-static void sample_outline(const TofPose& p, const WallLine& L, bool force) {
-  if (!force && sample_set && hypot(p.x - sample_x, p.y - sample_y) < TOF_OUTLINE_SPACING) return;
+static void sample_outline(const WallLine& L, bool force) {
+  if (!force && sample_set && hypot(P.x - sample_x, P.y - sample_y) < TOF_OUTLINE_SPACING) return;
   float t = -(L.cx * L.ux + L.cy * L.uy);
   if (L.cx + t * L.ux < L.x_min - TOF_FIT_TOLERANCE) return;
-  queue_point(p, L.cx + t * L.ux, L.cy + t * L.uy, false);
-  sample_x = p.x; sample_y = p.y; sample_set = true;
+  queue_point(L.cx + t * L.ux, L.cy + t * L.uy, false);
+  sample_x = P.x; sample_y = P.y; sample_set = true;
 }
 
 // Braking: the fastest speed that still stops within `room` (m) at MOTION_GOAL_DECEL; creeps at
@@ -346,37 +482,173 @@ static float brake(float room) {
   return fmaxf(TOF_WALL_MIN_SPEED, sqrtf(2.0f * MOTION_GOAL_DECEL * room));
 }
 
+// ---------------------------------------------------------------- STEERING
+
+// Pure pursuit (robot frame) onto the follow path: the wall face through (lx, ly) with unit direction (ux, uy),
+// shifted `off` to the mower's side. With `end`, the path goes on round that point on a circle of radius `off`
+// (*circle is set once the mower is on it). Returns the curvature to the carrot TOF_LOOKAHEAD ahead (1/m, +
+// left); *pivot: the carrot is not ahead, turn on the spot toward it.
+static float pursuit(float lx, float ly, float ux, float uy, float off, const float* end, bool* circle, bool* pivot,
+                     float ld = TOF_LOOKAHEAD) {
+  const float sg = sigma(side);
+  float fx = lx + sg * off * uy, fy = ly - sg * off * ux;   // a point of the follow path
+  float t0 = -(fx * ux + fy * uy);                           // the axle's foot on it
+  float cx = fx + (t0 + ld) * ux, cy = fy + (t0 + ld) * uy;
+  if (end) {
+    float te = (end[0] - fx) * ux + (end[1] - fy) * uy;      // abeam the end
+    if (!*circle && t0 >= te) *circle = true;
+    float phi = NAN;
+    if (*circle) phi = atan2f(-end[1], -end[0]) + sg * ld / off;
+    else if (t0 + ld > te) phi = atan2f(-sg * ux, sg * uy) + sg * (t0 + ld - te) / off;
+    if (!isnan(phi)) { cx = end[0] + off * cosf(phi); cy = end[1] + off * sinf(phi); }
+  }
+  *pivot = cx < 0.2f * ld;
+  return 2.0f * cy / (cx * cx + cy * cy);
+}
+
+// Curvature -> command at the user's forward speed (capped at `cap`), slower where the turn rate would pass its cap
+static void steer(float kappa, bool pivot, float lin, float cap, float* v, float* w) {
+  if (pivot) { *v = 0.0f; *w = copysignf(TOF_PIVOT_SPEED, kappa); return; }
+  *v = fminf(lin, cap);
+  if (fabsf(kappa) * *v > TOF_WALL_MAX_TURN) *v = TOF_WALL_MAX_TURN / fabsf(kappa);
+  *w = kappa * *v;
+}
+
+static float follow_dist() { return TOF_WALL_CLEARANCE + MOWER_HALF_WIDTH; }
+
+// The two lines are the same wall (angle and offset)
+static bool same_wall(const WorldLine& a, float lx, float ly, float ux, float uy) {
+  float bx, by, bux, buy;
+  line_to_robot(a, &bx, &by, &bux, &buy);
+  return fabsf(bux * uy - buy * ux) < 0.34f && fabsf(bux * (ly - by) - buy * (lx - bx)) < 0.15f;
+}
+
+// Approach candidates in FREE: a wall the mower drives toward, reached within TOF_ALIGN_DETECT along the heading
+// (or already at about the follow distance). Returns the run to its follow line (m), < 0 none; sets the side,
+// the follow direction (robot frame) and a description.
+static float approach(float ang, uint32_t now, int* s_out, float* ux_out, float* uy_out, float* lx_out, float* ly_out) {
+  const float d = follow_dist();
+  float best = -1.0f;
+  for (int s = 0; s < 2; s++) {
+    const WallLine& L = lines[s];
+    if (good_since[s] == 0 || now - good_since[s] < TOF_LOCK_TIME_MS) continue;
+    if (L.x_max - MOWER_FRONT_OVERHANG - TOF_WALL_END_AHEAD < TOF_LOCK_MIN_RUN) continue;
+    float closing = -sigma(s) * L.angle;   // > 0: heading toward it
+    if (closing < -0.05f || ang * sigma(s) < -TOF_UNLOCK_TURN) continue;   // turning or heading away
+    float run = L.dist - d <= 0.25f ? 0.0f : closing > 0.05f ? (L.dist - d) / sinf(closing) : 1e9f;
+    if (run > TOF_ALIGN_DETECT || (best >= 0.0f && run >= best)) continue;
+    best = run; *s_out = s; *ux_out = L.ux; *uy_out = L.uy; *lx_out = L.cx; *ly_out = L.cy;
+  }
+  const WallLine& A = ahead;
+  if (ahead_good_since && now - ahead_good_since >= TOF_LOCK_TIME_MS && fabsf(A.uy) > 0.3f) {
+    float x0 = A.cx - A.cy * A.ux / A.uy;
+    float run = (A.dist - d) / fabsf(A.uy);
+    if (x0 > 0.0f && run <= TOF_ALIGN_DETECT && (best < 0.0f || run < best)) {
+      float ux = A.ux, uy = A.uy;
+      if (ux < 0.0f) { ux = -ux; uy = -uy; }                 // the smaller turn ...
+      float a = atan2f(uy, ux);
+      if (fabsf(a) > 1.5708f - TOF_ALIGN_HEAD_ON) {          // ... unless about head-on: the user's steer, or room
+        bool left;
+        if (fabsf(ang) >= 0.2f) left = ang > 0.0f;
+        else {
+          int pl = 0, pr = 0;   // points on this side of the wall, left and right of the path
+          for (int k = 0; k < rn; k++) {
+            if (rx[k] < 0.0f || rx[k] > 1.5f || fabsf(ry[k]) > 1.2f || near_line(A, rx[k], ry[k], 0.1f)) continue;
+            float s = -A.uy * (rx[k] - A.cx) + A.ux * (ry[k] - A.cy), s0 = -(-A.uy * A.cx + A.ux * A.cy);
+            if (s * s0 < 0.0f) continue;
+            if (ry[k] > 0.0f) pl++; else pr++;
+          }
+          left = pl == pr ? a > 0.0f : pl < pr;
+        }
+        if (left != (a > 0.0f)) { ux = -ux; uy = -uy; }
+      }
+      best = run; *s_out = atan2f(uy, ux) > 0.0f ? 1 : 0;   // turning left puts the wall on the right
+      *ux_out = ux; *uy_out = uy; *lx_out = A.cx; *ly_out = A.cy;
+    }
+  }
+  return best;
+}
+
+// The followed wall, frozen in the world frame when a corner turn is decided: from beside the
+// tail to the corner. The sweep is checked against it, since the side wall beside the body is out
+// of both fields of view and only its old (pose-shifted) points remember it.
+// A short wall found round an end (a step) is also frozen as the segment from that end to the corner: both are
+// measured points, while its side fit, seen at a slant only just before, can be off by many degrees.
+static double wall_seg[3][2];
+static bool wall_seg_end = false;
+
+static void freeze_wall(const WallLine& L, float ix, float iy) {
+  float t = (-TOF_SWEEP_WALL_BACK - L.cx) / fmaxf(L.ux, 0.5f);   // side lines point forward
+  to_world(L.cx + t * L.ux, L.cy + t * L.uy, &wall_seg[0][0], &wall_seg[0][1]);
+  to_world(ix, iy, &wall_seg[1][0], &wall_seg[1][1]);
+  wall_seg[2][0] = end_x; wall_seg[2][1] = end_y;
+  wall_seg_end = from_end && hypot(P.x - end_x, P.y - end_y) < TOF_GUARD_RANGE + MOWER_REAR_OVERHANG;
+}
+
+static void solid_segment(double wx0, double wy0, double wx1, double wy1) {
+  float ax, ay, bx, by;
+  to_robot(wx0, wy0, &ax, &ay);
+  to_robot(wx1, wy1, &bx, &by);
+  int n = (int)ceilf(hypotf(bx - ax, by - ay) / TOF_SOLID_SPACING);
+  for (int i = 0; i <= n; i++) add_solid(ax + (bx - ax) * i / fmaxf(n, 1), ay + (by - ay) * i / fmaxf(n, 1));
+}
+
+static void wall_solids() {
+  solid_segment(wall_seg[0][0], wall_seg[0][1], wall_seg[1][0], wall_seg[1][1]);
+  if (wall_seg_end) solid_segment(wall_seg[2][0], wall_seg[2][1], wall_seg[1][0], wall_seg[1][1]);
+}
+
 // ---------------------------------------------------------------- UPDATE
 
 void wall_assist_update(const TofPose& pose_in, bool new_frame) {
   if (!available) return;
   uint32_t now = millis();
   bool pose_ok = pose_in.valid && now - pose_in.ms < MOTION_POSE_TIMEOUT_MS;
-  TofPose p = pose_in;   // carried to now with its own speed and turn rate
+  P = pose_in;   // carried to now with its own speed and turn rate
   float dt = (now - pose_in.ms) * 1e-3f;
   if (pose_ok) {
-    p.x += p.vx * cosf(p.yaw) * dt; p.y += p.vx * sinf(p.yaw) * dt;
-    p.yaw += p.omega * dt;
+    P.x += P.vx * cosf(P.yaw) * dt; P.y += P.vx * sinf(P.yaw) * dt;
+    P.yaw += P.omega * dt;
+    trail_add();
   }
+  const tof_frame_t* frame;
+  bool frames = tof_latest_frame(0, &frame) || tof_latest_frame(1, &frame);
+  guarding = MANUAL_MODE_ACTIVE && pose_ok && frames;
 
-  // Lines from the memory in the robot frame (on every new frame)
+  // Lines and solids from the memory and the map in the robot frame (on every new frame)
   if (new_frame && pose_ok) {
     const TofPoint* mem = tof_memory();
-    float c = cosf(p.yaw), s = sinf(p.yaw);
+    float c = cosf(P.yaw), s = sinf(P.yaw);
     rn = 0;
     for (int i = 0; i < TOF_MEMORY_POINTS; i++) {
       if (mem[i].t_ms == 0) continue;
-      float dx = mem[i].x - (float)p.x, dy = mem[i].y - (float)p.y;
+      float dx = mem[i].x - (float)P.x, dy = mem[i].y - (float)P.y;
       rx[rn] = c * dx + s * dy; ry[rn] = -s * dx + c * dy; ridx[rn] = i; rn++;
     }
-    WallLine l0 = fit_side(0), l1 = fit_side(1);
-    WallLine a = fit_ahead(state != WALL_FREE ? (side == 0 ? &l0 : &l1) : nullptr);
+    WallLine old = {};
+    if (past_end && state == WALL_LOCKED) {
+      float ex, ey;
+      to_robot(end_x, end_y, &ex, &ey);
+      if (ex < -TOF_WALL_BEHIND) past_end = false;   // its points are out of the fits' window now
+    }
+    if (state == WALL_OUTER || past_end) {
+      old.valid = true;
+      line_to_robot(target, &old.cx, &old.cy, &old.ux, &old.uy);
+    }
+    WallLine l0 = fit_side(0, old.valid && side == 0 ? &old : nullptr), l1 = fit_side(1, old.valid && side == 1 ? &old : nullptr);
+    bool following = state == WALL_LOCKED || state == WALL_CORNER;
+    WallLine a = fit_ahead(following ? (side == 0 ? &l0 : &l1) : nullptr);
     bool o0 = sees_open_space(0, l0), o1 = sees_open_space(1, l1);
     portENTER_CRITICAL(&mux);
     lines[0] = l0; lines[1] = l1; ahead = a; open_ahead[0] = o0; open_ahead[1] = o1;
     portEXIT_CRITICAL(&mux);
+    // In a corner turn the memory (the corner was just seen) and the frozen wall are what its sweep was checked
+    // against; map objects, a few cm off, would stop it halfway once they leave the view
+    sn = 0;
+    if (state == WALL_PIVOT) wall_solids();
+    else map_solids();
   } else if (!pose_ok) {
-    rn = 0;
+    rn = sn = 0;
     lines[0].valid = lines[1].valid = ahead.valid = false;
   }
 
@@ -387,191 +659,270 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
   release_request = false;
   portEXIT_CRITICAL(&mux);
 
-  // Lock candidates (also kept up to date while locked, for the status)
+  // Candidates (also kept up to date while following, for the status): stable for TOF_LOCK_TIME_MS
   for (int s = 0; s < 2; s++) {
     const WallLine& L = lines[s];
-    // only while driving forward: a line fitted while turning on the spot is not a lock yet
-    bool good = L.valid && L.dist < TOF_LOCK_MAX_DIST && fabsf(L.angle) < TOF_LOCK_MAX_ANGLE &&
-                lin > 0.01f && fabsf(ang) < TOF_UNLOCK_TURN;
+    bool good = L.valid && L.dist < TOF_LOCK_MAX_DIST + 0.4f && lin > 0.01f;   // only while driving forward
     if (!good) good_since[s] = 0;
     else if (good_since[s] == 0) good_since[s] = now;
   }
+  if (!(ahead.valid && lin > 0.01f)) ahead_good_since = 0;
+  else if (ahead_good_since == 0) ahead_good_since = now;
 
+  float v = lin, w = ang;   // FREE: the user's command, through the guard
   if (state == WALL_FREE) {
-    if (!enabled || !MANUAL_MODE_ACTIVE || !pose_ok || !user_fresh || lin <= 0.01f) return;
-    int pick = -1;
-    for (int s = 0; s < 2; s++) {
-      const tof_frame_t* f;
-      if (good_since[s] == 0 || now - good_since[s] < TOF_LOCK_TIME_MS || !tof_latest_frame(s, &f)) continue;
-      if (ang * sigma(s) < -TOF_UNLOCK_TURN) continue;   // turning away from it
-      if (pick < 0 || lines[s].dist < lines[pick].dist) pick = s;
-    }
-    int nearest;
-    float clearance;
-    if (pick < 0 || lines[pick].x_max - MOWER_FRONT_OVERHANG - TOF_WALL_END_AHEAD < TOF_LOCK_MIN_RUN ||
-        guard_hit(&nearest, &clearance, TOF_BODY_STOP, TOF_SIDE_STOP)) return;
-    side = pick;
-    char why[120];
-    const WallLine& L = lines[side];
-    snprintf(why, sizeof(why), "%s wall %.2f m, %.0f deg (%d inliers, %.1f cm rms, x %.2f..%.2f m)",
-             side == 0 ? "left" : "right", L.dist, L.angle * 180.0f / M_PI, L.inliers, L.residual * 100.0f,
-             L.x_min, L.x_max);
-    set_state(WALL_LOCKED, why);
-    sample_outline(p, lines[side], true);
-    return;
-  }
-
-  // ---- The assist drives (LOCKED, CORNER, PIVOT): any doubt -> stop and FREE
-  if (release) { stop_free("stop key"); return; }
-  if (!enabled) { stop_free("assist switched off"); return; }
-  if (!MANUAL_MODE_ACTIVE) { stop_free("manual mode off"); return; }
-  if (!pose_ok) { stop_free("no fused pose"); return; }
-  const tof_frame_t* frame;
-  if (!tof_latest_frame(side, &frame)) { stop_free("no ToF frames"); return; }
-  int nearest;
-  float clearance;
-  // In a corner turn the sweep check has already cleared the turn to TOF_PIVOT_MARGIN (and repeats on
-  // every frame, with fresh points only); the wider stop distance would end the turn as the tail
-  // passes the followed wall
-  bool hit = state == WALL_PIVOT
-      ? guard_hit(&nearest, &clearance, TOF_PIVOT_MARGIN, TOF_PIVOT_MARGIN, TOF_SWEEP_AGE_MS)
-      : guard_hit(&nearest, &clearance, TOF_BODY_STOP, TOF_PIVOT_MARGIN, 0xFFFFFFFFu, lin >= 0.0f);
-  if (hit) {
-    char why[80];
-    snprintf(why, sizeof(why), "point %.0f cm from the body at (%.2f, %.2f) robot", clearance * 100.0f,
-             rx[nearest], ry[nearest]);
-    stop_free(why);
-    return;
-  }
-  const float sg = sigma(side);
-  const WallLine L = lines[side];
-
-  // The user turns away from the wall: hand the steering back
-  if (state != WALL_PIVOT && user_fresh && ang * sg < -TOF_UNLOCK_TURN) {
-    if (away_since == 0) away_since = now;
-    else if (now - away_since >= TOF_UNLOCK_TIME_MS) {
-      set_state(WALL_FREE, "user turned away");
-      good_since[0] = good_since[1] = 0;
-      publish_motor(MOTOR_MOVE, lin, ang);
-      return;
-    }
-  } else away_since = 0;
-
-  float v = 0.0f, w = 0.0f;
-  if (state == WALL_PIVOT) {
-    float err = angle_diff(p.yaw, pivot_target);
-    float hx, hy;
-    int hits;
-    if (fabsf(err) < MOTION_TURN_DONE) {
-      set_state(WALL_LOCKED, "corner turned, following the new wall");
-      sample_set = false;
-    } else if (now - pivot_start > MOTION_ROTATE_TIMEOUT_MS) {
-      stop_free("corner turn timed out"); return;
-    } else if (user_fresh && lin <= 0.01f) {
-      stop_free("user stopped in the corner turn"); return;
-    } else if (new_frame && !sweep_clear(p, err, &hx, &hy, &hits)) {
-      char why[96];
-      snprintf(why, sizeof(why), "point in the turn's sweep at (%.2f, %.2f) robot (%d seen points)", hx, hy, hits);
-      stop_free(why); return;
-    } else {
-      w = fmaxf(-TOF_PIVOT_SPEED, fminf(TOF_PIVOT_SPEED, MOTION_ROTATE_GAIN * err));
-    }
-  }
-
-  if (state == WALL_LOCKED || state == WALL_CORNER) {
-    bool good = L.valid && L.dist < TOF_LOCK_MAX_DIST + 0.2f && fabsf(L.angle) < 0.785f;
-    if (good) bad_since = 0;
-    else if (bad_since == 0) bad_since = now;
-    if (bad_since && now - bad_since > TOF_QUALITY_TIMEOUT_MS) { stop_free("wall estimate lost"); return; }
-
-    // Inner corner: a wall across the path, meeting this one on its side
-    float x0 = 1e9f, ix = 0.0f, iy = 0.0f;
-    bool corner = false;
-    if (good && ahead.valid && fabsf(ahead.uy) > 0.3f) {
-      x0 = ahead.cx - ahead.cy * ahead.ux / ahead.uy;   // where it crosses the path
-      float cr = L.ux * ahead.uy - L.uy * ahead.ux;
-      if (fabsf(cr) > 0.5f) {
-        float t = ((ahead.cx - L.cx) * ahead.uy - (ahead.cy - L.cy) * ahead.ux) / cr;
-        ix = L.cx + t * L.ux; iy = L.cy + t * L.uy;
-        corner = x0 > 0.0f && x0 < TOF_CORNER_DETECT && ix > 0.0f && sg * iy > 0.0f;
+    if (enabled && MANUAL_MODE_ACTIVE && pose_ok && user_fresh && lin > 0.01f) {
+      int s;
+      float ux, uy, lx, ly;
+      float run = approach(ang, now, &s, &ux, &uy, &lx, &ly);
+      if (run >= 0.0f) {
+        side = s;
+        target = line_to_world(lx, ly, ux, uy);
+        char why[120];
+        snprintf(why, sizeof(why), "%s wall, %.2f m to its follow line, %.0f deg", side == 0 ? "left" : "right", run,
+                 atan2f(uy, ux) * 180.0f / M_PI);
+        set_state(WALL_ALIGN, why);
       }
     }
-    if (state == WALL_LOCKED && corner) {
-      char why[120];
-      snprintf(why, sizeof(why), "wall ahead %.2f m, corner at (%.2f, %.2f) robot (%.0f deg, %d inliers, %.1f cm rms)",
-               ahead.dist, ix, iy, ahead.angle * 180.0f / M_PI, ahead.inliers, ahead.residual * 100.0f);
-      set_state(WALL_CORNER, why);
-    } else if (state == WALL_CORNER) {
-      if (corner) ahead_bad_since = 0;
-      else if (ahead_bad_since == 0) ahead_bad_since = now;
-      if (ahead_bad_since && now - ahead_bad_since > TOF_QUALITY_TIMEOUT_MS) set_state(WALL_LOCKED, "wall ahead gone");
+  }
+
+  if (state != WALL_FREE) {
+    // ---- The assist steers: any doubt -> stop and FREE
+    if (release) { stop_free("stop key"); return; }
+    if (!enabled) { stop_free("assist switched off"); return; }
+    if (!MANUAL_MODE_ACTIVE) { stop_free("manual mode off"); return; }
+    if (!pose_ok) { stop_free("no fused pose"); return; }
+    if (!tof_latest_frame(side, &frame)) { stop_free("no ToF frames"); return; }
+    const float sg = sigma(side);
+    const WallLine L = lines[side];
+    v = w = 0.0f;
+
+    // The user turns away from the wall, or backs up: hand the steering back (the guard stays)
+    if (user_fresh && lin < -0.01f) {
+      set_state(WALL_FREE, "user reversing");
+      good_since[0] = good_since[1] = ahead_good_since = 0;
+      v = lin; w = ang;
+    } else if (state != WALL_ALIGN && user_fresh && ang * sg < -TOF_UNLOCK_TURN) {
+      if (away_since == 0) away_since = now;
+      else if (now - away_since >= TOF_UNLOCK_TIME_MS) {
+        set_state(WALL_FREE, "user turned away");
+        good_since[0] = good_since[1] = ahead_good_since = 0;
+        v = lin; w = ang;
+      }
+    } else away_since = 0;
+
+    if (state == WALL_ALIGN) {
+      // Keep the approached wall up to date from a fit of the same wall
+      if (L.valid && same_wall(target, L.cx, L.cy, L.ux, L.uy)) {
+        float ux = L.ux, uy = L.uy, tx, ty, tux, tuy;
+        line_to_robot(target, &tx, &ty, &tux, &tuy);
+        if (ux * tux + uy * tuy < 0.0f) { ux = -ux; uy = -uy; }
+        target = line_to_world(L.cx, L.cy, ux, uy);
+      } else if (ahead.valid && same_wall(target, ahead.cx, ahead.cy, ahead.ux, ahead.uy)) {
+        float ux = ahead.ux, uy = ahead.uy, tx, ty, tux, tuy;
+        line_to_robot(target, &tx, &ty, &tux, &tuy);
+        if (ux * tux + uy * tuy < 0.0f) { ux = -ux; uy = -uy; }
+        target = line_to_world(ahead.cx, ahead.cy, ux, uy);
+      }
+      float tx, ty, tux, tuy;
+      line_to_robot(target, &tx, &ty, &tux, &tuy);
+      if (L.valid && same_wall(target, L.cx, L.cy, L.ux, L.uy) && fabsf(L.angle) < TOF_ALIGN_DONE_ANGLE &&
+          fabsf(L.dist - follow_dist()) < TOF_ALIGN_DONE_DIST) {
+        char why[120];
+        snprintf(why, sizeof(why), "%s wall %.2f m, %.0f deg (%d inliers, %.1f cm rms, x %.2f..%.2f m)",
+                 side == 0 ? "left" : "right", L.dist, L.angle * 180.0f / M_PI, L.inliers, L.residual * 100.0f,
+                 L.x_min, L.x_max);
+        set_state(WALL_LOCKED, why);
+        sample_set = false;
+        sample_outline(L, true);
+      } else if (hypot(P.x - state_x, P.y - state_y) > TOF_ALIGN_MAX_RUN) {
+        stop_free("approach not completed"); return;
+      } else {
+        bool pivot, circle = false;
+        float k = pursuit(tx, ty, tux, tuy, follow_dist(), nullptr, &circle, &pivot);
+        // Steep approach: at least the arc that ends parallel on the follow line (pure pursuit alone overshoots it)
+        float a = atan2f(tuy, tux), off = (tx + sg * follow_dist() * tuy) * -tuy + (ty - sg * follow_dist() * tux) * tux;
+        if (off * a < 0.0f && fabsf(off) > 0.02f) {
+          float kt = copysignf((1.0f - cosf(a)) / fabsf(off), a);
+          if (kt * k >= 0.0f && fabsf(kt) > fabsf(k)) k = kt;
+        }
+        steer(k, pivot, lin, fabsf(k) < 0.4f ? lin : TOF_WALL_MAX_SPEED, &v, &w);   // user speed until it curves
+      }
     }
 
-    if (good) {
-      if (lin > 0.01f) {
-        // Hold the clearance and the wall's direction (NavTracker's law on the wall line)
-        float e = L.dist - (TOF_WALL_CLEARANCE + MOWER_HALF_WIDTH);
-        float herr = L.angle + sg * atanf(e / MOTION_APPROACH_DISTANCE);
-        w = fmaxf(-TOF_WALL_MAX_TURN, fminf(TOF_WALL_MAX_TURN, MOTION_HEADING_GAIN * herr));
-        v = fminf(fminf(lin, TOF_WALL_MAX_SPEED), brake(room_ahead()));
-        if (state == WALL_LOCKED) {
-          float room_end = L.x_max - MOWER_FRONT_OVERHANG - TOF_WALL_END_AHEAD;
-          if (room_end <= 0.0f) {
-            stop_free(open_ahead[side] ? "wall end (open space ahead)" : "wall end (not seen further)");
-            SerialDebug.println("[WALL] end");
-            return;
-          }
-          v = fminf(v, brake(room_end));
-        } else if (corner) {
+    if (state == WALL_PIVOT) {
+      float err = angle_diff(P.yaw, pivot_target);
+      if (fabsf(err) < MOTION_TURN_DONE) {
+        set_state(WALL_LOCKED, "corner turned, following the new wall");
+        sample_set = false;
+      } else if (now - state_since > MOTION_ROTATE_TIMEOUT_MS) {
+        stop_free("corner turn timed out"); return;
+      } else if (user_fresh && lin <= 0.01f) {
+        stop_free("user stopped in the corner turn"); return;
+      } else {
+        w = fmaxf(-TOF_PIVOT_SPEED, fminf(TOF_PIVOT_SPEED, MOTION_ROTATE_GAIN * err));
+        if (fabsf(err) < TOF_PIVOT_NEAR_DONE && free_travel(0.0f, w, 2.0f * TOF_GUARD_STEP) < TOF_GUARD_STEP) {
+          // The last few degrees blocked (the frozen wall is a few cm off): follow on, the curve onto the wall
+          // finishes the turn
+          set_state(WALL_LOCKED, "corner turned (last degrees blocked), following the new wall");
+          sample_set = false;
+        }
+      }
+    }
+
+    if (state == WALL_OUTER) {
+      // Round the end at the follow distance; the wall goes on when a side fit (not of the wall that ended) runs on
+      // ahead along the heading
+      outer_turned += angle_diff(outer_yaw, P.yaw) * sg;
+      outer_yaw = P.yaw;
+      float ex, ey;   // the wall that goes on starts at the end (its other face: a wall's thickness off)
+      to_robot(end_x, end_y, &ex, &ey);
+      bool cand = L.valid && L.dist < TOF_LOCK_MAX_DIST + 0.2f && fabsf(L.angle) < TOF_LOCK_MAX_ANGLE &&
+                  L.x_max - MOWER_FRONT_OVERHANG - TOF_WALL_END_AHEAD >= TOF_LOCK_MIN_RUN &&
+                  fabsf(L.ux * (ey - L.cy) - L.uy * (ex - L.cx)) < TOF_OUTER_END_DIST;
+      // ... and stays the same line for TOF_LOCK_TIME_MS (the mixed returns at a corner first fit a chamfer)
+      if (!cand) outer_since = 0;
+      else if (outer_since == 0 || !same_wall(outer_cand, L.cx, L.cy, L.ux, L.uy)) {
+        outer_since = now; outer_cand = line_to_world(L.cx, L.cy, L.ux, L.uy);
+      }
+      if (cand && now - outer_since >= TOF_LOCK_TIME_MS) {
+        char why[120];
+        snprintf(why, sizeof(why), "wall goes on after %.0f deg: %s wall %.2f m, %.0f deg", outer_turned * 180.0f / M_PI,
+                 side == 0 ? "left" : "right", L.dist, L.angle * 180.0f / M_PI);
+        set_state(WALL_LOCKED, why);
+        sample_set = false;
+      } else if (outer_turned > TOF_OUTER_MAX_TURN) {
+        stop_free("round the end, no wall found"); return;
+      } else {
+        float tx, ty, tux, tuy, e[2];
+        line_to_robot(target, &tx, &ty, &tux, &tuy);
+        to_robot(end_x, end_y, &e[0], &e[1]);
+        bool pivot;
+        // On the corner-turn distance: a short wall after the end (a step) may end in an inner corner at once
+        float k = pursuit(tx, ty, tux, tuy, TOF_CORNER_STOP, e, &circling, &pivot);
+        steer(k, pivot, lin, TOF_WALL_MAX_SPEED, &v, &w);
+      }
+    }
+
+    if (state == WALL_LOCKED || state == WALL_CORNER) {
+      bool good = L.valid && L.dist < TOF_LOCK_MAX_DIST + 0.2f && fabsf(L.angle) < 0.785f;
+      if (good) bad_since = 0;
+      else if (bad_since == 0) bad_since = now;
+      if (bad_since && now - bad_since > TOF_QUALITY_TIMEOUT_MS) { stop_free("wall estimate lost"); return; }
+
+      // Inner corner: a wall across the path, meeting this one on its side
+      float x0 = 1e9f, ix = 0.0f, iy = 0.0f;
+      bool corner = false;
+      if (good && ahead.valid && fabsf(ahead.uy) > 0.3f) {
+        x0 = ahead.cx - ahead.cy * ahead.ux / ahead.uy;   // where it crosses the path
+        float cr = L.ux * ahead.uy - L.uy * ahead.ux;
+        if (fabsf(cr) > 0.5f) {
+          float t = ((ahead.cx - L.cx) * ahead.uy - (ahead.cy - L.cy) * ahead.ux) / cr;
+          ix = L.cx + t * L.ux; iy = L.cy + t * L.uy;
+          corner = x0 > 0.0f && x0 < TOF_CORNER_DETECT && ix > 0.0f && sg * iy > 0.0f;
+        }
+      }
+      if (state == WALL_LOCKED && corner) {
+        char why[120];
+        snprintf(why, sizeof(why), "wall ahead %.2f m, corner at (%.2f, %.2f) robot (%.0f deg, %d inliers, %.1f cm rms)",
+                 ahead.dist, ix, iy, ahead.angle * 180.0f / M_PI, ahead.inliers, ahead.residual * 100.0f);
+        set_state(WALL_CORNER, why);
+      } else if (state == WALL_CORNER) {
+        if (corner) { ahead_bad_since = 0; to_world(ix, iy, &corner_x, &corner_y); }
+        else if (ahead_bad_since == 0) ahead_bad_since = now;
+        if (ahead_bad_since && now - ahead_bad_since > TOF_QUALITY_TIMEOUT_MS) {
+          set_state(WALL_LOCKED, "wall ahead gone");
+          corner_pending = true;   // a wide corner the mower curves round loses the wall ahead from view
+        }
+      }
+      if (state == WALL_LOCKED && corner_pending) {
+        if (fabsf(angle_diff(P.yaw, corner_yaw)) > TOF_CORNER_CURVED) {   // it curved round it: record the corner
+          float cx, cy;
+          to_robot(corner_x, corner_y, &cx, &cy);
+          queue_point(cx, cy, true);
+          corner_pending = false;
+        } else if (hypot(P.x - corner_x, P.y - corner_y) > TOF_CORNER_DETECT + TOF_CORNER_STOP) corner_pending = false;
+      }
+
+      if (good && lin > 0.01f) {
+        // Follow the wall; toward a corner, at the distance a turn on the spot needs
+        bool pivot, circle = false;
+        float k = state == WALL_CORNER
+                      ? pursuit(L.cx, L.cy, L.ux, L.uy, TOF_CORNER_STOP, nullptr, &circle, &pivot, TOF_CORNER_LOOKAHEAD)
+                      : pursuit(L.cx, L.cy, L.ux, L.uy, follow_dist(), nullptr, &circle, &pivot);
+        steer(k, false, lin, TOF_WALL_MAX_SPEED, &v, &w);
+        float room_end = L.x_max - MOWER_FRONT_OVERHANG - TOF_WALL_END_AHEAD;
+        if (state == WALL_LOCKED && room_end <= 0.0f && !wall_goes_on(L)) {
+          // The wall ends (outer corner, opening, free end): round its end, recorded as an outline point
+          float t = (L.x_max - L.cx) / L.ux;
+          float ex = L.cx + t * L.ux, ey = L.cy + t * L.uy;
+          queue_point(ex, ey, true);
+          to_world(ex, ey, &end_x, &end_y);
+          target = line_to_world(ex, ey, L.ux, L.uy);
+          circling = false;
+          outer_turned = 0.0f; outer_yaw = P.yaw;
+          char why[120];
+          snprintf(why, sizeof(why), "wall end at (%.2f, %.2f) robot%s, going round it", ex, ey,
+                   open_ahead[side] ? " (open space ahead)" : "");
+          set_state(WALL_OUTER, why);
+        } else if (state == WALL_CORNER && corner) {
           float room = ahead.dist - TOF_CORNER_STOP;
-          if (room <= 0.01f) {
+          if (room <= 0.01f && fabsf(P.vx) > TOF_PIVOT_START_SPEED) {
+            v = 0.0f; w = 0.0f;   // at the stop point still moving (the wall ahead came up late): stop first, the
+                                  // turn's sweep is checked from where the mower stands
+          } else if (room <= 0.01f) {
             // Stopped before the new wall: turn toward its direction, away from this wall
             float ux = ahead.ux, uy = ahead.uy;
             if (uy * sg > 0.0f) { ux = -ux; uy = -uy; }
             float turn = atan2f(uy, ux);
-            float hx, hy;
-            int hits;
-            freeze_wall(p, L, ix, iy);
-            if (!sweep_clear(p, turn, &hx, &hy, &hits)) {
+            float hx = 0.0f, hy = 0.0f;
+            freeze_wall(L, ix, iy);
+            int sn0 = sn;
+            wall_solids();
+            const float sweep = fabsf(turn) * hypotf(MOWER_REAR_OVERHANG, MOWER_HALF_WIDTH);
+            bool clear = free_travel(0.0f, copysignf(1.0f, turn), sweep, &hx, &hy) >= sweep;
+            if (!clear && !wall_seg_end) {   // a tight corner (a short wall between two corners): the reference itself, no margin
+              clearance = TOF_PIVOT_CLEARANCE;
+              clear = free_travel(0.0f, copysignf(1.0f, turn), sweep, &hx, &hy) >= sweep;
+              clearance = TOF_GUARD_CLEARANCE;
+            }
+            sn = sn0;
+            if (clear) {
+              queue_point(ix, iy, true);
+              pivot_target = normalize_angle(P.yaw + turn);
+              char why[64];
+              snprintf(why, sizeof(why), "turning %.0f deg on the spot", turn * 180.0f / M_PI);
+              set_state(WALL_PIVOT, why);
+              v = 0.0f; w = 0.0f;
+            } else if (room > -TOF_CORNER_CREEP) {
+              // Not out from the side wall yet (sharp corner, still settling): creep on and check again
+              if (v > TOF_WALL_MIN_SPEED) { w *= TOF_WALL_MIN_SPEED / v; v = TOF_WALL_MIN_SPEED; }
+            } else {
               char why[120];
-              if (hits) snprintf(why, sizeof(why), "corner: no room to turn %.0f deg, %d seen points, last at (%.2f, %.2f) robot",
-                                 turn * 180.0f / M_PI, hits, hx, hy);
-              else snprintf(why, sizeof(why), "corner: no room to turn %.0f deg, followed wall at (%.2f, %.2f) robot",
-                            turn * 180.0f / M_PI, hx, hy);
+              snprintf(why, sizeof(why), "corner: no room to turn %.0f deg, blocked at (%.2f, %.2f) robot, walls %.2f and %.2f m",
+                       turn * 180.0f / M_PI, hx, hy, L.dist, ahead.dist);
               stop_free(why);
               return;
             }
-            queue_point(p, ix, iy, true);
-            pivot_target = normalize_angle(p.yaw + turn);
-            pivot_start = now;
-            char why[64];
-            snprintf(why, sizeof(why), "turning %.0f deg on the spot", turn * 180.0f / M_PI);
-            set_state(WALL_PIVOT, why);
-            v = 0.0f; w = 0.0f;
           } else {
             v = fminf(v, brake(room));
           }
         }
-        if (state != WALL_PIVOT) {
-          w *= fminf(1.0f, v / TOF_WALL_MIN_SPEED);   // no turning on the spot by the wall
-          bool no_left, no_right;
-          side_turn_block(&no_left, &no_right);
-          if ((no_left && w > 0.0f) || (no_right && w < 0.0f)) w = 0.0f;
-        }
-        if (state != WALL_PIVOT && v < 0.01f) {   // held by something ahead that is no corner
-          if (blocked_since == 0) blocked_since = now;
-          else if (now - blocked_since > TOF_BLOCKED_MS) { stop_free("blocked ahead"); return; }
-        } else blocked_since = 0;
-        if (state == WALL_LOCKED || state == WALL_CORNER) sample_outline(p, L, false);
-      } else if (lin < -0.01f) {
-        v = fmaxf(lin, -TOF_WALL_REVERSE_SPEED);   // backwards, straight
+        if (state == WALL_LOCKED || state == WALL_CORNER) sample_outline(L, false);
       }
     }
   }
 
-  // Drive only while the user holds a key (the main loop's watchdog stops the motors otherwise)
-  if (!user_fresh) return;
+  // Drive only while the user holds the stick (the main loop's watchdog stops the motors otherwise)
+  if (!guarding || !user_fresh) return;
   if (now - last_publish < 50 && !new_frame) return;
+  clearance = state == WALL_PIVOT ? TOF_PIVOT_CLEARANCE : TOF_GUARD_CLEARANCE;
+  float s = guard_scale(v, w);
+  v *= s; w *= s;
+  if (state != WALL_FREE && lin > 0.01f && fabsf(v) < 0.01f && fabsf(w) < 0.01f) {   // held by something
+    if (blocked_since == 0) blocked_since = now;
+    else if (now - blocked_since > TOF_BLOCKED_MS) { stop_free("blocked"); return; }
+  } else blocked_since = 0;
   publish_motor(MOTOR_MOVE, v, w);
 }
 
@@ -581,7 +932,7 @@ bool wall_assist_manual(float lin, float ang) {
   portENTER_CRITICAL(&mux);
   user_lin = lin; user_ang = ang; user_ms = millis();
   portEXIT_CRITICAL(&mux);
-  return available && enabled && state != WALL_FREE;
+  return available && guarding;
 }
 
 void wall_assist_release() {
@@ -619,10 +970,10 @@ void wall_assist_print_status() {
   for (int i = 0; mem && i < TOF_MEMORY_POINTS; i++) if (mem[i].t_ms) points++;
   const tof_frame_t* f;
   bool f0 = tof_latest_frame(0, &f), f1 = tof_latest_frame(1, &f);
-  SerialDebug.printf("[WALL] Assist %s, state %s%s, sensors %d (frames: left %s, right %s), %d points\r\n",
+  SerialDebug.printf("[WALL] Assist %s, state %s%s, guard %s, sensors %d (frames: left %s, right %s), %d points, %d map samples\r\n",
                      enabled ? "ON" : "OFF", state_name[state],
-                     state != WALL_FREE ? (side == 0 ? " on the left" : " on the right") : "",
-                     tof_sensor_count(), f0 ? "yes" : "no", f1 ? "yes" : "no", points);
+                     state != WALL_FREE ? (side == 0 ? " on the left" : " on the right") : "", guarding ? "on" : "off",
+                     tof_sensor_count(), f0 ? "yes" : "no", f1 ? "yes" : "no", points, sn);
   for (int s = 0; s < 2; s++)
     SerialDebug.printf("[WALL] %-5s %s: %.2f m from the centreline, %+.0f deg, %d inliers, %.1f cm rms, %.2f m long, seen to x %.2f m%s\r\n",
                        s == 0 ? "left" : "right", l[s].valid ? "valid" : "none ", l[s].dist,

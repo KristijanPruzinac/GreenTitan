@@ -17,7 +17,9 @@
 #   north, inner corners opening south: 45 deg at x -4.5 (2.4 m arms), 60 deg at x -0.5 (2.0 m),
 #     90 deg at x 3.5 (1.8 m), vertices on y 8.4; east, a 120 deg one opening west, vertex
 #     (7, 1.1), 2.0 m arms;
-#   a lone post, 0.1 m diameter, at (5.5, 4.5).
+#   a lone post, 0.1 m diameter, at (5.5, 4.5);
+#   west, a step (2026-10-30): a wall north along x -11 from y -5, an outer 90 deg corner at y -2 (it
+#     steps west 0.8 m), then an inner 90 deg corner where it runs on north along x -11.8 to y 1.
 # The wire mesh, pickets and rail fence are in fences.yaml. Reflectances (objects' and the ToF
 # defaults in mower.yaml) are est.
 # Use: hil.launch.py world:=<share>/config/edges.yaml
@@ -59,3 +61,4 @@ objects:
   - {name: corner_90, type: wall, height: 1.0, thickness: 0.15, points: [[2.2272, 7.1272], [3.5, 8.4], [4.7728, 7.1272]]}
   - {name: corner_120, type: wall, height: 1.0, thickness: 0.15, points: [[6.0, 2.8321], [7.0, 1.1], [6.0, -0.6321]]}
   - {name: post, shape: {cylinder: [0.05, 1.0]}, position: [5.5, 4.5], reflectance: 0.3, color: [0.42, 0.32, 0.2]}
+  - {name: step, type: wall, height: 1.0, thickness: 0.15, points: [[-11.0, -5.0], [-11.0, -2.0], [-11.8, -2.0], [-11.8, 1.0]]}
