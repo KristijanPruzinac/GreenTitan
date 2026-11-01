@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>GreenTitan Drive</title>
-<!-- Drive page served by robot_package/web_ui.py. One file, no external resources (the phone may be offline). -->
+<!-- Drive page served by robot_package/web_ui.py. One file, no external resources for the 2D view (the phone may be
+     offline); the optional 3D view loads three.js from cdnjs the first time it is opened. -->
 <style>
 :root {
   --bg: #eef0ea; --panel: #ffffff; --ink: #1d2320; --muted: #66706a; --line: #d3d8cf;
@@ -84,6 +85,7 @@ body.touch #hint { display: none; }
   <button id="c-assist">Assist</button>
   <button id="c-status">Status</button>
   <button id="c-follow" class="on">Follow</button>
+  <button id="c-3d">3D</button>
   <button id="c-log">Log</button>
 </div>
 <div id="view">
@@ -113,6 +115,7 @@ let view = {x: 0, y: 0, s: 90, follow: true};               // centre (m, odom),
 let st = null, logId = 0, worldRev = -1, world = [], online = false, lastOk = 0;
 let trail = [];                                             // [x, y, t] of the axle
 let logLines = [];
+let flash = {text: "", until: 0};                           // short page message (3D load failure)
 
 // ---- server ----
 async function post(path, body) {
@@ -136,6 +139,7 @@ async function poll() {
     if (st.world_rev !== worldRev) loadWorld(st.world_rev);
     if (st.pose) addTrail(st.pose);
     renderStatus();
+    v3.dirty = true;                                       // the 3D view renders only on new state or input
   } catch (e) {
     online = false; renderStatus();
   }
@@ -170,6 +174,7 @@ const ageCls = a => a == null || a > 2 ? "bad" : a > 0.5 ? "warn" : "ok";
 function renderStatus() {
   if (!online || performance.now() - lastOk > 1500) {
     badge("b-link", "bad", "OFFLINE", "page server not reachable");
+    renderNotice();
     return;
   }
   const esp = [st.age_imu, st.age_log].filter(a => a != null);
@@ -190,9 +195,16 @@ function renderStatus() {
   $("c-manual").textContent = st.manual ? "Manual ON" : "Manual";
   $("c-assist").className = st.assist ? "on" : "";
   $("c-assist").textContent = st.assist ? "Assist ON" : st.assist === false ? "Assist OFF" : "Assist";
-  const note = st.notice === "manual is off" ? "Manual is off: press Manual first" : st.notice === "stick lost: stopped" ? "Stick signal lost: stopped" : "";
-  $("notice").textContent = note; $("notice").style.display = note && drive.active ? "block" : "none";
+  renderNotice();
 }
+
+function renderNotice() {
+  const live = online && st && performance.now() - lastOk <= 1500;
+  const note = !live ? "" : st.notice === "manual is off" ? "Manual is off: press Manual first" : st.notice === "stick lost: stopped" ? "Stick signal lost: stopped" : "";
+  const fl = performance.now() < flash.until ? flash.text : "";
+  $("notice").textContent = fl || note; $("notice").style.display = fl || (note && drive.active) ? "block" : "none";
+}
+function flashNotice(text) { flash = {text, until: performance.now() + 5000}; renderNotice(); setTimeout(renderNotice, 5100); }
 
 function renderLog() {
   const el = $("log"), atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
@@ -340,6 +352,7 @@ function drawTruth(p) {
 }
 
 function frame() {
+  if (v3.on) { render3d(); requestAnimationFrame(frame); return; }
   if (view.follow && st && st.pose) [view.x, view.y] = axleOf(st.pose);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.fillStyle = "#f4f5f0"; ctx.fillRect(0, 0, W, H);
@@ -363,7 +376,7 @@ function zoomAt(px, py, f) {
   view.s = Math.min(600, Math.max(4, view.s * f));
   if (!view.follow) { view.x = x - (px - W / 2) / view.s; view.y = y + (py - H / 2) / view.s; }
 }
-function setFollow(on) { view.follow = on; $("c-follow").className = on ? "on" : ""; }
+function setFollow(on) { view.follow = on; $("c-follow").className = on ? "on" : ""; v3.dirty = true; }
 let down = null;                                            // where a one-finger drag started
 cv.addEventListener("pointerdown", e => { cv.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.offsetX, e.offsetY]); pinch = null; down = [e.offsetX, e.offsetY]; });
 cv.addEventListener("pointermove", e => {
@@ -384,6 +397,268 @@ cv.addEventListener("pointermove", e => {
 const lift = e => { pointers.delete(e.pointerId); pinch = null; };
 cv.addEventListener("pointerup", lift); cv.addEventListener("pointercancel", lift);
 cv.addEventListener("wheel", e => { e.preventDefault(); zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * 0.0015)); }, {passive: false});
+
+// ---- 3D view: three.js from cdnjs, loaded the first time 3D is opened (the 2D view needs nothing external) ----
+// Odom frame, metres, z up. Meshes are built once and moved; map, world and outlines are rebuilt only when they change.
+// Renders only after new state or input (the page polls ~7x/s), to stay light on the phone.
+const THREE_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
+const BODY_Z0 = 0.05, BODY_Z1 = 0.29;                       // body box height (sim mower.yaml cover envelope)
+const WHEEL_R = 0.075, WHEEL_Y = 0.182, TOF_Z = 0.09;        // drive wheels, ToF mount height (est.)
+const THICK = [0.08, 0.03, 0.06, 0.30];                     // m, drawn thickness of wall, fence, low edge, hedge
+const HINT2 = $("hint").textContent;
+const HINT3 = "Keys: W A S D or arrows to drive, Space = stop. Drag to orbit, right-drag or two fingers to pan, wheel to zoom.";
+const v3 = {on: false, loading: false, ready: false, dirty: true, mapKey: null, world: null, outKey: null,
+            cam: {az: -Math.PI / 2, el: 0.85, d: 7, tx: 0, ty: 0}};
+
+function load3d() {
+  if (window.THREE) return Promise.resolve();
+  return new Promise((ok, fail) => {
+    const s = document.createElement("script");
+    let done = false;
+    const end = bad => { if (done) return; done = true; clearTimeout(t); if (bad) { s.remove(); fail(); } else ok(); };
+    const t = setTimeout(() => end(true), 15000);
+    s.src = THREE_URL;
+    s.onload = () => end(!window.THREE); s.onerror = () => end(true);
+    document.head.appendChild(s);
+  });
+}
+
+async function set3d(on) {
+  const b = $("c-3d");
+  if (on && !v3.ready) {
+    if (v3.loading) return;
+    v3.loading = true; b.disabled = true; b.textContent = "3D …";
+    try { await load3d(); } catch (e) { flashNotice("3D view not available: three.js could not be loaded (no internet?)"); }
+    if (window.THREE) try { init3d(); } catch (e) { flashNotice("3D view not available: no WebGL in this browser"); }
+    v3.loading = false; b.disabled = false; b.textContent = "3D";
+    if (!v3.ready) return;
+  }
+  if (on && !view.follow) [v3.cam.tx, v3.cam.ty] = [view.x, view.y];   // open where the 2D view looked
+  if (!on && !view.follow) [view.x, view.y] = [v3.cam.tx, v3.cam.ty];
+  v3.on = on;
+  b.className = on ? "on" : "";
+  cv.style.display = on ? "none" : "";
+  if (v3.ready) v3.r.domElement.style.display = on ? "" : "none";
+  $("hint").textContent = on ? HINT3 : HINT2;
+  if (on) resize3d(); else resize();
+  v3.dirty = true;
+}
+
+function resize3d() {
+  const r = $("view").getBoundingClientRect();
+  v3.W = Math.max(1, r.width); v3.H = Math.max(1, r.height);
+  v3.r.setSize(v3.W, v3.H, false);
+  v3.cam3.aspect = v3.W / v3.H; v3.cam3.updateProjectionMatrix();
+  v3.dirty = true;
+}
+
+function init3d() {
+  const T = THREE;
+  const r = new T.WebGLRenderer({antialias: true});
+  r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  r.setClearColor(0xf4f5f0);
+  const scene = new T.Scene();
+  const cam3 = new T.PerspectiveCamera(50, 1, 0.05, 300);
+  cam3.up.set(0, 0, 1);
+  scene.add(new T.HemisphereLight(0xffffff, 0x9aa59a, 0.8));
+  const sun = new T.DirectionalLight(0xffffff, 0.5); sun.position.set(-3, -5, 8); scene.add(sun);
+  const grid = new T.GridHelper(100, 100, 0x9aa59a, 0xd9ddd4);   // 1 m, in the xy plane
+  grid.rotation.x = Math.PI / 2; scene.add(grid);
+
+  const box = new T.BoxGeometry(1, 1, 1), cyl = new T.CylinderGeometry(1, 1, 1, 16);
+  cyl.rotateX(Math.PI / 2);                                   // axis along z
+  const kindMat = KINDS.map(([n, c], i) => new T.MeshLambertMaterial(i === 1
+    ? {color: c, transparent: true, opacity: 0.45, depthWrite: false} : {color: c}));
+  const greyMat = new T.MeshLambertMaterial({color: 0x9aa09b, transparent: true, opacity: 0.45, depthWrite: false});
+  const greyEdge = new T.LineBasicMaterial({color: 0x8d938e});
+  const blueMat = new T.MeshBasicMaterial({color: 0x2f5fb3});
+  const group = () => { const g = new T.Group(); scene.add(g); return g; };
+
+  // mower: body box around the axle (front = drive wheels), wheels, heading arrow, antenna, ToF frusta
+  const L = FRONT + REAR, bodyGeo = new T.BoxGeometry(L, 2 * HALF_W, BODY_Z1 - BODY_Z0);
+  bodyGeo.translate((FRONT - REAR) / 2, 0, (BODY_Z0 + BODY_Z1) / 2);
+  const bodyEdges = new T.EdgesGeometry(bodyGeo);
+  const mower = group();
+  mower.add(new T.Mesh(bodyGeo, new T.MeshLambertMaterial({color: 0xe07b00, transparent: true, opacity: 0.8})));
+  mower.add(new T.LineSegments(bodyEdges, new T.LineBasicMaterial({color: 0x8a4b00})));
+  const wheelGeo = new T.CylinderGeometry(WHEEL_R, WHEEL_R, 0.04, 16), dark = new T.MeshLambertMaterial({color: 0x262b28});
+  for (const s of [1, -1]) { const w = new T.Mesh(wheelGeo, dark); w.position.set(0, s * WHEEL_Y, WHEEL_R); mower.add(w); }
+  const arrow = new T.Shape([[-0.05, 0.08], [FRONT - 0.01, 0], [-0.05, -0.08]].map(([x, y]) => new T.Vector2(x, y)));
+  const am = new T.Mesh(new T.ShapeGeometry(arrow), new T.MeshBasicMaterial({color: 0x1d2320, side: T.DoubleSide}));
+  am.position.z = BODY_Z1 + 0.003; mower.add(am);
+  const ant = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.02, 12), new T.MeshLambertMaterial({color: 0xffffff}));
+  ant.rotation.x = Math.PI / 2; ant.position.set(-ANT_BEHIND, 0, BODY_Z1 + 0.01); mower.add(ant);
+  const h = TOF_RANGE * Math.tan(TOF_FOV / 2 * Math.PI / 180), R = TOF_RANGE;
+  const fc = [[R, h, h], [R, -h, h], [R, -h, -h], [R, h, -h]], tri = [];
+  for (let i = 0; i < 4; i++) tri.push(0, 0, 0, ...fc[i], ...fc[(i + 1) % 4]);
+  const fGeo = new T.BufferGeometry(); fGeo.setAttribute("position", new T.Float32BufferAttribute(tri, 3));
+  const eGeo = new T.BufferGeometry(); eGeo.setAttribute("position", new T.Float32BufferAttribute(
+    fc.flatMap((c, i) => [0, 0, 0, ...c, ...c, ...fc[(i + 1) % 4]]), 3));
+  const fMat = new T.MeshBasicMaterial({color: 0x2f5fb3, transparent: true, opacity: 0.10, side: T.DoubleSide, depthWrite: false});
+  const eMat = new T.LineBasicMaterial({color: 0x2f5fb3, transparent: true, opacity: 0.35});
+  for (const t of TOF) {
+    const g = new T.Group(); g.position.set(t.x, t.y, TOF_Z); g.rotation.z = t.yaw * Math.PI / 180;
+    g.add(new T.Mesh(fGeo, fMat), new T.LineSegments(eGeo, eMat)); mower.add(g);
+  }
+  // true mower (sim): dashed outline of the same box
+  const truth = new T.LineSegments(bodyEdges, new T.LineDashedMaterial({color: 0x1d2320, dashSize: 0.04, gapSize: 0.03, transparent: true, opacity: 0.6}));
+  truth.computeLineDistances(); scene.add(truth);
+  // trail: a flat ribbon, fading to the background like the 2D trail
+  const N = 5000, trailGeo = new T.BufferGeometry();
+  trailGeo.setAttribute("position", new T.BufferAttribute(new Float32Array(N * 18), 3));
+  trailGeo.setAttribute("color", new T.BufferAttribute(new Float32Array(N * 18), 3));
+  const trailMesh = new T.Mesh(trailGeo, new T.MeshBasicMaterial({vertexColors: true, side: T.DoubleSide}));
+  trailMesh.frustumCulled = false; scene.add(trailMesh);
+
+  Object.assign(v3, {r, scene, cam3, box, cyl, kindMat, greyMat, greyEdge, blueMat, mower, truth, trailGeo,
+    mapG: group(), worldG: group(), outG: group(), dot: new T.CircleGeometry(0.03, 12), bigDot: new T.CircleGeometry(0.05, 12)});
+  for (const g of [box, cyl, v3.dot, v3.bigDot]) g.userData.shared = true;
+  r.domElement.style.display = "none";
+  $("view").insertBefore(r.domElement, $("legend"));
+  bind3dInput(r.domElement);
+  v3.ready = true;
+}
+
+function clearGroup(g) {                                    // frees the group's own geometries, not the shared ones
+  for (const c of [...g.children]) { g.remove(c); if (c.geometry && !c.geometry.userData.shared) c.geometry.dispose(); }
+}
+
+// a ground ribbon (half width hw) along segments [[ax, ay, bx, by, color]], into position/color arrays from index 0
+function ribbon(pos, col, segs, hw, z) {
+  let k = 0;
+  for (const [ax, ay, bx, by, c] of segs) {
+    const l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l * hw, ny = (bx - ax) / l * hw;
+    for (const [x, y] of [[ax + nx, ay + ny], [ax - nx, ay - ny], [bx + nx, by + ny], [bx + nx, by + ny], [ax - nx, ay - ny], [bx - nx, by - ny]]) {
+      pos[k] = x; pos[k + 1] = y; pos[k + 2] = z;
+      if (col) { col[k] = c[0]; col[k + 1] = c[1]; col[k + 2] = c[2]; }
+      k += 3;
+    }
+  }
+  return k / 3;
+}
+
+function sync3dMap() {
+  const map = (st && st.map) || [];
+  const key = map.map(m => m.slice(0, 6).join(",")).join(";");     // hits change all the time: not part of the key
+  if (key === v3.mapKey) return;
+  v3.mapKey = key; clearGroup(v3.mapG);
+  for (const [kind, x0, y0, x1, y1, hc] of map) {
+    const h = Math.max(0.02, hc / 100), m = new THREE.Mesh(kind === 4 ? v3.cyl : v3.box, v3.kindMat[kind] || v3.kindMat[0]);
+    if (kind === 4) {
+      const r = Math.max(0.02, x1 / 100);
+      m.scale.set(r, r, h); m.position.set(x0 / 100, y0 / 100, h / 2);
+    } else {
+      const th = THICK[kind] || 0.08, l = Math.hypot(x1 - x0, y1 - y0) / 100;
+      m.scale.set(l + th, th, h); m.position.set((x0 + x1) / 200, (y0 + y1) / 200, h / 2);
+      m.rotation.z = Math.atan2(y1 - y0, x1 - x0);
+    }
+    v3.mapG.add(m);
+  }
+}
+
+function sync3dWorld() {
+  if (world === v3.world) return;
+  v3.world = world; clearGroup(v3.worldG);
+  for (const p of world) {
+    const [z0, z1] = p.z || [0, {wall: 1.0, curb: 0.08}[p.k] || 0.5];   // old web_ui: no heights sent
+    const zb = Math.max(0, z0), h = Math.max(0.01, z1 - zb);
+    if (p.p) {
+      const geo = new THREE.ExtrudeGeometry(new THREE.Shape(p.p.map(([x, y]) => new THREE.Vector2(x, y))), {depth: h, bevelEnabled: false});
+      const m = new THREE.Mesh(geo, v3.greyMat), e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), v3.greyEdge);
+      m.position.z = e.position.z = zb; v3.worldG.add(m, e);
+    } else {
+      const m = new THREE.Mesh(v3.cyl, v3.greyMat);
+      m.scale.set(p.r, p.r, h); m.position.set(p.c[0], p.c[1], zb + h / 2); v3.worldG.add(m);
+    }
+  }
+}
+
+function sync3dOutlines() {
+  const outs = (st && st.outlines) || [];
+  const key = outs.map(o => o.length + (o.length ? ":" + o[o.length - 1].join(",") : "")).join(";");
+  if (key === v3.outKey) return;
+  v3.outKey = key; clearGroup(v3.outG);
+  for (const o of outs) {
+    if (o.length > 1) {
+      const segs = [];
+      for (let i = 1; i < o.length; i++) segs.push([o[i - 1][0] / 100, o[i - 1][1] / 100, o[i][0] / 100, o[i][1] / 100]);
+      const pos = new Float32Array(segs.length * 18); ribbon(pos, null, segs, 0.01, 0.015);
+      const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      v3.outG.add(new THREE.Mesh(g, v3.blueMat));
+    }
+    for (const [x, y, corner] of o) {
+      const d = new THREE.Mesh(corner ? v3.bigDot : v3.dot, v3.blueMat);
+      d.position.set(x / 100, y / 100, 0.02); v3.outG.add(d);
+    }
+  }
+}
+
+const BG = [0xf4 / 255, 0xf5 / 255, 0xf0 / 255], ORANGE = [0xe0 / 255, 0x7b / 255, 0];
+function sync3dTrail() {
+  const t = performance.now() / 1000, segs = [];
+  for (let i = 1; i < trail.length; i++) {
+    const [ax, ay] = trail[i - 1], [bx, by, bt] = trail[i];
+    if (Math.hypot(bx - ax, by - ay) > 1) continue;           // pose jump: no line across it
+    const a = Math.max(0, 0.65 * (1 - (t - bt) / TRAIL_S));
+    segs.push([ax, ay, bx, by, BG.map((b, j) => b + (ORANGE[j] - b) * a)]);
+  }
+  const g = v3.trailGeo, n = ribbon(g.attributes.position.array, g.attributes.color.array, segs.slice(-5000), 0.015, 0.01);
+  g.setDrawRange(0, n); g.attributes.position.needsUpdate = true; g.attributes.color.needsUpdate = true;
+}
+
+function render3d() {
+  if (!v3.dirty || !v3.ready) return;
+  v3.dirty = false;
+  sync3dMap(); sync3dWorld(); sync3dOutlines(); sync3dTrail();
+  const p = st && st.pose;
+  v3.mower.visible = !!p;
+  if (p) { const [x, y] = axleOf(p); v3.mower.position.set(x, y, 0); v3.mower.rotation.z = p.yaw; }
+  const q = st && st.truth;
+  v3.truth.visible = !!q;
+  if (q) { v3.truth.position.set(q.x, q.y, 0); v3.truth.rotation.z = q.yaw; }   // truth = axle midpoint
+  const c = v3.cam;
+  if (view.follow && p) [c.tx, c.ty] = axleOf(p);
+  const ce = Math.cos(c.el);
+  v3.cam3.position.set(c.tx + c.d * ce * Math.cos(c.az), c.ty + c.d * ce * Math.sin(c.az), c.d * Math.sin(c.el));
+  v3.cam3.lookAt(c.tx, c.ty, 0);
+  v3.r.render(v3.scene, v3.cam3);
+}
+
+// orbit (drag), pan (right-drag, shift-drag, two fingers; stops Follow like a 2D pan), zoom (wheel, pinch)
+function pan3d(dx, dy) {
+  setFollow(false);
+  const c = v3.cam, k = c.d * 2 * Math.tan(25 * Math.PI / 180) / v3.H;
+  const rx = -Math.sin(c.az), ry = Math.cos(c.az), fx = -Math.cos(c.az), fy = -Math.sin(c.az), kf = k / Math.max(0.3, Math.sin(c.el));
+  c.tx += -rx * dx * k + fx * dy * kf; c.ty += -ry * dx * k + fy * dy * kf;
+}
+function bind3dInput(el) {
+  const ptr = new Map(), c = v3.cam;
+  let two = null, btn = 0;
+  const zoom = f => { c.d = Math.min(120, Math.max(0.6, c.d * f)); };
+  el.addEventListener("contextmenu", e => e.preventDefault());
+  el.addEventListener("pointerdown", e => { el.setPointerCapture(e.pointerId); ptr.set(e.pointerId, [e.offsetX, e.offsetY]); two = null; btn = e.button; });
+  el.addEventListener("pointermove", e => {
+    if (!ptr.has(e.pointerId)) return;
+    const prev = ptr.get(e.pointerId); ptr.set(e.pointerId, [e.offsetX, e.offsetY]);
+    if (ptr.size === 1) {
+      const dx = e.offsetX - prev[0], dy = e.offsetY - prev[1];
+      if (btn === 2 || btn === 1 || e.shiftKey) pan3d(dx, dy);
+      else { c.az -= dx * 0.008; c.el = Math.min(1.55, Math.max(0.08, c.el + dy * 0.008)); }
+    } else if (ptr.size === 2) {
+      const [a, b] = [...ptr.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      if (two) {
+        zoom(two.d / Math.max(1, d));
+        two.move += Math.hypot(m[0] - two.m[0], m[1] - two.m[1]);
+        if (!view.follow || two.move > 12) pan3d(m[0] - two.m[0], m[1] - two.m[1]);   // a pinch alone keeps following
+      }
+      two = {d, m, move: two ? two.move : 0};
+    }
+    v3.dirty = true;
+  });
+  const lift = e => { ptr.delete(e.pointerId); two = null; };
+  el.addEventListener("pointerup", lift); el.addEventListener("pointercancel", lift);
+  el.addEventListener("wheel", e => { e.preventDefault(); zoom(Math.exp(e.deltaY * 0.0015)); v3.dirty = true; }, {passive: false});
+}
 
 // ---- driving: joystick and keys feed one stick, sent at 10 Hz while held ----
 const drive = {joy: null, keys: new Set(), active: false};
@@ -442,10 +717,11 @@ $("c-manual").onclick = () => cmd("manual");
 $("c-assist").onclick = () => cmd("assist");
 $("c-status").onclick = () => { cmd("status"); $("log").classList.add("open"); $("c-log").className = "on"; };
 $("c-follow").onclick = () => setFollow(!view.follow);
+$("c-3d").onclick = () => set3d(!v3.on);
 $("c-log").onclick = () => { const open = $("log").classList.toggle("open"); $("c-log").className = open ? "on" : ""; renderLog(); };
 for (const b of document.querySelectorAll("button")) b.addEventListener("click", () => b.blur());   // Space = stop, not "press again"
 
-window.addEventListener("resize", resize);
+window.addEventListener("resize", () => { if (v3.on) resize3d(); else resize(); });
 if (window.innerWidth > 800) { $("log").classList.add("open"); $("c-log").className = "on"; }
 if (matchMedia("(pointer: coarse)").matches) document.body.classList.add("touch");
 resize(); buildLegend(); poll(); requestAnimationFrame(frame);

@@ -16,7 +16,8 @@ true mower (/sim/greentitan/ground_truth), moved into the odom frame through the
 esp/wall_map v1 (Int16MultiArray): [1, n, then per object kind, x0, y0, x1, y1, height, hits],
 cm in odom; kind 0 wall, 1 fence, 2 low edge, 3 hedge, 4 post (x0, y0 centre, x1 radius).
 
-Only Python stdlib + rclpy: no rosbridge, no external JS, works offline.
+Only Python stdlib + rclpy: no rosbridge, no external JS for the 2D page, works offline (the optional
+3D view loads three.js from cdnjs the first time it is opened).
 """
 import collections
 import json
@@ -63,7 +64,7 @@ def _page_path():
 
 
 class World:
-    """True objects of a sim world YAML as 2D footprints, in the odom frame of a datum."""
+    """True objects of a sim world YAML as 2D footprints with a height range, in the odom frame of a datum."""
 
     def __init__(self, path):
         from sim_env import config, obstacles  # only with a world: the phone has no sim_env
@@ -71,20 +72,23 @@ class World:
         cfg = config.load(path)
         self.origin = cfg['world']['origin']
         self.enu_to_geodetic = enu_to_geodetic
-        self.parts = []  # (kind, ('poly', [(x, y)...]) | ('circle', (x, y), r)) in world metres
+        # (kind, ('poly', [(x, y)...]) | ('circle', (x, y), r), (z bottom, z top)) in world metres
+        self.parts = []
         for obj in cfg.get('objects', []):
             parts, _ = obstacles.expand(obj, lambda x, y: 0.0)
             for p in parts:
                 kind = p.get('kind') or obj.get('type') or obj.get('name', 'object')
-                x, y, yaw = p['pose'][0], p['pose'][1], p['pose'][5]
+                x, y, z, yaw = p['pose'][0], p['pose'][1], p['pose'][2], p['pose'][5]
                 if 'box' in p:
-                    hx, hy = p['box'][0] / 2, p['box'][1] / 2
+                    hx, hy, hz = p['box'][0] / 2, p['box'][1] / 2, p['box'][2] / 2
                     c, s = math.cos(yaw), math.sin(yaw)
                     self.parts.append((kind, ('poly', [(x + c * u - s * v, y + s * u + c * v)
-                                                       for u, v in ((hx, hy), (-hx, hy), (-hx, -hy), (hx, -hy))])))
+                                                       for u, v in ((hx, hy), (-hx, hy), (-hx, -hy), (hx, -hy))]),
+                                       (z - hz, z + hz)))
                 elif 'cylinder' in p or 'sphere' in p:
                     r = p['cylinder'][0] if 'cylinder' in p else p['sphere']
-                    self.parts.append((kind, ('circle', (x, y), r)))
+                    hz = p['cylinder'][1] / 2 if 'cylinder' in p else r
+                    self.parts.append((kind, ('circle', (x, y), r), (z - hz, z + hz)))
         self.datum = None  # (lat, lon); None = assume the world origin
 
     def to_odom(self, e, n):
@@ -95,11 +99,12 @@ class World:
 
     def footprints(self):
         out = []
-        for kind, g in self.parts:
+        for kind, g, zr in self.parts:
+            z = [round(v, 3) for v in zr]  # bottom, top (m above the world ground; 3D view)
             if g[0] == 'poly':
-                out.append({'k': kind, 'p': [[round(v, 3) for v in self.to_odom(*q)] for q in g[1]]})
+                out.append({'k': kind, 'p': [[round(v, 3) for v in self.to_odom(*q)] for q in g[1]], 'z': z})
             else:
-                out.append({'k': kind, 'c': [round(v, 3) for v in self.to_odom(*g[1])], 'r': round(g[2], 3)})
+                out.append({'k': kind, 'c': [round(v, 3) for v in self.to_odom(*g[1])], 'r': round(g[2], 3), 'z': z})
         return out
 
 
