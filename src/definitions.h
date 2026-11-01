@@ -231,9 +231,53 @@ typedef struct {
 #define TOF_MAP_EMPTY_FRAMES 8     // TOF_MAP_EMPTY_MS: that part is not there (the sim's wire mesh is seen out to ~0.9 m)
 #define TOF_MAP_EMPTY_MS 1000
 #ifndef TOF_MAP_MAX_TURN
-#define TOF_MAP_MAX_TURN 0.15f     // rad/s: frames taken while turning faster are left out (the heading is
+#define TOF_MAP_MAX_TURN 0.3f      // rad/s: frames taken while turning faster are left out (the heading is
 #endif                             // several deg off in turns: walls seen twice; 2026-11-01 replay of a HIL drive)
 #define TOF_MAP_UPDATE_MS 200
+// Published map (publish_snapshot): segments of one face are published as one. Same side of view (a segment
+// counts as seen from one side once TOF_MAP_SIDE_MIN more of its points came from there than the other) ...
+#define TOF_MAP_SIDE_MIN 20.0f
+#define TOF_MAP_SIDE_CAP 2000.0f
+#ifndef TOF_MAP_PUB_ANGLE
+#define TOF_MAP_PUB_ANGLE 0.21f    // rad, ... nearly parallel ...
+#endif
+#ifndef TOF_MAP_PUB_DIST
+#define TOF_MAP_PUB_DIST 0.25f     // m, ... and overlapping with the ends this close to the other line, or ...
+#endif
+#ifndef TOF_MAP_PUB_GAP
+#define TOF_MAP_PUB_GAP 0.25f      // m ... this far apart end to end ...
+#endif
+#ifndef TOF_MAP_PUB_GAP_DIST
+#define TOF_MAP_PUB_GAP_DIST 0.10f // m ... and in line
+#endif
+#ifndef TOF_MAP_SMEAR_LEN
+#define TOF_MAP_SMEAR_LEN 0.45f    // m: a segment shorter than this, with both ends within ...
+#endif
+#ifndef TOF_MAP_SMEAR_DIST
+#define TOF_MAP_SMEAR_DIST 0.30f   // m of a published segment twice as long, at an angle, with ...
+#endif
+#ifndef TOF_MAP_SMEAR_HITS
+#define TOF_MAP_SMEAR_HITS 0.3f    // ... at most this share of its hits, is a corner smear: left out
+#endif
+#ifndef TOF_MAP_PUB_CORNER
+#define TOF_MAP_PUB_CORNER 0.40f   // m: published ends this close to two lines' crossing meet there
+#endif
+// Wider gaps (links): two lines in line up to TOF_MAP_LINK_GAP apart, or ends up to TOF_MAP_LINK_CORNER short of
+// their crossing, are joined unless the rays crossing the gap show an opening: TOF_MAP_LINK_THROUGH or more
+// seen through it, and more seen through than hitting something there
+#define TOF_MAP_LINKS 32
+#ifndef TOF_MAP_LINK_GAP
+#define TOF_MAP_LINK_GAP 1.0f
+#endif
+#ifndef TOF_MAP_LINK_CORNER
+#define TOF_MAP_LINK_CORNER 1.0f
+#endif
+#ifndef TOF_MAP_LINK_THROUGH
+#define TOF_MAP_LINK_THROUGH 3
+#endif
+#define TOF_MAP_LINK_MIN_LEN 0.30f // m: only between lines at least this long
+#define TOF_MAP_LINK_MATCH 0.20f   // m: a gap whose ends moved less than this is the same link (keeps its evidence)
+#define TOF_MAP_LINK_AGE_MS 30000  // a link not found for this long is forgotten
 // Types: fence if TOF_MAP_FENCE_THROUGH of the crossing rays pass or TOF_MAP_FENCE_GAP of its face points had a
 // see-through zone between them; low edge with its top seen below TOF_MAP_LOW_HEIGHT; hedge if rougher than
 // TOF_MAP_HEDGE_RESIDUAL; else wall. Post: from its shape

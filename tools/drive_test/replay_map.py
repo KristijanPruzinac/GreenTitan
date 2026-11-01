@@ -7,7 +7,8 @@ The bag needs /hil/tof (the raw frames), /esp/fused_pose (the pose the ESP got),
 (drive_rec.sh records them). Each frame is placed as tof_task does: the last fused pose before it, moved to the
 axle and carried forward to the frame time minus TOF_FRAME_DELAY. Mapping starts at "[GPS] Heading confirmed"
 (as in the firmware). Roll and pitch are taken as 0 (flat worlds). Extra compiler flags: REPLAY_CFLAGS (space or %
-separated, e.g. -DTOF_MAP_MAX_TURN=0.2f); REPLAY_YAW_LAG=s carries the pose s seconds further.
+separated, e.g. -DTOF_MAP_MAX_TURN=0.2f); REPLAY_YAW_LAG=s carries the pose s seconds further; REPLAY_SRC=file
+maps with another version of tof_map.cpp (e.g. `git show HEAD:src/sensor/tof_map.cpp > /tmp/old.cpp`).
 Run in WSL/Linux with ROS and the workspace sourced.
 """
 import argparse
@@ -50,8 +51,9 @@ def main():
 
     B = read(a.bag, ['/hil/tof', '/esp/fused_pose', '/esp/log'])
     start = next((t for t, m in B['/esp/log'] if 'Heading confirmed' in m.data), None)
-    if start is None:
-        sys.exit('no "[GPS] Heading confirmed" in esp/log: was the recording started after it?')
+    if start is None:   # recorded after it (the drive tests start the bag once the heading is confirmed)
+        print('no "[GPS] Heading confirmed" in esp/log: mapping from the start', flush=True)
+        start = 0.0
     poses = [(t, list(m.data)) for t, m in B['/esp/fused_pose']]
     frames, k, t0 = bytearray(), 0, B['/hil/tof'][0][0]
     n = 0
@@ -80,8 +82,10 @@ def main():
     print(f'{n} frames from {start - t0:.0f} s on', flush=True)
 
     exe = os.path.join(a.out, 'tof_map_test')
-    src = [os.path.join(REPO, 'tools/tof_map_test/tof_map_test.cpp'), os.path.join(REPO, 'src/sensor/tof_map.cpp')]
+    src = [os.path.join(REPO, 'tools/tof_map_test/tof_map_test.cpp'),
+           os.environ.get('REPLAY_SRC') or os.path.join(REPO, 'src/sensor/tof_map.cpp')]
     flags = os.environ.get('REPLAY_CFLAGS', '').replace('%', ' ').split()
+    flags += ['-I', os.path.join(REPO, 'src/sensor'), '-I', os.path.join(REPO, 'src')]
     subprocess.run(['g++', '-std=gnu++17', '-O2', '-w', *flags, '-include', os.path.join(REPO, 'tools/tof_map_test/shim.h'),
                     '-o', exe, *src], check=True)
     rows = os.path.join(a.out, 'map.txt')

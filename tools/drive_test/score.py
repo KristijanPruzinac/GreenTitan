@@ -174,6 +174,7 @@ def score(B, world_yaml, res, map_rows=None):
         allpts = np.vstack([ln['pts'] for ln in lines]) if lines else np.zeros((0, 2))
         passed = covered = double = 0.0
         gaps = pieces = faces_n = 0
+        gap_list = []   # x0 y0 x1 y1 of each gap
         for kind, top, poly in faces:
             c = poly.mean(axis=0)
             for i in range(len(poly)):
@@ -199,19 +200,24 @@ def score(B, world_yaml, res, map_rows=None):
                 passed += near_path.sum() * 0.05
                 covered += (near_path & cov).sum() * 0.05
                 # Lines on this face: how many pieces cover it, and how much of it two or more lines cover
-                on = [np.array([np.min(np.hypot(*(ln['pts'] - q).T)) < NEAR for q in s]) & near_path for ln in lines]
+                # (lines along the face: a wall meeting it at a corner is not a second piece)
+                along = [ln for ln in lines if len(ln['pts']) > 1 and abs(np.dot(ln['pts'][-1] - ln['pts'][0], b0 - a0)) >=
+                         math.cos(math.radians(20)) * np.hypot(*(ln['pts'][-1] - ln['pts'][0])) * L]
+                on = [np.array([np.min(np.hypot(*(ln['pts'] - q).T)) < NEAR for q in s]) & near_path for ln in along]
                 on = [o for o in on if o.sum() >= 2]
                 if on:
                     faces_n += 1
                     pieces += len(on)
                     double += (np.sum(on, axis=0) >= 2).sum() * 0.05
                 run = 0
-                for ok in near_path & ~cov:
+                for k, ok in enumerate(near_path & ~cov):
                     run = run + 1 if ok else 0
                     gaps += run == 6
+                    if run >= 6 and (k + 1 == len(s) or not (near_path & ~cov)[k + 1]):
+                        gap_list.append([round(float(v), 2) for v in (s[k - run + 1][0], s[k - run + 1][1], s[k][0], s[k][1])])
         res['continuity'] = {'passed_m': round(passed, 1), 'covered_share': round(covered / passed, 2) if passed else None,
                              'gaps_over_30cm': gaps, 'pieces_per_face': round(pieces / faces_n, 2) if faces_n else None,
-                             'double_m': round(double, 1)}
+                             'double_m': round(double, 1), 'gaps': gap_list}
     t0 = tr[0, 0] if len(tr) else 0.0
     ev = []
     for t, m in B.get('/esp/log', []):

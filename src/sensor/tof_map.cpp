@@ -114,6 +114,7 @@ struct Obj {
   uint16_t empty_frames;             // frames in a row whose rays all passed through it
   uint32_t empty_since;
   float e0, e1;                      // along the segment, m: where they passed
+  float side;                        // face points seen from the left (+1 each) or right (-1) of x0 -> x1
 };
 
 // A candidate cell: face points not (yet) part of an object
@@ -135,12 +136,24 @@ struct NearObj {
   float e0, e1;
 };
 
+// A gap between published lines (publish_snapshot): end a -> m -> end b (m: the corner, or the middle when
+// in line) and the rays that crossed it
+struct Link {
+  bool used;
+  float x[3], y[3];
+  float zcap;
+  uint16_t hit, through;
+  uint32_t t_ms;
+};
+
 static Obj* objs = nullptr;
 static Cell* cells = nullptr;
+static Link* links = nullptr;
 static NearObj* near_objs = nullptr;
 static int16_t* work = nullptr;        // 2 x TOF_MAP_CELLS
 static MapObject* snap = nullptr;      // handed out under snap_mux
 static MapObject* snap_new = nullptr;
+static int16_t* pub_group = nullptr;   // TOF_MAP_OBJECTS: published groups (publish_snapshot)
 static int snap_n = 0;
 static volatile uint32_t snap_version = 0;
 static volatile bool clear_request = false;
@@ -153,8 +166,11 @@ bool tof_map_init() {
   work = new (std::nothrow) int16_t[2 * TOF_MAP_CELLS];
   snap = new (std::nothrow) MapObject[TOF_MAP_OBJECTS]();
   snap_new = new (std::nothrow) MapObject[TOF_MAP_OBJECTS]();
-  if (objs && cells && near_objs && work && snap && snap_new) return true;
-  delete[] objs; delete[] cells; delete[] near_objs; delete[] work; delete[] snap; delete[] snap_new;
+  pub_group = new (std::nothrow) int16_t[TOF_MAP_OBJECTS];
+  links = new (std::nothrow) Link[TOF_MAP_LINKS]();
+  if (objs && cells && near_objs && work && snap && snap_new && pub_group && links) return true;
+  delete[] objs; delete[] cells; delete[] near_objs; delete[] work; delete[] snap; delete[] snap_new; delete[] pub_group;
+  delete[] links;
   objs = nullptr;
   return false;
 }
@@ -162,6 +178,7 @@ bool tof_map_init() {
 static void do_clear() {
   for (int i = 0; i < TOF_MAP_OBJECTS; i++) objs[i].used = false;
   for (int i = 0; i < TOF_MAP_CELLS; i++) cells[i].frames = 0;
+  for (int i = 0; i < TOF_MAP_LINKS; i++) links[i].used = false;
   clear_request = false;
 }
 
@@ -298,6 +315,45 @@ static int new_object() {
 
 // ---- per frame
 
+// Rays crossing a link's two legs within TOF_MAP_EMPTY_RANGE: hit or seen through, as for objects
+static void link_rays(const TofRay* rays, const tof_frame_t& f, const TofFramePose& p) {
+  float c = cosf(p.yaw), s = sinf(p.yaw);
+  for (int i = 0; i < TOF_MAP_LINKS; i++) {
+    Link& l = links[i];
+    if (!l.used) continue;
+    float lx[3], ly[3];
+    for (int e = 0; e < 3; e++) {
+      float dx = l.x[e] - (float)p.x, dy = l.y[e] - (float)p.y;
+      lx[e] = c * dx + s * dy; ly[e] = -s * dx + c * dy;
+    }
+    float closest = 1e9f;
+    for (int e = 0; e < 3; e++) closest = fminf(closest, hypotf(lx[e], ly[e]));
+    if (closest > TOF_MAP_EMPTY_RANGE + 1.5f) continue;
+    for (int k = 0; k < TOF_ZONES; k++) {
+      uint8_t st = f.status[k];
+      if (st != TOF_STATUS_VALID && st != TOF_STATUS_NO_TARGET) continue;
+      const TofRay& r = rays[k];
+      float range = st == TOF_STATUS_VALID ? f.range_mm[k] * 1e-3f : 1e9f;
+      for (int g = 0; g < 2; g++) {
+        float ex = lx[g + 1] - lx[g], ey = ly[g + 1] - ly[g], len = hypotf(ex, ey);
+        float den = r.dx * ey - r.dy * ex;
+        if (len < 0.05f || fabsf(den) < 1e-4f) continue;
+        float wx = lx[g] - r.ox, wy = ly[g] - r.oy;
+        float d = (wx * ey - wy * ex) / den, u = (wx * r.dy - wy * r.dx) / den;
+        float margin = (0.03f + 0.05f * d) / len;
+        if (u < margin || u > 1.0f - margin) continue;
+        if (d < TOF_MIN_RANGE || d > TOF_MAP_EMPTY_RANGE) continue;
+        float zc = r.oz + d * r.dz;
+        if (zc < TOF_FACE_MIN_Z || zc > l.zcap || r.oz + (d + TOF_MAP_THROUGH) * r.dz < 0.0f) continue;
+        float tol = face_tol(d) + 0.02f;
+        if (range >= d - tol && range <= d + tol) { if (l.hit < 60000) l.hit++; }
+        else if (range > d + TOF_MAP_THROUGH) { if (l.through < 60000) l.through++; }
+        break;
+      }
+    }
+  }
+}
+
 // Rays crossing each object near the sensor: hit (the zone reads its distance), seen through (no
 // target, or a range well past it) or blocked (shorter; ignored). Then face points join the object
 // whose line they are on, or a candidate cell.
@@ -376,6 +432,7 @@ void tof_map_frame(const TofRay* rays, const tof_frame_t& f, const TofFramePose&
       }
     }
   }
+  link_rays(rays, f, p);
   for (int j = 0; j < nn; j++) {
     NearObj& q = near_objs[j];
     Obj& o = objs[q.i];
@@ -405,8 +462,12 @@ void tof_map_frame(const TofRay* rays, const tof_frame_t& f, const TofFramePose&
       }
       if (perp < best_d) { best_d = perp; best = near_objs[j].i; }
     }
-    if (best >= 0) add_point(objs[best], z, now);
-    else cell_add(z, now);
+    if (best >= 0) {
+      Obj& o = objs[best];
+      add_point(o, z, now);
+      if (!o.post && fabsf(o.side) < TOF_MAP_SIDE_CAP)
+        o.side += (o.ux * ((float)p.y - o.y0) - o.uy * ((float)p.x - o.x0)) > 0.0f ? 1.0f : -1.0f;
+    } else cell_add(z, now);
   }
 }
 
@@ -441,6 +502,7 @@ static void merge_sums(Obj& a, const Obj& b) {
   a.lo_sum += b.lo_sum; a.hi_sum += b.hi_sum;
   a.cross_hit += b.cross_hit; a.cross_through += b.cross_through;
   a.z_max = fmaxf(a.z_max, b.z_max);
+  a.side += a.ux * b.ux + a.uy * b.uy >= 0.0f ? b.side : -b.side;
   if (b.t_first < a.t_first) a.t_first = b.t_first;
   if (b.t_ms > a.t_ms) a.t_ms = b.t_ms;
 }
@@ -700,20 +762,208 @@ static void drop_replaced() {
   }
 }
 
+static void to_map_object(const Obj& o, MapObject& m) {
+  m = MapObject();
+  m.x0 = o.x0; m.y0 = o.y0; m.x1 = o.x1; m.y1 = o.y1;
+  bool top = has_top(o);
+  m.height = top ? top_height(o) : o.z_max;
+  m.kind = o.kind;
+  m.top_seen = top ? 1 : 0;
+  m.hits = o.hits > 65535 ? 65535 : (uint16_t)o.hits;
+  m.t_ms = o.t_ms;
+}
+
+static bool published(const Obj& o) { return o.used && o.t_ms != 0 && !terrain(o); }
+static int side_of(const Obj& o) { return o.side >= TOF_MAP_SIDE_MIN ? 1 : o.side <= -TOF_MAP_SIDE_MIN ? -1 : 0; }
+
+// One face seen twice: segments nearly parallel, seen from the same side (the two faces of a thin wall
+// are seen from opposite sides), both tall or both low, a few cm apart and overlapping, or in line with a
+// short gap between them
+static bool same_face(const Obj& a, const Obj& b) {
+  float dot = a.ux * b.ux + a.uy * b.uy;
+  if (fabsf(dot) < cosf(TOF_MAP_PUB_ANGLE)) return false;
+  int sa = side_of(a), sb = side_of(b) * (dot >= 0.0f ? 1 : -1);
+  if (sa != 0 && sb != 0 && sa != sb) return false;
+  if ((a.kind == MAP_LOW) != (b.kind == MAP_LOW)) return false;
+  float pa, ta, pb, tb, qa, qb, u, v, la = seg_len(a);
+  seg_coords(a, b.x0, b.y0, &pa, &ta);
+  seg_coords(a, b.x1, b.y1, &pb, &tb);
+  seg_coords(b, a.x0, a.y0, &qa, &u);
+  seg_coords(b, a.x1, a.y1, &qb, &v);
+  float lo = fminf(ta, tb), hi = fmaxf(ta, tb);
+  float overlap = fminf(hi, la) - fmaxf(lo, 0.0f);   // < 0: the gap between them
+  float off = fmaxf(fmaxf(pa, pb), fmaxf(qa, qb));
+  if (overlap > 0.0f) return off <= TOF_MAP_PUB_DIST;
+  return -overlap <= TOF_MAP_PUB_GAP && off <= TOF_MAP_PUB_GAP_DIST;
+}
+
+// The published map (2026-11-01): the objects keep their own evidence, the snapshot is filtered on each update.
+// - Segments of one face (same_face, transitively) are published as one: the fit over all their points,
+//   from the outermost end to the outermost end, typed as the best-seen one.
+// - A short weak segment with both ends near a long one at an angle is left out: the smear of a corner.
+// - Ends near the crossing of two published lines meet there (a corner), as join_corners with
+//   TOF_MAP_PUB_CORNER.
+static Obj pub_tmp;
+
+static uint32_t snap_now = 0;
+
+// The link for a gap a -> m -> b (found again if its ends moved less than TOF_MAP_LINK_MATCH, else a new one
+// without evidence): closed unless it was seen open. No free link: closed
+static bool link_closed(float ax, float ay, float mx, float my, float bx, float by, float zcap, uint32_t now) {
+  int best = -1, free_i = -1;
+  for (int i = 0; i < TOF_MAP_LINKS; i++) {
+    Link& l = links[i];
+    if (!l.used) { if (free_i < 0) free_i = i; continue; }
+    bool fwd = hypotf(l.x[0] - ax, l.y[0] - ay) < TOF_MAP_LINK_MATCH && hypotf(l.x[2] - bx, l.y[2] - by) < TOF_MAP_LINK_MATCH;
+    bool rev = hypotf(l.x[0] - bx, l.y[0] - by) < TOF_MAP_LINK_MATCH && hypotf(l.x[2] - ax, l.y[2] - ay) < TOF_MAP_LINK_MATCH;
+    if (fwd || rev) { best = i; break; }
+  }
+  if (best < 0) {
+    if (free_i < 0) return true;
+    best = free_i;
+    links[best] = Link();
+    links[best].used = true;
+  }
+  Link& l = links[best];
+  l.x[0] = ax; l.y[0] = ay; l.x[1] = mx; l.y[1] = my; l.x[2] = bx; l.y[2] = by;
+  l.zcap = zcap - 0.01f;
+  l.t_ms = now;
+  return !(l.through >= TOF_MAP_LINK_THROUGH && l.through > l.hit);
+}
+
+static int group_root(int i) { while (pub_group[i] != i) i = pub_group[i] = pub_group[pub_group[i]]; return i; }
+
 static void publish_snapshot() {
   int n = 0;
+  for (int i = 0; i < TOF_MAP_OBJECTS; i++) pub_group[i] = published(objs[i]) && !objs[i].post ? i : -1;
+  for (int i = 0; i < TOF_MAP_OBJECTS; i++) {
+    if (pub_group[i] < 0) continue;
+    for (int j = i + 1; j < TOF_MAP_OBJECTS; j++)
+      if (pub_group[j] >= 0 && same_face(objs[i], objs[j])) pub_group[group_root(j)] = group_root(i);
+  }
+  for (int i = 0; i < TOF_MAP_OBJECTS; i++) {
+    if (pub_group[i] < 0 || group_root(i) != i) continue;
+    int best = i;   // the best-seen member gives the direction and the type
+    for (int j = 0; j < TOF_MAP_OBJECTS; j++)
+      if (pub_group[j] >= 0 && group_root(j) == i && objs[j].hits > objs[best].hits) best = j;
+    Obj& g = pub_tmp;
+    g = objs[best];
+    int members = 1;
+    for (int j = 0; j < TOF_MAP_OBJECTS; j++) {
+      if (j == best || pub_group[j] < 0 || group_root(j) != i) continue;
+      merge_sums(g, objs[j]);
+      merge_ends(g, objs[j]);
+      members++;
+    }
+    MapObject& m = snap_new[n++];
+    to_map_object(g, m);
+    if (members > 1) {   // typed as the best-seen one: the members' spread across the line is not roughness
+      const Obj& b = objs[best];
+      bool top = has_top(b);
+      m.kind = b.kind;
+      m.height = top ? top_height(b) : b.z_max;
+      m.top_seen = top ? 1 : 0;
+    }
+  }
+  // corner smear: short, weak, both ends near a long published segment at an angle
+  for (int k = 0; k < n; k++) {
+    MapObject& sm = snap_new[k];
+    float ls = hypotf(sm.x1 - sm.x0, sm.y1 - sm.y0);
+    if (ls >= TOF_MAP_SMEAR_LEN) continue;
+    for (int j = 0; j < n; j++) {
+      const MapObject& l = snap_new[j];
+      if (j == k || l.hits == 0) continue;
+      float ll = hypotf(l.x1 - l.x0, l.y1 - l.y0);
+      if (ll < 2.0f * ls || sm.hits > TOF_MAP_SMEAR_HITS * l.hits) continue;
+      float ux = (l.x1 - l.x0) / ll, uy = (l.y1 - l.y0) / ll, d[2];
+      if (fabsf(ux * (sm.x1 - sm.x0) + uy * (sm.y1 - sm.y0)) > ls * cosf(TOF_MAP_PUB_ANGLE)) continue;   // parallel
+      float ex[2] = { sm.x0, sm.x1 }, ey[2] = { sm.y0, sm.y1 };
+      for (int e = 0; e < 2; e++) {
+        float t = fminf(fmaxf((ex[e] - l.x0) * ux + (ey[e] - l.y0) * uy, 0.0f), ll);
+        d[e] = hypotf(ex[e] - (l.x0 + t * ux), ey[e] - (l.y0 + t * uy));
+      }
+      if (d[0] <= TOF_MAP_SMEAR_DIST && d[1] <= TOF_MAP_SMEAR_DIST) { sm.hits = 0; break; }
+    }
+  }
+  int kept = 0;
+  for (int k = 0; k < n; k++) if (snap_new[k].hits > 0) snap_new[kept++] = snap_new[k];
+  n = kept;
+  uint32_t now = snap_now;
+  // lines in line with a wider gap between them: one line, unless the gap was seen open
+  for (int a = 0; a < n; a++) {
+    MapObject& A = snap_new[a];
+    float la = hypotf(A.x1 - A.x0, A.y1 - A.y0);
+    if (A.hits == 0 || la < TOF_MAP_LINK_MIN_LEN) continue;
+    float ux = (A.x1 - A.x0) / la, uy = (A.y1 - A.y0) / la;
+    for (int b = 0; b < n; b++) {
+      MapObject& B = snap_new[b];
+      float lb = hypotf(B.x1 - B.x0, B.y1 - B.y0);
+      if (b == a || B.hits == 0 || B.hits > A.hits || lb < TOF_MAP_LINK_MIN_LEN) continue;
+      if ((A.kind == MAP_LOW) != (B.kind == MAP_LOW)) continue;
+      if (fabsf(ux * (B.x1 - B.x0) + uy * (B.y1 - B.y0)) < lb * cosf(TOF_MAP_PUB_ANGLE)) continue;
+      float t0 = (B.x0 - A.x0) * ux + (B.y0 - A.y0) * uy, t1 = (B.x1 - A.x0) * ux + (B.y1 - A.y0) * uy;
+      float p0 = fabsf(-(B.x0 - A.x0) * uy + (B.y0 - A.y0) * ux), p1 = fabsf(-(B.x1 - A.x0) * uy + (B.y1 - A.y0) * ux);
+      if (fmaxf(p0, p1) > TOF_MAP_PUB_GAP_DIST) continue;
+      float lo = fminf(t0, t1), hi = fmaxf(t0, t1), gap = lo > la ? lo - la : hi < 0.0f ? -hi : -1.0f;
+      if (gap <= 0.0f || gap > TOF_MAP_LINK_GAP) continue;
+      // the gap: A's end -> its middle -> B's near end
+      float ax = lo > la ? A.x1 : A.x0, ay = lo > la ? A.y1 : A.y0;
+      bool b0 = lo > la ? t0 <= t1 : t0 >= t1;
+      float bx = b0 ? B.x0 : B.x1, by = b0 ? B.y0 : B.y1;
+      if (!link_closed(ax, ay, 0.5f * (ax + bx), 0.5f * (ay + by), bx, by, fminf(A.height, B.height), now)) continue;
+      float s0 = fminf(lo, 0.0f), s1 = fmaxf(hi, la);
+      float x0 = A.x0, y0 = A.y0;
+      A.x0 = x0 + s0 * ux; A.y0 = y0 + s0 * uy; A.x1 = x0 + s1 * ux; A.y1 = y0 + s1 * uy;
+      A.hits = A.hits + B.hits > 65535 ? 65535 : A.hits + B.hits;
+      if (B.t_ms > A.t_ms) A.t_ms = B.t_ms;
+      B.hits = 0;
+      la = s1 - s0;
+    }
+  }
+  kept = 0;
+  for (int k = 0; k < n; k++) if (snap_new[k].hits > 0) snap_new[kept++] = snap_new[k];
+  n = kept;
+  // corners between published lines: ends up to TOF_MAP_PUB_CORNER from the crossing meet there, up to
+  // TOF_MAP_LINK_CORNER short of it unless the gap was seen open
+  for (int a = 0; a < n; a++) {
+    MapObject& A = snap_new[a];
+    for (int b = a + 1; b < n; b++) {
+      MapObject& B = snap_new[b];
+      float la = hypotf(A.x1 - A.x0, A.y1 - A.y0), lb = hypotf(B.x1 - B.x0, B.y1 - B.y0);
+      if (la < 1e-3f || lb < 1e-3f) continue;
+      float aux = (A.x1 - A.x0) / la, auy = (A.y1 - A.y0) / la, bux = (B.x1 - B.x0) / lb, buy = (B.y1 - B.y0) / lb;
+      float cr = aux * buy - auy * bux;
+      if (fabsf(cr) < sinf(TOF_MAP_CORNER_ANGLE)) continue;
+      float ta = ((B.x0 - A.x0) * buy - (B.y0 - A.y0) * bux) / cr;
+      float X = A.x0 + ta * aux, Y = A.y0 + ta * auy;
+      float tb = (X - B.x0) * bux + (Y - B.y0) * buy, D = TOF_MAP_PUB_CORNER;
+      bool a_end = fabsf(ta) <= D || fabsf(ta - la) <= D, b_end = fabsf(tb) <= D || fabsf(tb - lb) <= D;
+      bool a_mid = ta > D && ta < la - D, b_mid = tb > D && tb < lb - D;
+      if (!((a_end && b_end) || (a_end && b_mid) || (b_end && a_mid))) {
+        // short of the crossing by more: only past the end (not cutting a line back), between long lines
+        float L = TOF_MAP_LINK_CORNER;
+        bool a_ext = (ta < 0.0f && ta >= -L) || (ta > la && ta <= la + L);
+        bool b_ext = (tb < 0.0f && tb >= -L) || (tb > lb && tb <= lb + L);
+        a_end = a_end || a_ext; b_end = b_end || b_ext;
+        if (la < TOF_MAP_LINK_MIN_LEN || lb < TOF_MAP_LINK_MIN_LEN) continue;
+        if (!((a_ext && (b_end || b_mid)) || (b_ext && (a_end || a_mid)))) continue;
+        if (a_mid) a_end = false;
+        if (b_mid) b_end = false;
+        float ax = fabsf(ta) < fabsf(ta - la) ? A.x0 : A.x1, ay = fabsf(ta) < fabsf(ta - la) ? A.y0 : A.y1;
+        float bx = fabsf(tb) < fabsf(tb - lb) ? B.x0 : B.x1, by = fabsf(tb) < fabsf(tb - lb) ? B.y0 : B.y1;
+        if (!a_end) { ax = X; ay = Y; }
+        if (!b_end) { bx = X; by = Y; }
+        if (!link_closed(ax, ay, X, Y, bx, by, fminf(A.height, B.height), now)) continue;
+      }
+      if (a_end && !a_mid) { if (fabsf(ta) < fabsf(ta - la)) { A.x0 = X; A.y0 = Y; } else { A.x1 = X; A.y1 = Y; } }
+      if (b_end && !b_mid) { if (fabsf(tb) < fabsf(tb - lb)) { B.x0 = X; B.y0 = Y; } else { B.x1 = X; B.y1 = Y; } }
+    }
+  }
+  for (int i = 0; i < TOF_MAP_LINKS; i++)
+    if (links[i].used && now - links[i].t_ms > TOF_MAP_LINK_AGE_MS) links[i].used = false;
   for (int i = 0; i < TOF_MAP_OBJECTS; i++) {
     const Obj& o = objs[i];
-    if (!o.used || o.t_ms == 0 || terrain(o)) continue;
-    MapObject& m = snap_new[n++];
-    m = MapObject();
-    m.x0 = o.x0; m.y0 = o.y0; m.x1 = o.x1; m.y1 = o.y1;
-    bool top = has_top(o);
-    m.height = top ? top_height(o) : o.z_max;
-    m.kind = o.kind;
-    m.top_seen = top ? 1 : 0;
-    m.hits = o.hits > 65535 ? 65535 : (uint16_t)o.hits;
-    m.t_ms = o.t_ms;
+    if (published(o) && o.post) to_map_object(o, snap_new[n++]);
   }
   if (n == snap_n && memcmp(snap_new, snap, n * sizeof(MapObject)) == 0) return;
   SNAP_LOCK();
@@ -785,6 +1035,7 @@ void tof_map_update(const TofFramePose& p, uint32_t now) {
     type_object(o);
     if (terrain(o) && o.face_obs >= TOF_MAP_TERRAIN_OBS) o.used = false;
   }
+  snap_now = now;
   publish_snapshot();
 }
 
