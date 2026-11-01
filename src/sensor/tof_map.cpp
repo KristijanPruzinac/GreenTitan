@@ -304,7 +304,7 @@ static int new_object() {
 void tof_map_frame(const TofRay* rays, const tof_frame_t& f, const TofFramePose& p, const TofZone* zones, uint32_t now) {
   if (!objs) return;
   if (clear_request) do_clear();
-  if (fabsf(p.omega) > TOF_MAP_MAX_TURN) return;   // the heading lags in a fast turn: points smear
+  if (fabsf(p.omega) > TOF_MAP_MAX_TURN) return;   // the heading is a few deg off in turns: a wall would come out twice
   float c = cosf(p.yaw), s = sinf(p.yaw);
   int nn = 0;
   for (int i = 0; i < TOF_MAP_OBJECTS; i++) {

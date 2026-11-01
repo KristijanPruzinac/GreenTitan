@@ -97,7 +97,9 @@ typedef struct {
 #define TOF_MOUNT_X 0.11f
 #define TOF_MOUNT_Y 0.15f
 #define TOF_MOUNT_Z 0.09f
+#ifndef TOF_MOUNT_YAW              // the wall bench sets it to try other mounts
 #define TOF_MOUNT_YAW 0.3491f      // rad, 20 deg outward: the two 45 deg fields overlap 5 deg straight ahead
+#endif
 #define TOF_FRAME_DELAY 0.04f      // s, a frame is this old when read (integration + I2C or link; est.)
 #define TOF_FRAME_TIMEOUT_MS 300   // no frame for this long while the assist drives: stop
 #define TOF_MIN_HEIGHT 0.03f       // m above the plane the wheels stand on: lower is ground (mowed grass, est.)
@@ -210,10 +212,16 @@ typedef struct {
 #define TOF_MAP_POST_MAX 0.30f     // m: a cluster shorter than this with nothing else around is a post ...
 #define TOF_MAP_POST_TIME_MS 1000  // ... once seen over this long
 #define TOF_MAP_POST_MIN_RADIUS 0.03f
+#ifndef TOF_MAP_MERGE_ANGLE
 #define TOF_MAP_MERGE_ANGLE 0.17f  // rad: collinear segments within this ...
+#endif
+#ifndef TOF_MAP_MERGE_GAP
 #define TOF_MAP_MERGE_GAP 0.15f    // ... overlapping or this close end to end are merged
+#endif
 #define TOF_MAP_CORNER_ANGLE 0.52f // rad: segments meeting at this angle or more ...
+#ifndef TOF_MAP_CORNER_DIST
 #define TOF_MAP_CORNER_DIST 0.25f  // ... with an end this close to their crossing meet there (a corner)
+#endif
 #define TOF_MAP_REPLACE_DIST 0.30f // m: a new object this close to one from before a pose jump replaces it
 #define TOF_MAP_MAX_WEIGHT 4000.0f // face points in a segment's line sums before old ones are halved
 // Rays crossing an object: hit, or seen through (no target, or TOF_MAP_THROUGH past it)
@@ -222,7 +230,9 @@ typedef struct {
 #define TOF_MAP_EMPTY_RANGE 0.7f   // m: crossings this close all seen through in TOF_MAP_EMPTY_FRAMES frames over
 #define TOF_MAP_EMPTY_FRAMES 8     // TOF_MAP_EMPTY_MS: that part is not there (the sim's wire mesh is seen out to ~0.9 m)
 #define TOF_MAP_EMPTY_MS 1000
-#define TOF_MAP_MAX_TURN 0.7f      // rad/s: frames taken while turning faster are left out (the heading lags)
+#ifndef TOF_MAP_MAX_TURN
+#define TOF_MAP_MAX_TURN 0.15f     // rad/s: frames taken while turning faster are left out (the heading is
+#endif                             // several deg off in turns: walls seen twice; 2026-11-01 replay of a HIL drive)
 #define TOF_MAP_UPDATE_MS 200
 // Types: fence if TOF_MAP_FENCE_THROUGH of the crossing rays pass or TOF_MAP_FENCE_GAP of its face points had a
 // see-through zone between them; low edge with its top seen below TOF_MAP_LOW_HEIGHT; hedge if rougher than

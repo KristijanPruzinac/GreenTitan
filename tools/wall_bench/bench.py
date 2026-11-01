@@ -64,6 +64,11 @@ class World:
             cfg['terrain'] = {'type': 'flat'}
         robot = simcfg.load(os.path.join(CONFIG, 'mower.yaml'))
         self.tof_cfg = next(d for d in robot['devices'] if d.get('model') == 'tof')
+        turn = os.environ.get('WALL_BENCH_TOF_YAW_DEG')   # another mount: firmware -DTOF_MOUNT_YAW to match
+        if turn:
+            for sen in self.tof_cfg['sensors']:
+                r = sen['rpy'][2]
+                sen['rpy'] = [sen['rpy'][0], sen['rpy'][1], r + math.copysign(math.radians(float(turn) - 20.0), r)]
         self.tof = TofModel(self.tof_cfg, cfg, np.random.default_rng(seed))
         self.ground_z = self.tof.scene.ground_z
         boxes, circles = [], []

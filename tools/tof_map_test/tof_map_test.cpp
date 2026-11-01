@@ -134,6 +134,14 @@ static int run(const std::string& name, const std::vector<Truth>& truth, const s
   }
   tof_map_update(frames.back().p, frames.back().t + 1);
   int n = tof_map_copy(m, TOF_MAP_OBJECTS);
+  if (const char* dump = getenv("TOF_MAP_DUMP")) {   // the final map as esp/wall_map rows (cm), for drive_test/replay_map.py
+    if (FILE* f = fopen(dump, "w")) {
+      for (int i = 0; i < n; i++)
+        fprintf(f, "%d %d %d %d %d %d %d\n", m[i].kind, (int)lroundf(m[i].x0 * 100), (int)lroundf(m[i].y0 * 100), (int)lroundf(m[i].x1 * 100),
+                (int)lroundf(m[i].y1 * 100), (int)lroundf(m[i].height * 100), m[i].hits);
+      fclose(f);
+    }
+  }
   Result r;
   printf("%s: %d objects (max %d), %ld frames; face zones %.1f/frame (%.1f below the old ground rule), high zones %.1f/frame\n",
          name.c_str(), n, max_objects, frames_n, face / (2.0 * frames_n), face_low / (2.0 * frames_n), high / (2.0 * frames_n));

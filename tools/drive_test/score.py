@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""score.py BAG [--scenario NAME | --world edges] [--plot out.png] [--json out.json]: score a recorded drive
+"""score.py BAG [--scenario NAME | --world edges] [--plot out.png] [--json out.json] [--map rows.txt]: score a recorded drive
 against the sim truth, and with --scenario run its pass/fail checks (scenarios.py). Exit code 1 if a check fails.
 
 Run with ROS and the workspace sourced. Compared top-down in the firmware's odom frame, at the axle midpoint
@@ -9,7 +9,8 @@ boot (the datum is sent once), from /gps/odom against the true antenna. Reports:
   pose       EKF axle position and yaw error against truth, from 0.4 m travelled on (the boot heading is a guess)
   map        the last esp/wall_map: map line -> nearest true face, phantom length (> 10 cm from any face),
              tall/low class (curb vs the rest), height (map top vs true top, capped at what the sensors see)
-  continuity share of the true faces passed within 1.2 m that a map line covers within 10 cm, gaps over 30 cm
+  continuity share of the true faces passed within 1.2 m that a map line covers within 10 cm, gaps over 30 cm,
+             map lines per covered face (1 = one piece) and face length covered twice (duplicates)
   assist     [WALL] state changes from esp/log
   body       minimum clearance of the true footprint to any true part (contact = < 0)
 """
@@ -93,7 +94,7 @@ def footprint(x, y, yaw):
     return np.array([(x + c * u - s * v, y + s * u + c * v) for u, v in ((FRONT, HALF_W), (-REAR, HALF_W), (-REAR, -HALF_W), (FRONT, -HALF_W))])
 
 
-def score(B, world_yaml, res):
+def score(B, world_yaml, res, map_rows=None):
     W = World(world_yaml)
     for _, m in B.get('/esp/datum', []):
         W.datum = (m.latitude, m.longitude)
@@ -139,7 +140,9 @@ def score(B, world_yaml, res):
 
     objs = []
     maps = B.get('/esp/wall_map', [])
-    if maps:
+    if map_rows is not None:   # a map from elsewhere (replay_map.py), same rows
+        objs = map_rows
+    elif maps:
         d = list(maps[-1][1].data)
         if len(d) >= 2 and d[0] == 1:
             objs = [d[2 + 7 * i: 9 + 7 * i] for i in range(min(d[1], (len(d) - 2) // 7))]
@@ -169,8 +172,8 @@ def score(B, world_yaml, res):
     if len(tr):
         path = tr[:, 2:4]
         allpts = np.vstack([ln['pts'] for ln in lines]) if lines else np.zeros((0, 2))
-        passed = covered = 0.0
-        gaps = 0
+        passed = covered = double = 0.0
+        gaps = pieces = faces_n = 0
         for kind, top, poly in faces:
             c = poly.mean(axis=0)
             for i in range(len(poly)):
@@ -195,12 +198,20 @@ def score(B, world_yaml, res):
                 cov = np.array([len(allpts) > 0 and np.min(np.hypot(*(allpts - q).T)) < NEAR for q in s])
                 passed += near_path.sum() * 0.05
                 covered += (near_path & cov).sum() * 0.05
+                # Lines on this face: how many pieces cover it, and how much of it two or more lines cover
+                on = [np.array([np.min(np.hypot(*(ln['pts'] - q).T)) < NEAR for q in s]) & near_path for ln in lines]
+                on = [o for o in on if o.sum() >= 2]
+                if on:
+                    faces_n += 1
+                    pieces += len(on)
+                    double += (np.sum(on, axis=0) >= 2).sum() * 0.05
                 run = 0
                 for ok in near_path & ~cov:
                     run = run + 1 if ok else 0
                     gaps += run == 6
         res['continuity'] = {'passed_m': round(passed, 1), 'covered_share': round(covered / passed, 2) if passed else None,
-                             'gaps_over_30cm': gaps}
+                             'gaps_over_30cm': gaps, 'pieces_per_face': round(pieces / faces_n, 2) if faces_n else None,
+                             'double_m': round(double, 1)}
     t0 = tr[0, 0] if len(tr) else 0.0
     ev = []
     for t, m in B.get('/esp/log', []):
@@ -310,12 +321,14 @@ def main():
     ap.add_argument('--world')
     ap.add_argument('--plot')
     ap.add_argument('--json')
+    ap.add_argument('--map', help='score this map (rows kind x0 y0 x1 y1 h hits, cm) instead of the last esp/wall_map')
     a = ap.parse_args()
     world = a.world or (SCENARIOS[a.scenario]['world'] if a.scenario else 'edges')
     world_yaml = world if world.endswith('.yaml') else os.path.join(get_package_share_directory('greentitan_sim'), 'config', world + '.yaml')
     B = read_bag(a.bag)
     res = {'bag': os.path.basename(a.bag.rstrip('/')), 'scenario': a.scenario}
-    tr, ek, ax, ay, faces, objs, ev = score(B, world_yaml, res)
+    rows = [[int(v) for v in ln.split()] for ln in open(a.map) if ln.strip()] if a.map else None
+    tr, ek, ax, ay, faces, objs, ev = score(B, world_yaml, res, rows)
     failed = False
     if a.scenario:
         chk = check(a.scenario, B, tr, ev, res)

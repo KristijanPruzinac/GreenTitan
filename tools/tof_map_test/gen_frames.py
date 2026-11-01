@@ -146,9 +146,10 @@ def scenarios():
     s['wall_noise'] = dict(objects=s['wall_straight']['objects'], truth=s['wall_straight']['truth'],
                            drive=Drive(0.0, 0.625, 0.0).line(4.0), stray=0.02)
     s['flat_noise'] = dict(objects=[], truth=[], drive=Drive(0.0, 0.0, 0.0).line(3.0), stray=0.03)
-    # turning on the spot 0.6 m from a wall: 0.6 rad/s (kept) and 1.2 rad/s (left out)
+    # along a wall 0.6 m off it (mapped), then turning on the spot at 0.6 and 1.2 rad/s (both left out,
+    # TOF_MAP_MAX_TURN): the spins must not add a second copy of the wall
     s['turning'] = dict(objects=[wall([[-2.0, 0.0], [3.0, 0.0]])], truth=[(WALL, -2.0, 0.075, 3.0, 0.075, 1.0)],
-                        drive=Drive(0.0, 0.625, 0.0).wait(0.5).turn(2 * math.pi, 0.6).turn(2 * math.pi, 1.2))
+                        drive=Drive(-1.0, 0.625, 0.0).line(2.0).turn(2 * math.pi, 0.6).turn(2 * math.pi, 1.2))
     # the pose is 0.3 m off until it jumps back (RTK fix regained) after 2 s; then back along the wall
     s['pose_jump'] = dict(objects=s['wall_straight']['objects'], truth=s['wall_straight']['truth'],
                           drive=Drive(0.0, 0.625, 0.0).line(2.0).line(2.0).turn(math.pi).line(2.0), jump=(30, 0.0, 0.3))
