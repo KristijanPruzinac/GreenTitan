@@ -70,8 +70,8 @@ def world_faces(world_yaml, to_odom):
                 c, s = math.cos(yaw), math.sin(yaw)
                 poly = [to_odom(x + c * u - s * v, y + s * u + c * v) for u, v in ((hx, hy), (-hx, hy), (-hx, -hy), (hx, -hy))]
                 out.append((kind, z + hz, np.array(poly)))
-            elif 'cylinder' in p:
-                r, ln = p['cylinder']
+            elif 'cylinder' in p or 'sphere' in p:
+                r, ln = p['cylinder'] if 'cylinder' in p else (p['sphere'], 2 * p['sphere'])
                 cx, cy = to_odom(x, y)
                 a = np.linspace(0, 2 * math.pi, 16, endpoint=False)
                 out.append((kind, z + ln / 2, np.c_[cx + r * np.cos(a), cy + r * np.sin(a)]))

@@ -15,6 +15,8 @@ and left is inside::
        thickness: 0.02, rails: [0.15, 0.8], rail_height: 0.07, rail_prob: 1.0, rail_side: left, seed: 2}
     - {name: r, type: rail_fence, points: [...], board_height: 0.10, gap: 0.08, count: 4,
        thickness: 0.025, post_spacing: 2.0, post_size: 0.08, side: left}
+    - {name: h, type: hedge, points: [...], height: 1.1, radius: [0.22, 0.4], step: 0.3, wander: 0.12,
+       roughness: 0.12, seed: 3}
 
 ``wire_mesh``: diamond (chain-link) mesh with diamond diagonals ``cell`` along and up, as two
 families of diagonal wires; each wire crossing is displaced by N(0, ``jitter``) in the fence plane,
@@ -24,6 +26,10 @@ the mesh droops by up to ``sag`` and bows out of plane by up to +-``bulge`` mid-
 the horizontal ``rails`` (heights of their centres) with probability ``rail_prob``, on ``rail_side``.
 ``rail_fence``: ``count`` horizontal boards ``board_height`` high, ``gap`` apart and above the
 ground, on the ``side`` face of square posts.
+``hedge``: a bush, as lumps along the line: every ``step`` a low and a high sphere (radii uniform in
+``radius``, the high one's top at ``height`` +- 15 %), their centres drifting off the line in a random walk
+bounded by +-``wander``, so the face pokes out and in; rays sink up to ``roughness`` into it. The spheres
+are also the collisions.
 Every object may set ``reflectance`` (0..1, for optical range sensors), ``roughness`` (m, how deep
 optical rays get into it, e.g. a hedge), ``color`` and ``friction``.
 
@@ -36,11 +42,11 @@ import math
 
 import numpy as np
 
-POLYLINE_TYPES = ('wall', 'curb', 'wire_mesh', 'picket', 'rail_fence')
+POLYLINE_TYPES = ('wall', 'curb', 'wire_mesh', 'picket', 'rail_fence', 'hedge')
 EMBED = 0.03  # parts reach this far below the lowest ground under them, so slopes leave no gap
 
 COLORS = {'wall': [0.75, 0.72, 0.68], 'curb': [0.6, 0.6, 0.58], 'wire_mesh': [0.55, 0.57, 0.6],
-          'picket': [0.6, 0.45, 0.3], 'rail_fence': [0.5, 0.38, 0.25]}
+          'picket': [0.6, 0.45, 0.3], 'rail_fence': [0.5, 0.38, 0.25], 'hedge': [0.2, 0.42, 0.16]}
 
 
 def _ground(ground_z, a, b):
@@ -89,7 +95,8 @@ def _polyline(obj, ground_z):
     parts, collisions = [], []
     height = float(obj.get('height', {'curb': 0.08, 'wall': 1.0}.get(kind, 0.9)))
     thick = float(obj.get('thickness', {'curb': 0.06, 'wall': 0.1, 'wire_mesh': 0.004,
-                                        'picket': 0.02, 'rail_fence': 0.025}[kind]))
+                                        'picket': 0.02, 'rail_fence': 0.025, 'hedge': 0.4}[kind]))
+    off = 0.0   # hedge: the lumps' drift off the line, carried over segments
     if kind == 'rail_fence':
         bh, gap, count = float(obj.get('board_height', 0.10)), float(obj.get('gap', 0.08)), int(obj.get('count', 4))
         height = float(obj.get('bottom', gap)) + count * bh + (count - 1) * gap
@@ -148,6 +155,21 @@ def _polyline(obj, ground_z):
                                   _along(a, u, n, (s0 + s1) / 2, side * (post + thick) / 2, z + bh / 2)
                                   + [0, 0, yaw]))
                 z += bh + gap
+        elif kind == 'hedge':
+            r0, r1 = (float(v) for v in obj.get('radius', [0.22, 0.4]))
+            step, wander = float(obj.get('step', 0.3)), float(obj.get('wander', 0.12))
+            rough = obj.get('roughness', 0.12)
+            for s in np.arange(0.0, length + 1e-6, step):
+                off = float(np.clip(off + rng.normal(0.0, wander / 2), -wander, wander))
+                lo, hi = rng.uniform(r0, r1), rng.uniform(r0, r1)
+                top = height * rng.uniform(0.85, 1.15)
+                for r, z in ((lo, z0 + lo * 0.8), (hi, z0 + max(top - hi, lo))):
+                    sp = {'sphere': float(r), 'pose': _along(a, u, n, s, off + rng.normal(0.0, 0.03), z) + [0, 0, 0],
+                          'kind': kind, 'reflectance': obj.get('reflectance', 0.2), 'roughness': rough,
+                          'color': obj.get('color', COLORS['hedge']), 'alpha': None}
+                    parts.append(sp)
+                    collisions.append(sp)
+            continue
         # one thin box per segment stops a robot; fences are only as solid as their thickest part
         ct = max(thick, float(obj.get('collision_thickness', 0.04)))
         collisions.append({'box': [length, ct, height + EMBED],

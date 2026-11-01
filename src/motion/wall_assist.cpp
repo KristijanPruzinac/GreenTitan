@@ -320,10 +320,20 @@ static void add_solid(float x, float y) {
 
 // Map objects as solid samples, except where the sensors look now (there the fresh points tell, without the
 // map's few cm of error). Low edges are kept everywhere: the sensors see them only close up.
-static void map_solids() {
+// The followed wall's own map lines are left out (f: its live fit): the fit is measured now, while a map line of the
+// same face a few degrees off (fitted in a curve) came within the guard's reach beside the body and stopped the mower
+// every half second (HIL step_reverse 2026-11-01: stop-go, then FREE "blocked")
+static void map_solids(const WallLine* f) {
   if (tof_map_version() != map_version) { map_version = tof_map_version(); map_n = tof_map_copy(map_objs, TOF_MAP_OBJECTS); }
   for (int i = 0; i < map_n; i++) {
     const MapObject& m = map_objs[i];
+    if (f && m.kind != MAP_POST) {
+      float ax, ay, bx, by;
+      to_robot(m.x0, m.y0, &ax, &ay);
+      to_robot(m.x1, m.y1, &bx, &by);
+      float da = f->ux * (ay - f->cy) - f->uy * (ax - f->cx), db = f->ux * (by - f->cy) - f->uy * (bx - f->cx);
+      if (fabsf(da) < TOF_MAP_SAME_FACE && fabsf(db) < TOF_MAP_SAME_FACE) continue;
+    }
     int n = m.kind == MAP_POST ? 8 : (int)ceilf(hypotf(m.x1 - m.x0, m.y1 - m.y0) / TOF_SOLID_SPACING);
     for (int j = 0; j <= n; j++) {
       double wx, wy;
@@ -535,6 +545,18 @@ static void steer(float kappa, bool pivot, float lin, float cap, float* v, float
 
 static float follow_dist() { return TOF_WALL_CLEARANCE + MOWER_HALF_WIDTH; }
 
+// Inner corner: the wall ahead crosses the path within TOF_CORNER_DETECT and meets side wall L on its side (sg).
+// *x0: where it crosses the path, (ix, iy): the corner (robot frame)
+static bool inner_corner(const WallLine& L, float sg, float* x0, float* ix, float* iy) {
+  if (!ahead.valid || fabsf(ahead.uy) <= 0.3f) return false;
+  *x0 = ahead.cx - ahead.cy * ahead.ux / ahead.uy;
+  float cr = L.ux * ahead.uy - L.uy * ahead.ux;
+  if (fabsf(cr) <= 0.5f) return false;
+  float t = ((ahead.cx - L.cx) * ahead.uy - (ahead.cy - L.cy) * ahead.ux) / cr;
+  *ix = L.cx + t * L.ux; *iy = L.cy + t * L.uy;
+  return *x0 > 0.0f && *x0 < TOF_CORNER_DETECT && *ix > 0.0f && sg * *iy > 0.0f;
+}
+
 // The two lines are the same wall (angle and offset)
 static bool same_wall(const WorldLine& a, float lx, float ly, float ux, float uy) {
   float bx, by, bux, buy;
@@ -671,7 +693,7 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
     // against; map objects, a few cm off, would stop it halfway once they leave the view
     sn = 0;
     if (state == WALL_PIVOT) wall_solids();
-    else map_solids();
+    else map_solids(following && lines[side].valid ? &lines[side] : nullptr);
   } else if (!pose_ok) {
     rn = sn = 0;
     lines[0].valid = lines[1].valid = ahead.valid = false;
@@ -839,10 +861,14 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
       else if (outer_since == 0 || !same_wall(outer_cand, L.cx, L.cy, L.ux, L.uy)) {
         outer_since = now; outer_cand = line_to_world(L.cx, L.cy, L.ux, L.uy);
       }
-      if (cand && now - outer_since >= TOF_LOCK_TIME_MS) {
+      // A short wall round the end that runs into an inner corner (a step): lock at once, the corner turn needs
+      // the room to its stop point (bench step_outer_inner: locked after the stop point, no room to turn)
+      float cx0, cix, ciy;
+      bool step = cand && inner_corner(L, sg, &cx0, &cix, &ciy);
+      if (cand && (step || now - outer_since >= TOF_LOCK_TIME_MS)) {
         char why[120];
-        snprintf(why, sizeof(why), "wall goes on after %.0f deg: %s wall %.2f m, %.0f deg", outer_turned * 180.0f / M_PI,
-                 side == 0 ? "left" : "right", L.dist, L.angle * 180.0f / M_PI);
+        snprintf(why, sizeof(why), "wall goes on after %.0f deg: %s wall %.2f m, %.0f deg%s", outer_turned * 180.0f / M_PI,
+                 side == 0 ? "left" : "right", L.dist, L.angle * 180.0f / M_PI, step ? ", inner corner ahead" : "");
         set_state(WALL_LOCKED, why);
         sample_set = false;
       } else if (outer_turned > TOF_OUTER_MAX_TURN) {
@@ -866,16 +892,7 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
 
       // Inner corner: a wall across the path, meeting this one on its side
       float x0 = 1e9f, ix = 0.0f, iy = 0.0f;
-      bool corner = false;
-      if (good && ahead.valid && fabsf(ahead.uy) > 0.3f) {
-        x0 = ahead.cx - ahead.cy * ahead.ux / ahead.uy;   // where it crosses the path
-        float cr = L.ux * ahead.uy - L.uy * ahead.ux;
-        if (fabsf(cr) > 0.5f) {
-          float t = ((ahead.cx - L.cx) * ahead.uy - (ahead.cy - L.cy) * ahead.ux) / cr;
-          ix = L.cx + t * L.ux; iy = L.cy + t * L.uy;
-          corner = x0 > 0.0f && x0 < TOF_CORNER_DETECT && ix > 0.0f && sg * iy > 0.0f;
-        }
-      }
+      bool corner = good && inner_corner(L, sg, &x0, &ix, &iy);
       if (state == WALL_LOCKED && corner) {
         char why[120];
         snprintf(why, sizeof(why), "wall ahead %.2f m, corner at (%.2f, %.2f) robot (%.0f deg, %d inliers, %.1f cm rms)",

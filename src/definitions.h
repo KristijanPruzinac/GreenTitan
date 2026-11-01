@@ -128,7 +128,10 @@ typedef struct {
 #define TOF_LOCK_MAX_DIST 0.8f     // m, centreline to wall: a side wall closer than this counts as followed
 #define TOF_LOCK_MAX_ANGLE 0.52f   // rad: a side fit within 30 deg of the heading ends the round of a wall end
 #define TOF_WALL_CLEARANCE 0.35f   // m, body side to wall when locked: centreline 0.55, tail swing 0.46 + ToF noise (HIL: 0.30 refused corners)
+#ifndef TOF_WALL_MAX_SPEED
 #define TOF_WALL_MAX_SPEED 0.2f    // m/s, the user's speed is cut to this while the assist steers
+#endif
+#define TOF_MAP_SAME_FACE 0.25f   // m: map lines with both ends this close to the followed wall's fit are that wall
 #define TOF_WALL_MAX_TURN 0.5f     // rad/s
 #define TOF_WALL_MIN_SPEED 0.05f   // m/s, slowest forward speed while braking toward a stop point
 #define TOF_LOOKAHEAD 0.5f         // m: the assist steers by pure pursuit to a point this far along the follow path

@@ -199,6 +199,12 @@ def head_on(tmax, lin=0.3):
 add('inner_head_on', 'edges', (3.5, 6.2, 90), head_on(15), (), 'straight into the 90 deg inner corner along its bisector')
 add('pocket_follow', 'edges', (4.5 - WT - FOLLOW, -0.9, -90), follow_to(lambda r: r.plant.y < -4.0, tmax=30), ('lock', 'reached'),
     'along the wall with the 0.9 m pocket (narrower than the mower needs): past its opening, not into it')
+# Manual drive 2026-11-01 (137-153 s, stuck): south along the pocket wing's outside (wall on the right), an inner
+# corner at the pocket's back wall (turn left), along it east, round its outer end
+POCKET_OUT = [(4.5, -1.2), (4.5, -2.525), (6.075, -2.525)]
+add('pocket_wing_corner', 'edges', along(POCKET_OUT[0], POCKET_OUT[1], 'right', 0.2, FOLLOW + WT),
+    follow_to(lambda r: past(r, POCKET_OUT[1], POCKET_OUT[2], 1.2), tmax=40), ('lock', 'reached'),
+    'along the pocket wing from its free end, inner corner at the pocket back wall, then east along it')
 add('pocket_head_on', 'edges', (2.4, -3.05, 0), head_on(25), (), 'straight into the 0.9 x 1.5 m dead end')
 
 # outer corners of the island (on the left): AB -> B 90, CD -> D 45, DA -> A 135
@@ -473,3 +479,16 @@ def run(name, seed=0, world=None, plot=None, slip=0.0, terrain='flat', plot_fail
         fails = ', '.join(f'{c}: {d}' for c, ok, d in checks if not ok)
         bench.plot(r, m, plot, f'{name} seed {seed}: ' + ('PASS' if res['pass'] else 'FAIL ' + fails))
     return res
+
+
+# Garden course (garden.yaml, 2026-11-01): a hedge continuing a wall 0.25 m further out, a wall set back after
+# it, a curved wall, a wavy wall, a free bush (lumps, not boxes)
+add('hedge_step', 'garden', along((-6.0, -4.0), (-1.0, -4.0), 'right', 0.5, FOLLOW + WT),
+    follow_to(lambda r: r.plant.x > 6.0, tmax=80), ('lock', 'reached'),
+    'along the wall, on past a lumpy hedge (centre 0.25 m out, face up to 0.7 m out) and a wall set back 0.2 m after it')
+add('arc_follow', 'garden', (-2.5, 4.45, 60), follow_to(lambda r: r.plant.x > 2.0, tmax=40), ('lock', 'reached'),
+    'inside a curved wall of radius 3.5 m, wall on the left')
+add('wavy_follow', 'garden', (-6.9, -3.8, 90), follow_to(lambda r: r.plant.y > 3.0, tmax=45), ('lock', 'reached'),
+    'north along a wavy wall, wall on the left')
+add('bush_pass', 'garden', (2.6, 1.6, 19.3), follow_to(lambda r: r.plant.x > 6.0, tmax=25), (),
+    'past a free-standing bush, 0.8 m off its line')

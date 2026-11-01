@@ -57,6 +57,14 @@ SCENARIOS = {
         'checks': {'lock': True, 'inner': True, 'outer': True,
                    'end': {'x': (-10.6, -10.15), 'yaw_deg': -90, 'yaw_tol': 25}},
     },
+    # The same step the other way (where the 2026-11-01 drive stuck, "no room to turn"): north along x -11 (wall on
+    # the left), an outer 90 deg corner (turn left), 0.8 m west, an inner 90 deg corner (turn right), north along -11.8.
+    'step_reverse': {
+        'world': 'edges', 'spawn': (-10.45, -4.6, math.pi / 2),
+        'steps': [(0.25, 0, 28.0)],   # the wall ends at y 1.0, rounded after ~31 s
+        'checks': {'lock': True, 'inner': True, 'outer': True,
+                   'end': {'x': (-11.4, -10.95), 'yaw_deg': 90, 'yaw_tol': 25}},
+    },
     # Realistic drives (2026-11-01): how a user actually drives at walls and borders.
     # At the long south wall at 45 deg, holding full forward: curve onto it (ALIGN), lock, follow east.
     'approach_45': {
@@ -106,6 +114,32 @@ SCENARIOS = {
         'world': 'edges', 'spawn': (3.6, 4.1, 0.0),
         'steps': [(0.25, 0, 14.0)],
         'checks': {'map_has': 'post'},
+    },
+    # Garden course (garden.yaml, 2026-11-01): real garden borders.
+    # Along the south wall east, on past a lumpy hedge that continues it (centre 0.25 m out, its face up to 0.7 m
+    # out: an inner and an outer corner) and a wall set back 0.2 m after it: follow through both steps.
+    'hedge_step': {
+        'world': 'garden', 'spawn': (-5.5, -3.4, 0.0),
+        'steps': [(0.25, 0, 70.0)],
+        'checks': {'lock': True, 'following_at_end': True},
+    },
+    # Inside the curved wall (radius 3.5 m), wall on the left.
+    'arc_follow': {
+        'world': 'garden', 'spawn': (-2.5, 4.45, math.pi / 3),
+        'steps': [(0.25, 0, 28.0)],
+        'checks': {'lock': True},
+    },
+    # North along the wavy wall, wall on the left.
+    'wavy_follow': {
+        'world': 'garden', 'spawn': (-6.9, -3.8, math.pi / 2),
+        'steps': [(0.25, 0, 30.0)],
+        'checks': {'lock': True},
+    },
+    # Past the free-standing bush, 0.8 m off its line.
+    'bush_pass': {
+        'world': 'garden', 'spawn': (2.6, 1.6, 0.337),
+        'steps': [(0.25, 0, 14.0)],
+        'checks': {},
     },
 }
 
