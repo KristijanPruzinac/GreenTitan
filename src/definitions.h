@@ -138,6 +138,7 @@ typedef struct {
 #define TOF_ALIGN_MAX_RUN 2.5f     // m from where the curve started without locking: stop, FREE (any speed)
 #define TOF_UNLOCK_TURN 0.4f       // rad/s away from the wall, held TOF_UNLOCK_TIME_MS: back to FREE
 #define TOF_UNLOCK_TIME_MS 300
+#define TOF_UNLOCK_TOWARD_MS 1000 // hard steer toward the followed wall held this long: back to FREE too
 #define TOF_QUALITY_TIMEOUT_MS 500 // wall estimate bad this long: stop, FREE
 #define TOF_WALL_END_AHEAD 0.15f   // m: wall seen less than this past the front = wall end (round it, OUTER)
 #define TOF_GAP_BRIDGE 1.3f        // m: a wall end whose line goes on within this (gap, pocket mouth) is driven past

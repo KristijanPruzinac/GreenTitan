@@ -65,7 +65,8 @@ static int trail_n = 0, trail_head = 0;
 
 static TofPose P;   // this update's pose, carried to now
 static uint32_t good_since[2] = { 0, 0 }, ahead_good_since = 0;
-static uint32_t bad_since = 0, ahead_bad_since = 0, away_since = 0, blocked_since = 0, state_since = 0, last_publish = 0;
+static bool steer_hold = false;   // after the user took the stick: no new approach until the steer eases
+static uint32_t bad_since = 0, ahead_bad_since = 0, away_since = 0, toward_since = 0, blocked_since = 0, state_since = 0, last_publish = 0;
 static float pivot_target = 0.0f;
 static double sample_x = 0.0, sample_y = 0.0;   // where the last outline point was taken (axle)
 static bool sample_set = false;
@@ -428,9 +429,12 @@ static float guard_scale(float v, float w) {
   const float rmax = hypotf(MOWER_REAR_OVERHANG, MOWER_HALF_WIDTH);
   float q = fabsf(v) + fabsf(w) * rmax;                 // fastest body point
   if (q < 1e-3f) return 1.0f;
-  float f = free_travel(v, w, TOF_GUARD_HORIZON);
-  if (f >= TOF_GUARD_HORIZON) return 1.0f;
   float a = TOF_GUARD_DECEL * q / (fabsf(v) + fabsf(w) * 0.5f * WHEEL_BASE), t = TOF_GUARD_DELAY;
+  // At least the stopping distance ahead: a hard turn at full speed swings the corners faster than 0.4 m can stop
+  // (bench push_turn 2026-11-01: 0.3 m/s + 1 rad/s, 0.76 m/s at a corner, ended 6 cm off the wall)
+  float horizon = fmaxf(TOF_GUARD_HORIZON, q * q / (2.0f * a) + q * t + TOF_GUARD_STEP);
+  float f = free_travel(v, w, horizon);
+  if (f >= horizon) return 1.0f;
   float qa = sqrtf(2.0f * a * f + a * a * t * t) - a * t;
   return fminf(1.0f, qa / q);
 }
@@ -449,7 +453,7 @@ static void set_state(int next, const char* why) {
   if (past_end) from_end = true;
   else if (next == WALL_FREE || next == WALL_ALIGN || next == WALL_OUTER || state == WALL_PIVOT) from_end = false;
   state = next;
-  bad_since = ahead_bad_since = away_since = blocked_since = outer_since = 0;
+  bad_since = ahead_bad_since = away_since = toward_since = blocked_since = outer_since = 0;
   state_since = millis();
   state_x = P.x; state_y = P.y;
   if (next == WALL_CORNER && !corner_pending) corner_yaw = P.yaw;
@@ -558,7 +562,13 @@ static float approach(float ang, uint32_t now, int* s_out, float* ux_out, float*
   if (ahead_good_since && now - ahead_good_since >= TOF_LOCK_TIME_MS && fabsf(A.uy) > 0.3f) {
     float x0 = A.cx - A.cy * A.ux / A.uy;
     float run = (A.dist - d) / fabsf(A.uy);
-    if (x0 > 0.0f && run <= TOF_ALIGN_DETECT && (best < 0.0f || run < best)) {
+    // Its points must reach the path: the end of a wall beside it lines up across the heading too, with nothing
+    // to follow where the line meets the path (HIL drive test pull_away 2026-11-01: aligned onto empty lawn). Only
+    // where that crossing is in good view: at a slant from farther off, the points seen need not reach it yet
+    float lat = 1e9f;
+    for (int k = 0; k < rn; k++)
+      if (rx[k] >= MOWER_FRONT_OVERHANG && near_line(A, rx[k], ry[k], TOF_FIT_TOLERANCE)) lat = fminf(lat, fabsf(ry[k]));
+    if (x0 > 0.0f && (lat < MOWER_HALF_WIDTH + 0.15f || x0 > TOF_ALIGN_DETECT) && run <= TOF_ALIGN_DETECT && (best < 0.0f || run < best)) {
       float ux = A.ux, uy = A.uy;
       if (ux < 0.0f) { ux = -ux; uy = -uy; }                 // the smaller turn ...
       float a = atan2f(uy, ux);
@@ -685,8 +695,9 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
   else if (ahead_good_since == 0) ahead_good_since = now;
 
   float v = lin, w = ang;   // FREE: the user's command, through the guard
+  if (!user_fresh || fabsf(ang) < 0.2f) steer_hold = false;
   if (state == WALL_FREE) {
-    if (enabled && MANUAL_MODE_ACTIVE && pose_ok && HEADING_CONFIRMED && user_fresh && lin > 0.01f) {
+    if (enabled && MANUAL_MODE_ACTIVE && pose_ok && HEADING_CONFIRMED && user_fresh && lin > 0.01f && !steer_hold) {
       int s;
       float ux, uy, lx, ly;
       float run = approach(ang, now, &s, &ux, &uy, &lx, &ly);
@@ -713,19 +724,39 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
     const WallLine L = lines[side];
     v = w = 0.0f;
 
-    // The user turns away from the wall, or backs up: hand the steering back (the guard stays)
+    // The user turns away from the wall, or backs up: hand the steering back (the guard stays). In ALIGN toward a
+    // wall about head-on the user's steer picks the side to turn to: there away means against that turn
+    float away = ang * sg;
+    if (state == WALL_ALIGN) {
+      float tx, ty, tux, tuy;
+      line_to_robot(target, &tx, &ty, &tux, &tuy);
+      float a = atan2f(tuy, tux);
+      if (fabsf(a) > 1.5708f - TOF_ALIGN_HEAD_ON) away = ang * copysignf(1.0f, a);
+    }
     if (user_fresh && lin < -0.01f) {
       set_state(WALL_FREE, "user reversing");
       good_since[0] = good_since[1] = ahead_good_since = 0;
       v = lin; w = ang;
-    } else if (state != WALL_ALIGN && user_fresh && ang * sg < -TOF_UNLOCK_TURN) {
+    } else if (user_fresh && away < -TOF_UNLOCK_TURN) {
       if (away_since == 0) away_since = now;
       else if (now - away_since >= TOF_UNLOCK_TIME_MS) {
         set_state(WALL_FREE, "user turned away");
         good_since[0] = good_since[1] = ahead_good_since = 0;
+        steer_hold = true;
         v = lin; w = ang;
       }
     } else away_since = 0;
+    // Steering hard toward the followed wall hands the stick back too, held longer (the guard keeps the body off
+    // it): a user steering into the wall must not be ignored (HIL drive test pull_away 2026-11-01)
+    if (state == WALL_LOCKED && user_fresh && ang * sg > TOF_UNLOCK_TURN) {
+      if (toward_since == 0) toward_since = now;
+      else if (now - toward_since >= TOF_UNLOCK_TOWARD_MS) {
+        set_state(WALL_FREE, "user steered into the wall");
+        good_since[0] = good_since[1] = ahead_good_since = 0;
+        steer_hold = true;
+        v = lin; w = ang;
+      }
+    } else toward_since = 0;
 
     // Not driving on toward the wall (stopped, turning on the spot): hand the steering back (the guard stays)
     if (state == WALL_ALIGN && user_fresh && lin <= 0.01f) {

@@ -6,6 +6,7 @@ ESP-DDS comes from the PlatformIO libdeps ($ESP_DDS_DIR = its src/ overrides).
     python3 tools/wall_bench/build.py [--force]
 """
 import glob
+import hashlib
 import os
 import subprocess
 import sys
@@ -37,12 +38,20 @@ def _inputs(dds):
 
 
 def build(force=False, quiet=False):
-    """Rebuilds when any source or header is newer than the binary. Returns the binary's path."""
+    """Rebuilds when any source or header changed since the last build. Returns the binary's path."""
     dds = _dds_dir()
     srcs, headers = _inputs(dds)
     hook = os.path.isfile(os.path.join(REPO, 'src/sensor/tof_map.h'))
     deps = srcs + headers + [os.path.join(HERE, 'map_hook.cpp'), os.path.abspath(__file__)]
-    if not force and os.path.isfile(BINARY) and os.path.getmtime(BINARY) >= max(os.path.getmtime(p) for p in deps):
+    # By content, not mtime: the WSL clock and the Windows checkout's file times disagree (2026-11-01: an edit
+    # older than the binary by the clock was not built)
+    h = hashlib.sha1(' '.join(FLAGS).encode())
+    for p in sorted(deps):
+        if os.path.isfile(p):
+            with open(p, 'rb') as f:
+                h.update(f.read())
+    stamp = BINARY + '.sha1'
+    if not force and os.path.isfile(BINARY) and os.path.isfile(stamp) and open(stamp).read() == h.hexdigest():
         return BINARY
     os.makedirs(OUT, exist_ok=True)
     inc = ['-I' + os.path.join(HERE, 'shim'), '-I' + os.path.join(REPO, 'src'), '-I' + dds]
@@ -64,6 +73,8 @@ def build(force=False, quiet=False):
     if r.returncode:
         sys.exit('build.py: link failed:\n' + r.stderr)
     os.replace(BINARY + '.new', BINARY)
+    with open(stamp, 'w') as f:
+        f.write(h.hexdigest())
     if not quiet:
         print('built', BINARY, file=sys.stderr)
     return BINARY

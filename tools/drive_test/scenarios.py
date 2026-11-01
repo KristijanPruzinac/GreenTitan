@@ -65,11 +65,11 @@ SCENARIOS = {
         'checks': {'lock': True, 'following_at_end': True,
                    'follow': {'wall': ((-7.0, -6.425), (2.5, -6.425)), 'x': (-2.0, 0.5), 'dist': 0.55, 'tol': 0.08}},
     },
-    # Straight at the south wall and keep pushing (the guard must stop it 10 cm off), then turn left on the spot
-    # and drive along it: lock from standing next to the wall.
+    # Straight at the south wall and keep pushing: the assist curves onto it (head-on: the side with more room) and
+    # follows it. (Until 2026-11-01 the script turned on the spot itself, but by then the assist had turned already.)
     'head_on': {
         'world': 'edges', 'spawn': (-0.5, -4.6, -math.pi / 2),
-        'steps': [(0.3, 0, 9.0), (0, 0.5, 3.2), (0.25, 0, 12.0)],
+        'steps': [(0.3, 0, 20.0)],
         'checks': {'lock': True, 'following_at_end': True},
     },
     # Along the south wall with an uneven hand: the turn wanders +-0.12 rad/s, the speed 0.18-0.30, a 2 s stop

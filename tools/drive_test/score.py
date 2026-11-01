@@ -146,8 +146,13 @@ def score(B, world_yaml, res):
     lines = []
     for typ, x1, y1, x2, y2, h, cnt in objs:
         A, Bp = np.array([x1, y1]) / 100, np.array([x2, y2]) / 100
-        L = float(np.hypot(*(Bp - A)))
-        pts = A + np.linspace(0, 1, max(2, int(L / 0.05) + 1))[:, None] * (Bp - A)
+        if typ == 4:   # a post: centre (x1, y1), radius x2
+            a = np.linspace(0, 2 * math.pi, 8, endpoint=False)
+            pts = A + x2 / 100 * np.c_[np.cos(a), np.sin(a)]
+            L = 0.0
+        else:
+            L = float(np.hypot(*(Bp - A)))
+            pts = A + np.linspace(0, 1, max(2, int(L / 0.05) + 1))[:, None] * (Bp - A)
         dist = np.min([poly_dist(pts, f[2]) for f in faces], axis=0)
         near = int(np.argmin([np.median(poly_dist(pts, f[2])) for f in faces]))
         lines.append({'type': KINDS[typ] if typ < len(KINDS) else typ, 'len_m': round(L, 2), 'h_cm': h, 'n': cnt,
@@ -167,13 +172,24 @@ def score(B, world_yaml, res):
         passed = covered = 0.0
         gaps = 0
         for kind, top, poly in faces:
+            c = poly.mean(axis=0)
             for i in range(len(poly)):
                 a0, b0 = poly[i], poly[(i + 1) % len(poly)]
                 L = float(np.hypot(*(b0 - a0)))
                 if L < 0.12:
                     continue
                 s = a0 + np.linspace(0, 1, max(2, int(L / 0.05) + 1))[:, None] * (b0 - a0)
-                near_path = np.array([np.min(np.hypot(*(path - q).T)) < PASS for q in s])
+                nrm = np.array([a0[1] - b0[1], b0[0] - a0[0]]) / L
+                if np.dot((a0 + b0) / 2 - c, nrm) < 0:
+                    nrm = -nrm   # outward
+                # Passed: in front of the sensors at some pose (within PASS, 50 deg of the heading: both fields of
+                # view), on the face turned toward the mower (the far side of a thin wall is never seen)
+                def seen(q):
+                    d = q - path
+                    r = np.hypot(*d.T)
+                    b = np.abs(np.angle(np.exp(1j * (np.arctan2(d[:, 1], d[:, 0]) - tr[:, 4]))))
+                    return bool(np.any((r < PASS) & (b < math.radians(50)) & (d @ nrm < 0)))
+                near_path = np.array([seen(q) for q in s])
                 if near_path.sum() < 4:
                     continue
                 cov = np.array([len(allpts) > 0 and np.min(np.hypot(*(allpts - q).T)) < NEAR for q in s])
@@ -325,10 +341,16 @@ def main():
         if ax is not None:
             axp.plot(ax, ay, 'b-', lw=0.8, alpha=0.7, label='EKF axle')
         for typ, x1, y1, x2, y2, h, cnt in objs:
-            axp.plot([x1 / 100, x2 / 100], [y1 / 100, y2 / 100], '-', lw=3, color=['#b23a2a', '#8a5a2b', '#d08a00', '#2e7d32', '#6a3fb5'][typ % 5])
+            col = ['#b23a2a', '#8a5a2b', '#d08a00', '#2e7d32', '#6a3fb5'][typ % 5]
+            if typ == 4:   # post: centre, radius
+                axp.add_patch(plt.Circle((x1 / 100, y1 / 100), x2 / 100, fill=False, lw=2, color=col))
+                x2, y2 = x1, y1
+            else:
+                axp.plot([x1 / 100, x2 / 100], [y1 / 100, y2 / 100], '-', lw=3, color=col)
             axp.text(x2 / 100, y2 / 100, f'{KINDS[typ % 5]} h{h}', fontsize=7)
         if len(tr):
-            lo = np.vstack([tr[:, 2:4]] + [np.array([[o[1], o[2]], [o[3], o[4]]]) / 100 for o in objs])
+            lo = np.vstack([tr[:, 2:4]] + [np.array([[o[1], o[2]], [o[1], o[2]] if o[0] == 4 else [o[3], o[4]]]) / 100
+                                           for o in objs])
             axp.set_xlim(lo[:, 0].min() - 1.5, lo[:, 0].max() + 1.5)
             axp.set_ylim(lo[:, 1].min() - 1.5, lo[:, 1].max() + 1.5)
         axp.set_aspect('equal')

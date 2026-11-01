@@ -167,12 +167,14 @@ add('push_turn', 'edges', ALONG, push_turn, ('lock',), 'locked, then 3 s of a ha
 
 def push_hold(r):
     r.mark('go')
-    r.hold(30, 0.3, ang=-0.5, stop=lambda: locked_for(4.0)(r), need_lock=0)
+    r.hold(30, 0.3, ang=-0.5, stop=lambda: r.state == 'LOCKED', need_lock=0)
+    r.hold(30, 0.3, stop=lambda: locked_for(4.0)(r))   # eases off once it runs along the wall
     finish(r)
 
 
 add('push_hold', 'edges', (-5.0, FACE + 1.6, -45), push_hold, ('lock',),
-    '45 deg approach (wall right) with the stick turning toward the wall (-0.5 rad/s) the whole time')
+    '45 deg approach (wall right) with the stick turning toward the wall (-0.5 rad/s) until it locks (held on, '
+    'it hands the stick back after 1 s: steer_in_locked)')
 
 # inner corners: along the first arm from its tip, wall on the left, round the corner onto the second
 for ang, (a, b, c) in V.items():
@@ -302,6 +304,21 @@ def spin_away(r):   # stops pushing and turns on the spot, away from the wall
 add('spin_in_align', 'edges', APP45,
     then(lambda r: r.state == 'ALIGN' and math.degrees(r.plant.yaw) > -35.0, spin_away), ('released',),
     'mid-curve onto the wall the user stops pushing and turns on the spot: FREE, the turn is driven (HIL 2026-10-31)')
+add('pull_away_align', 'edges', APP45,
+    then(lambda r: r.state == 'ALIGN' and math.degrees(r.plant.yaw) > -35.0, pull), ('released',),
+    'mid-curve onto the wall the user steers hard against the curve: FREE')
+def steer_in(r):   # a hard turn toward the followed wall
+    r.mark('pull')
+    for _ in range(25):
+        r.v(0.3, 0.8 * sigma(r))
+
+
+add('steer_in_locked', 'edges', ALONG, then(locked_for(2.0), steer_in), ('lock', 'released'),
+    'locked 2 s, then a hard turn into the wall: FREE after 1 s, the guard keeps the body off (HIL 2026-11-01)')
+# HIL drive test pull_away 2026-11-01: driving west past the end of a wall beside the path (it lines up across the
+# heading) the assist aligned onto it and drove north onto empty lawn; steering away was ignored in ALIGN
+add('end_beside_pull', 'edges', (-1.8, -1.45, 180), then(locked_for(2.0), pull, lin=0.25), ('lock', 'released'),
+    'west past a wall end beside the path onto the wall beyond it, then a hard turn away')
 add('inner_45_head_on', 'edges', (-4.5, 5.0, 90), head_on(25), ('lock', 'turned'),
     'straight into the 45 deg inner corner along its bisector (22.5 deg to each arm): onto an arm, then round the corner')
 STEP = [(-11.0, -5.0), (-11.0, -2.0), (-11.8, -2.0), (-11.8, 1.0)]
