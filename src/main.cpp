@@ -73,6 +73,9 @@ volatile bool     MANUAL_MODE_ACTIVE    = false;
 volatile uint32_t LAST_MANUAL_MOVE_MS   = 0;
 volatile bool     MANUAL_MOTORS_STOPPED = true;
 
+volatile bool     HEADING_CONFIRMED     = false;
+volatile uint32_t HEADING_EPOCH         = 0;
+
 volatile bool     DATUM_CAPTURE_ACTIVE       = false;
 volatile int      LAST_DATUM_CAPTURE_RESULT  = DATUM_RESULT_NONE;
 
@@ -553,17 +556,28 @@ void gps_topic_callback(dds_callback_context_t* context) {
             // threw out every GPS yaw for 2 minutes. So GPS_YAW_RELOCK rejections in a row (a slide
             // lasts a moment, a wrong yaw stays) let the next one through, which relocks the yaw.
             // The EKF's yaw is its state FUSED_YAW_LAG before its stamp; the gyro carries it to the epoch.
-            static int rejected = 0;
+            // GPS_YAW_CONFIRM yaws in a row inside the gate, with the gyro calibrated, confirm the heading
+            // (HEADING_CONFIRMED); a relock takes it back until the yaws agree again.
+            static int rejected = 0, accepted = 0;
             double fused_t = fused_yaw_stamp - FUSED_YAW_LAG;
             double yaw_then = fused_yaw_for_twist + (gps_t >= fused_t ? gyro_turn_between(fused_t, gps_t)
                                                                       : -gyro_turn_between(gps_t, fused_t));
             double innov = angle_diff(yaw_meas, yaw_then);
             if (innov * innov <= 9.0 * (yaw_var + fused_yaw_var)) {
                 rejected = 0;
+                // At boot the EKF yaw variance is so large that the gate passes anything: the yaws must also agree
+                if (fabs(innov) > GPS_YAW_CONFIRM_DEG * M_PI / 180.0) accepted = 0;
+                else if (!HEADING_CONFIRMED && imu_ready() && ++accepted >= GPS_YAW_CONFIRM) {
+                    HEADING_EPOCH++;
+                    HEADING_CONFIRMED = true;
+                    SerialDebug.printf("[GPS] Heading confirmed\r\n");
+                }
             } else if (++rejected > GPS_YAW_RELOCK) {
-                rejected = 0;
+                rejected = accepted = 0;
+                HEADING_CONFIRMED = false;
                 SerialDebug.printf("[GPS] Yaw relocked, %.0f deg off\r\n", innov * 180.0 / M_PI);
             } else {
+                accepted = 0;
                 yaw_var = 1e6;
             }
         }
@@ -1066,6 +1080,16 @@ static bool capture_active = false;   // between 'c' and 'e': the wall assist's 
 static void publish_manual_move(float lin, float ang) {
     if (!MANUAL_MODE_ACTIVE) {
         SerialDebug.println("[DEBUG] Not in manual mode (press 'm' first)");
+        return;
+    }
+    // As for missions: without the gyro bias the heading is GPS noise, and driving keeps the calibration
+    // (3 s at rest) from ever finishing (HIL 2026-11-01: driven off at boot, yaw 17 deg median off)
+    if (!imu_ready()) {
+        static uint32_t said_ms = 0;
+        if (millis() - said_ms > 2000) {
+            SerialDebug.println("[MANUAL] Gyro not calibrated yet: keep still, not driving");
+            said_ms = millis();
+        }
         return;
     }
     // While the ToF sees, the wall assist drives with this command instead: guarded (10 cm body clearance),

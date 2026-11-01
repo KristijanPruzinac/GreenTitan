@@ -56,6 +56,7 @@ ros2_ws/src/sim_env/     generic Gazebo sim: YAML world/robot → SDF, device mo
 ros2_ws/src/greentitan_sim/  mower + lawn configs (fences.yaml: wall-following course, edges.yaml: wall-assist edge cases), hil.launch.py, console tool
 ros2_ws/build|install|log   colcon output (gitignored)
 tools/android/           phone provisioning (adb debloat, Termux, camera over adb)
+tools/drive_test/        HIL drive tests: scripted stick drives (scenarios.py, drive.py) and a scorer against the sim truth (score.py)
 tools/wall_bench/        wall-assist bench: the real ToF task + wall assist (g++, shims) against a numpy world and plant, scenario suite
 cad/                     Python scripts that drive Fusion 360 / render studies (roof, canopy, cowl, ...)
 outputs/                 generated CAD exports/renders (mostly gitignored)
@@ -96,6 +97,7 @@ ros2 run greentitan_sim console                                     # debug cons
 `gui:=true` opens the Gazebo window (true mower, WSLg on Windows 11). `rviz:=true` opens RViz with `config/hil.rviz`: top-down view in `odom` following `base_link`, EKF pose trail, outline/infill markers.
 Drive page (joystick, live map, wall map, sim truth): both launch files start `web_ui`; open `http://127.0.0.1:8080/` (not `localhost`: from Windows into WSL that tries IPv6 first and stalls 2 s; phone: `http://<host ip>:8080/`), `ui:=false` turns it off (ARCHITECTURE §10).
 Without firmware: `hil.launch.py robot:=<share>/config/mower_teleop.yaml agent:=false` and drive with `teleop_twist_keyboard`. HIL-vs-real differences are listed in ARCHITECTURE §11.
+HIL drive tests (scripted manual drives through the drive page, scored against the sim truth): `tools/drive_test` (ARCHITECTURE §11).
 Wall-assist bench (WSL/Linux, g++ + numpy, no ROS, no board): `python3 tools/wall_bench/run_all.py --seeds 3` (all scenarios, pass/fail table) or `python3 tools/wall_bench/run.py --scenario inner_90 --plot /tmp/x.png` (ARCHITECTURE §11).
 
 There are no automated tests. The `test/` folders only hold the PlatformIO and ament templates.

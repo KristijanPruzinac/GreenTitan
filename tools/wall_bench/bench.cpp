@@ -285,6 +285,8 @@ volatile bool TASKS_STARTED = false;
 volatile bool MANUAL_MODE_ACTIVE = false;
 volatile uint32_t LAST_MANUAL_MOVE_MS = 0;
 volatile bool MANUAL_MOTORS_STOPPED = true;
+volatile bool HEADING_CONFIRMED = true;   // the bench pose is the truth: no boot heading guess
+volatile uint32_t HEADING_EPOCH = 0;
 static bool capture_active = false;
 
 static void publish_manual_move(float lin, float ang) {   // main.cpp
@@ -396,6 +398,10 @@ int main() {
         p.x = x; p.y = y; p.yaw = (float)yaw; p.vx = (float)vx; p.omega = (float)w;
         DDS_PUBLISH("/fused_pose", p);
       }
+    } else if (cmd == 'H') {                    // H 0|1: heading guess / confirmed (the GPS yaw gate in main.cpp)
+      bool c = atoi(line + 1) != 0;
+      if (c && !HEADING_CONFIRMED) HEADING_EPOCH++;
+      HEADING_CONFIRMED = c;
     } else if (cmd == 'I') {
       IMU_data_t d = {};
       double r, p;

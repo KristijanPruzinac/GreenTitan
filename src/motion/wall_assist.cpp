@@ -686,7 +686,7 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
 
   float v = lin, w = ang;   // FREE: the user's command, through the guard
   if (state == WALL_FREE) {
-    if (enabled && MANUAL_MODE_ACTIVE && pose_ok && user_fresh && lin > 0.01f) {
+    if (enabled && MANUAL_MODE_ACTIVE && pose_ok && HEADING_CONFIRMED && user_fresh && lin > 0.01f) {
       int s;
       float ux, uy, lx, ly;
       float run = approach(ang, now, &s, &ux, &uy, &lx, &ly);
@@ -707,6 +707,7 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
     if (!enabled) { stop_free("assist switched off"); return; }
     if (!MANUAL_MODE_ACTIVE) { stop_free("manual mode off"); return; }
     if (!pose_ok) { stop_free("no fused pose"); return; }
+    if (!HEADING_CONFIRMED) { stop_free("heading relocked"); return; }
     if (!tof_latest_frame(side, &frame)) { stop_free("no ToF frames"); return; }
     const float sg = sigma(side);
     const WallLine L = lines[side];

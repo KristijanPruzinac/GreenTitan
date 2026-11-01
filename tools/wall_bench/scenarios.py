@@ -20,10 +20,11 @@ AFTER_LOCK = 1.6        # m an approach keeps following after the lock (parallel
 FOLLOW = 0.55           # m, axle to the wall face where the assist follows (TOF_WALL_CLEARANCE + half width)
 
 
-def add(name, world, start, script, checks, note='', known=''):
-    """known: why the scenario cannot pass (a sensor limit, not the assist); run_all lists it as KNOWN."""
+def add(name, world, start, script, checks, note='', known='', boot_heading=None):
+    """known: why the scenario cannot pass (a sensor limit, not the assist); run_all lists it as KNOWN.
+    boot_heading (deg): start with the boot heading guess (bench.Run)."""
     SCENARIOS[name] = {'world': world, 'start': start, 'script': script, 'checks': ('safe',) + tuple(checks), 'note': note,
-                       'known': known}
+                       'known': known, 'boot_heading': boot_heading}
 
 
 def along(a, b, side, s, off):
@@ -209,6 +210,25 @@ add('outer_135', 'edges', along(D, A, 'left', 0.3, FOLLOW + WT), follow_to(lambd
 add('wall_end', 'edges', along(THIN[0], THIN[1], 'right', 0.3, FOLLOW + 0.04),
     follow_to(lambda r: r.plant.x < 1.0 and r.plant.y < -3.0, tmax=50), ('lock', 'reached'),
     'free end of a thin wall: round it (180 deg) and follow the other face back')
+# Manual drive 2026-11-01 (HIL drive test parallel_thin): driving past the thin wall's free end along it, wall on the
+# right. ALIGN took a slanted line fitted at the end for the wall (44 deg), curved away and gave up ("blocked").
+add('thin_from_end', 'edges', (-2.2, -2.45, 0.0), follow_to(lambda r: r.plant.x > 1.0, tmax=30), ('lock', 'parallel', 'reached'),
+    'along the thin wall from 1.2 m before its free end, 0.5 m off it, wall on the right')
+
+
+def stand_then(script, sec=3.0):
+    """A user standing still before driving off (in HIL the map piled up a standing frame's errors)."""
+    def s(r):
+        r.idle(sec)
+        script(r)
+    return s
+
+
+add('thin_from_end_stand', 'edges', (-2.2, -2.45, 0.0), stand_then(follow_to(lambda r: r.plant.x > 1.0, tmax=30)),
+    ('lock', 'parallel', 'reached'), 'thin_from_end after standing 3 s at the start (HIL drive test 2026-11-01)')
+add('thin_from_end_boot', 'edges', (-2.2, -2.45, 0.0), stand_then(follow_to(lambda r: r.plant.x > 1.0, tmax=30), 6.0),
+    ('lock', 'parallel', 'reached'), 'thin_from_end right after boot: 6 s standing with a wandering heading guess, '
+    'the HIL phantom-wall case (2026-11-01)', boot_heading=8.0)
 add('gap_narrow', 'edges', along(*GAP_W, 'left', 0.3, FOLLOW + WT), follow_to(lambda r: r.plant.x > -2.5, tmax=30),
     ('lock', 'reached'), 'a 0.35 m gap in the wall (the mower does not fit): follow on past it')
 add('gap_wide', 'edges', along(*GAP_M, 'left', 0.3, FOLLOW + WT), follow_to(lambda r: r.plant.x > 1.5, tmax=30),
@@ -418,7 +438,7 @@ def evaluate(r, m, checks):
 
 def run(name, seed=0, world=None, plot=None, slip=0.0, terrain='flat', plot_failed_only=False):
     sc = SCENARIOS[name]
-    r = bench.Run(world or sc['world'], sc['start'], seed=seed, slip=slip, terrain=terrain)
+    r = bench.Run(world or sc['world'], sc['start'], seed=seed, slip=slip, terrain=terrain, boot_heading=sc['boot_heading'])
     maps = None
     try:
         sc['script'](r)

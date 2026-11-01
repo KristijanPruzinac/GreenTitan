@@ -237,7 +237,9 @@ static void add_frame(int s, const tof_frame_t& f) {
   tof_frame_analyse(rays[s], f, fp, zones);
   for (int k = 0; k < TOF_ZONES; k++)
     if (zones[k].flags & (TOF_ZONE_HIGH | TOF_ZONE_FACE)) memory_add(zones[k], f.t_ms);
-  if (map_ok) tof_map_frame(rays[s], f, fp, zones, f.t_ms);
+  // Not with the boot heading: standing at boot the guess wanders by degrees, and every frame stamped a narrow
+  // object (a wall end) at another bearing until the smear became a confirmed line across the view (HIL 2026-11-01)
+  if (map_ok && HEADING_CONFIRMED) tof_map_frame(rays[s], f, fp, zones, f.t_ms);
 }
 
 // ---------------------------------------------------------------- DDS
@@ -323,6 +325,15 @@ void tof_task(void* parameter) {
             // ------- THREAD LOOP CODE START -------
 
             if (sensors_found > 0) {
+              // Heading just confirmed: the points placed with the guess are dropped (the guard rebuilds its
+              // view within a frame); after a relock the old map is kept apart
+              static uint32_t heading_epoch = 0;
+              if (HEADING_EPOCH != heading_epoch) {
+                heading_epoch = HEADING_EPOCH;
+                memory_clear();
+                tof_map_pose_jump();
+                SerialDebug.printf("[TOF] Heading confirmed: point memory cleared\r\n");
+              }
               bool new_frame = false;
               tof_frame_t f;
               for (int s = 0; s < 2; s++) {

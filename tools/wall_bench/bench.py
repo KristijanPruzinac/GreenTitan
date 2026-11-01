@@ -296,7 +296,7 @@ class Run:
     DT = 0.01        # s, plant + firmware exchange step
     SUB = 5          # plant substeps per step
 
-    def __init__(self, world, start, seed=0, slip=0.0, terrain='flat', pose_kw=None, binary=None):
+    def __init__(self, world, start, seed=0, slip=0.0, terrain='flat', pose_kw=None, binary=None, boot_heading=None):
         self.world = world if isinstance(world, World) else World(world, terrain, seed)
         self.rng = np.random.default_rng(seed)
         x, y, yaw_deg = start
@@ -317,6 +317,12 @@ class Run:
         self.tof_latency = float(self.world.tof_cfg.get('latency', 0.0))
         self.clear = 9.0
         self.assist_on = False
+        # boot_heading (deg): the heading is a guess at boot, off by about this much and wandering while the
+        # mower stands, until it drove ~0.3 m (the GPS yaw gate confirms it after ~1 s of driving)
+        self.boot = math.radians(boot_heading) if boot_heading else 0.0
+        if self.boot:
+            self.pose.ey += self.rng.choice([-1, 1]) * self.boot
+            self.fw.send('H 0')
         self._advance_fw()               # boot: tasks start, 0.5 s until the ToF task loops
         self.idle(0.6)
         for k in 'mco':                  # manual mode, path capture, new outline (as wall_test.py)
@@ -358,6 +364,13 @@ class Run:
             p.step(self.DT / self.SUB)
         self.t = round(self.t + self.DT, 6)
         self.pose.update(self.DT)
+        if self.boot:
+            if p.dist >= 0.3:
+                self.boot = 0.0
+                self.pose.ey = self.rng.normal(0, self.pose.ys)
+                self.fw.send('H 1')
+            else:   # standing: the gyro bias / EKF guess drifts by degrees
+                self.pose.ey += self.boot * 0.5 * math.sqrt(self.DT) * self.rng.normal()
         self.hist.append((self.t, p.x, p.y, p.yaw, p.v, p.w))
         while len(self.hist) > 2 and self.hist[1][0] <= self.t - self.pose.age:
             self.hist.popleft()
