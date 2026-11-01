@@ -154,6 +154,8 @@ typedef struct {
 #define TOF_CORNER_STOP 0.63f      // m, axle to both walls where a corner turn on the spot starts: tail swing 0.46 +
                                    // TOF_GUARD_CLEARANCE + 4 cm
 #define TOF_CORNER_LOOKAHEAD 0.25f // m, pure pursuit toward a corner: out to TOF_CORNER_STOP from the side wall in time
+#define TOF_CORNER_KEEP 0.25f      // m past the stop distance: a corner this close stands when its wall ahead leaves the view
+#define TOF_STEP_MIN_INLIERS 20    // a wall ahead fitted from this many points makes a wall round an end a step
 #define TOF_CORNER_CREEP 0.15f     // m past the stop the mower creeps on while the turn's sweep is not yet clear
 #define TOF_CORNER_CURVED 0.35f    // rad turned since an inner corner was seen whose wall ahead was lost: curved round it, a corner point
 #define TOF_AHEAD_MIN_INLIERS 6

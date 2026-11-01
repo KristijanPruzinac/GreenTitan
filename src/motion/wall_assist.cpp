@@ -75,6 +75,8 @@ static double end_x = 0.0, end_y = 0.0;   // OUTER: the wall's end point
 static double state_x = 0.0, state_y = 0.0;   // where the state was entered
 static double corner_x = 0.0, corner_y = 0.0;  // CORNER: the two walls' intersection (world), last seen
 static float corner_yaw = 0.0f;                // heading when that corner was first seen
+static float corner_ux = 0.0f, corner_uy = 0.0f;   // CORNER: the wall ahead's direction (world), last seen
+static bool step_lock = false;                  // locked round an end onto a short wall into an inner corner (a step)
 static bool corner_pending = false;            // LOCKED after "wall ahead gone": recorded once it curves round it
 static bool circling = false;         // OUTER: on the circle round the end
 static float outer_turned = 0.0f, outer_yaw = 0.0f;
@@ -462,6 +464,7 @@ static void set_state(int next, const char* why) {
   past_end = state == WALL_OUTER && next == WALL_LOCKED;
   if (past_end) from_end = true;
   else if (next == WALL_FREE || next == WALL_ALIGN || next == WALL_OUTER || state == WALL_PIVOT) from_end = false;
+  if (next != WALL_LOCKED && next != WALL_CORNER) step_lock = false;
   state = next;
   bad_since = ahead_bad_since = away_since = toward_since = blocked_since = outer_since = 0;
   state_since = millis();
@@ -864,12 +867,14 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
       // A short wall round the end that runs into an inner corner (a step): lock at once, the corner turn needs
       // the room to its stop point (bench step_outer_inner: locked after the stop point, no room to turn)
       float cx0, cix, ciy;
-      bool step = cand && inner_corner(L, sg, &cx0, &cix, &ciy);
+      // (a wall ahead well supported: a hedge's lumps fit 8-point "walls" 0.3 m ahead, bench hedge_step)
+      bool step = cand && inner_corner(L, sg, &cx0, &cix, &ciy) && ahead.inliers >= TOF_STEP_MIN_INLIERS;
       if (cand && (step || now - outer_since >= TOF_LOCK_TIME_MS)) {
         char why[120];
         snprintf(why, sizeof(why), "wall goes on after %.0f deg: %s wall %.2f m, %.0f deg%s", outer_turned * 180.0f / M_PI,
                  side == 0 ? "left" : "right", L.dist, L.angle * 180.0f / M_PI, step ? ", inner corner ahead" : "");
         set_state(WALL_LOCKED, why);
+        step_lock = step;
         sample_set = false;
       } else if (outer_turned > TOF_OUTER_MAX_TURN) {
         stop_free("round the end, no wall found"); return;
@@ -893,13 +898,36 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
       // Inner corner: a wall across the path, meeting this one on its side
       float x0 = 1e9f, ix = 0.0f, iy = 0.0f;
       bool corner = good && inner_corner(L, sg, &x0, &ix, &iy);
+      float a_dist = ahead.dist, a_ux = ahead.ux, a_uy = ahead.uy;   // the wall ahead (or the one seen last, below)
+      bool kept = false;
+      if (state == WALL_CORNER && step_lock && good && !corner) {
+        // In a step, close to the stop, the wall ahead can leave the view (the arc round the end ended past
+        // parallel, HIL step_reverse 2026-11-01): the corner seen last stands, the turn on the spot is made there.
+        // Only there: kept at any corner it turned at a hedge's ragged end (bench hedge_step, 2.9 cm)
+        float cx, cy, c = cosf(P.yaw), sn_ = sinf(P.yaw);
+        to_robot(corner_x, corner_y, &cx, &cy);
+        float ux = c * corner_ux + sn_ * corner_uy, uy = -sn_ * corner_ux + c * corner_uy;
+        float d = fabsf(uy * cx - ux * cy);
+        if (cx > 0.0f && d < TOF_CORNER_STOP + TOF_CORNER_KEEP) {
+          kept = corner = true;
+          ix = cx; iy = cy; a_dist = d; a_ux = ux; a_uy = uy;
+        }
+      }
       if (state == WALL_LOCKED && corner) {
         char why[120];
         snprintf(why, sizeof(why), "wall ahead %.2f m, corner at (%.2f, %.2f) robot (%.0f deg, %d inliers, %.1f cm rms)",
                  ahead.dist, ix, iy, ahead.angle * 180.0f / M_PI, ahead.inliers, ahead.residual * 100.0f);
         set_state(WALL_CORNER, why);
+        to_world(ix, iy, &corner_x, &corner_y);
+        float c = cosf(P.yaw), sn_ = sinf(P.yaw);
+        corner_ux = c * ahead.ux - sn_ * ahead.uy; corner_uy = sn_ * ahead.ux + c * ahead.uy;
       } else if (state == WALL_CORNER) {
-        if (corner) { ahead_bad_since = 0; to_world(ix, iy, &corner_x, &corner_y); }
+        if (corner && !kept) {
+          ahead_bad_since = 0;
+          to_world(ix, iy, &corner_x, &corner_y);
+          float c = cosf(P.yaw), sn_ = sinf(P.yaw);
+          corner_ux = c * ahead.ux - sn_ * ahead.uy; corner_uy = sn_ * ahead.ux + c * ahead.uy;
+        } else if (kept) ahead_bad_since = 0;
         else if (ahead_bad_since == 0) ahead_bad_since = now;
         if (ahead_bad_since && now - ahead_bad_since > TOF_QUALITY_TIMEOUT_MS) {
           set_state(WALL_LOCKED, "wall ahead gone");
@@ -937,13 +965,13 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
                    open_ahead[side] ? " (open space ahead)" : "");
           set_state(WALL_OUTER, why);
         } else if (state == WALL_CORNER && corner) {
-          float room = ahead.dist - TOF_CORNER_STOP;
+          float room = a_dist - TOF_CORNER_STOP;
           if (room <= 0.01f && fabsf(P.vx) > TOF_PIVOT_START_SPEED) {
             v = 0.0f; w = 0.0f;   // at the stop point still moving (the wall ahead came up late): stop first, the
                                   // turn's sweep is checked from where the mower stands
           } else if (room <= 0.01f) {
             // Stopped before the new wall: turn toward its direction, away from this wall
-            float ux = ahead.ux, uy = ahead.uy;
+            float ux = a_ux, uy = a_uy;
             if (uy * sg > 0.0f) { ux = -ux; uy = -uy; }
             float turn = atan2f(uy, ux);
             float hx = 0.0f, hy = 0.0f;
@@ -962,7 +990,7 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
               queue_point(ix, iy, true);
               pivot_target = normalize_angle(P.yaw + turn);
               char why[64];
-              snprintf(why, sizeof(why), "turning %.0f deg on the spot", turn * 180.0f / M_PI);
+              snprintf(why, sizeof(why), "turning %.0f deg on the spot%s", turn * 180.0f / M_PI, kept ? " (corner seen last)" : "");
               set_state(WALL_PIVOT, why);
               v = 0.0f; w = 0.0f;
             } else if (room > -TOF_CORNER_CREEP) {
@@ -971,7 +999,7 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
             } else {
               char why[120];
               snprintf(why, sizeof(why), "corner: no room to turn %.0f deg, blocked at (%.2f, %.2f) robot, walls %.2f and %.2f m",
-                       turn * 180.0f / M_PI, hx, hy, L.dist, ahead.dist);
+                       turn * 180.0f / M_PI, hx, hy, L.dist, a_dist);
               stop_free(why);
               return;
             }
