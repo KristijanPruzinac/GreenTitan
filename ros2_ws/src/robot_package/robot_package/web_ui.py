@@ -39,7 +39,7 @@ from std_msgs.msg import Int16MultiArray, String
 MAX_LIN, MAX_REV, MAX_ANG = 0.3, 0.1, 0.6   # m/s forward, m/s reverse, rad/s
 STICK_TIMEOUT = 0.6                          # s without a stick report from the page -> stop (0.35 stopped on Wi-Fi jitter)
 LOG_LINES = 30
-KEYS = {'manual': 'm', 'assist': 'f', 'record': 'co', 'outline': 'o', 'finish': 'e', 'status': 'i', 'stop': ' '}
+KEYS = {'manual': 'm', 'assist': 'f', 'status': 'i', 'stop': ' '}
 METERS_PER_LAT = 111111.0                    # the firmware's flat-earth conversion (gps_topic_callback)
 
 RE_WALL_STATE = re.compile(r'\[WALL\] (\w+) -> (\w+): (.*)')

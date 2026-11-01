@@ -24,13 +24,11 @@ body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 .badge.warn { background: #fdf1db; border-color: #ecc77d; } .badge.warn .v { color: var(--warn); }
 .badge.bad { background: #fbe3e1; border-color: #eba59f; } .badge.bad .v { color: var(--bad); }
 .badge.info { background: #e4ecfa; border-color: #a9bfe8; } .badge.info .v { color: var(--info); }
-#rec { display: none; } #rec.on { display: flex; }
 #btns { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
 button { font: inherit; font-weight: 600; min-height: 40px; padding: 6px 12px; border-radius: 8px;
   border: 1px solid #b9c0b5; background: #f7f8f5; color: var(--ink); cursor: pointer; touch-action: manipulation; }
 button:active { background: #e3e6df; }
 button.on { background: var(--ok); border-color: var(--ok); color: #fff; }
-button.rec { background: var(--bad); border-color: var(--bad); color: #fff; }
 button:disabled { opacity: .45; }
 #view { position: relative; flex: 1; min-height: 0; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
@@ -80,13 +78,10 @@ body.touch #hint { display: none; }
   <div class="badge" id="b-assist"><span class="k">Assist</span><span class="v">?</span><span class="s"></span></div>
   <div class="badge" id="b-speed"><span class="k">Speed</span><span class="v">--</span><span class="s"></span></div>
   <div class="badge" id="b-sim" style="display:none"><span class="k">Sim</span><span class="v">--</span><span class="s"></span></div>
-  <div class="badge bad" id="rec"><span class="k">Recording</span><span class="v">REC</span><span class="s"></span></div>
 </div>
 <div id="btns">
   <button id="c-manual">Manual</button>
   <button id="c-assist">Assist</button>
-  <button id="c-record">Record</button>
-  <button id="c-finish" disabled>Finish</button>
   <button id="c-status">Status</button>
   <button id="c-follow" class="on">Follow</button>
   <button id="c-log">Log</button>
@@ -191,16 +186,10 @@ function renderStatus() {
   $("b-sim").style.display = st.rtf == null ? "none" : "";
   if (st.rtf != null) badge("b-sim", st.rtf >= 0.95 ? "ok" : st.rtf >= 0.85 ? "warn" : "bad", st.rtf.toFixed(2) + "x",
     st.rtf >= 0.95 ? "real time" : "too slow: driving and walls not valid");
-  const n = st.outlines.reduce((a, o) => a + o.length, 0);
-  $("rec").className = "badge bad" + (st.recording ? " on" : "");
-  $("rec").querySelector(".s").textContent = st.outlines.length + " outline(s), " + n + " pts";
   $("c-manual").className = st.manual ? "on" : "";
   $("c-manual").textContent = st.manual ? "Manual ON" : "Manual";
   $("c-assist").className = st.assist ? "on" : "";
   $("c-assist").textContent = st.assist ? "Assist ON" : st.assist === false ? "Assist OFF" : "Assist";
-  $("c-record").textContent = st.recording ? "New outline" : "Record";
-  $("c-record").className = st.recording ? "" : "rec";
-  $("c-finish").disabled = !st.recording;
   const note = st.notice === "manual is off" ? "Manual is off: press Manual first" : st.notice === "stick lost: stopped" ? "Stick signal lost: stopped" : "";
   $("notice").textContent = note; $("notice").style.display = note && drive.active ? "block" : "none";
 }
@@ -451,8 +440,6 @@ $("stop").addEventListener("click", stopAll);
 $("stop").addEventListener("pointerdown", e => { e.preventDefault(); stopAll(); });   // no wait for click on touch
 $("c-manual").onclick = () => cmd("manual");
 $("c-assist").onclick = () => cmd("assist");
-$("c-record").onclick = () => cmd(st && st.recording ? "outline" : "record");
-$("c-finish").onclick = () => cmd("finish");
 $("c-status").onclick = () => { cmd("status"); $("log").classList.add("open"); $("c-log").className = "on"; };
 $("c-follow").onclick = () => setFollow(!view.follow);
 $("c-log").onclick = () => { const open = $("log").classList.toggle("open"); $("c-log").className = open ? "on" : ""; renderLog(); };
