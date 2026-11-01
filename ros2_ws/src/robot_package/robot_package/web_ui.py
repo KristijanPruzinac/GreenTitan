@@ -37,7 +37,7 @@ from sensor_msgs.msg import Imu, NavSatFix
 from std_msgs.msg import Int16MultiArray, String
 
 MAX_LIN, MAX_REV, MAX_ANG = 0.3, 0.1, 0.6   # m/s forward, m/s reverse, rad/s
-STICK_TIMEOUT = 0.35                         # s without a stick report from the page -> stop
+STICK_TIMEOUT = 0.6                          # s without a stick report from the page -> stop (0.35 stopped on Wi-Fi jitter)
 LOG_LINES = 30
 KEYS = {'manual': 'm', 'assist': 'f', 'record': 'co', 'outline': 'o', 'finish': 'e', 'status': 'i', 'stop': ' '}
 METERS_PER_LAT = 111111.0                    # the firmware's flat-earth conversion (gps_topic_callback)
@@ -116,6 +116,7 @@ class WebUi(Node):
         self.t_log = self.t_pose = self.t_imu = None
         self.pose = None
         self.truth = None
+        self.sim_t = collections.deque(maxlen=150)  # (sim stamp, monotonic) of the last ~3 s of truth
         self.wall_map = []
         self.t_map = None
         self.manual = None   # None = not known yet (no log line seen)
@@ -218,8 +219,18 @@ class WebUi(Node):
     def on_truth(self, m):
         p = m.pose.pose.position
         x, y = self.world.to_odom(p.x, p.y)
+        now = time.monotonic()
         with self.lock:
-            self.truth = {'x': x, 'y': y, 'yaw': _yaw(m.pose.pose.orientation), 't': time.monotonic()}
+            self.truth = {'x': x, 'y': y, 'yaw': _yaw(m.pose.pose.orientation), 't': now}
+            # Sim speed: sim stamp against wall time. The firmware runs on wall time, so below ~0.95x
+            # the HIL loop is wrong (gyro turns over-counted, steppers slow): the page must show it
+            self.sim_t.append((m.header.stamp.sec + m.header.stamp.nanosec * 1e-9, now))
+
+    def rtf(self):
+        if len(self.sim_t) < 2 or self.sim_t[-1][1] - self.sim_t[0][1] < 1.0:
+            return None
+        (s0, w0), (s1, w1) = self.sim_t[0], self.sim_t[-1]
+        return round((s1 - s0) / (w1 - w0), 2)
 
     def on_map(self, m):
         d = list(m.data)
@@ -281,6 +292,7 @@ class WebUi(Node):
             return {
                 'pose': self.pose, 'age_pose': age(self.t_pose), 'age_log': age(self.t_log), 'age_imu': age(self.t_imu),
                 'truth': self.truth if self.truth and now - self.truth['t'] < 1.0 else None,
+                'rtf': self.rtf() if self.truth and now - self.truth['t'] < 1.0 else None,
                 'manual': self.manual, 'assist': self.assist, 'assist_state': self.assist_state,
                 'assist_why': self.assist_why, 'recording': self.recording, 'outlines': self.outlines,
                 'map': self.wall_map, 'age_map': age(self.t_map), 'world_rev': self.world_rev,
@@ -297,6 +309,11 @@ class WebUi(Node):
 
 def make_handler(ui, page_path):
     class Handler(BaseHTTPRequestHandler):
+        # Keep-alive: with HTTP/1.0 every poll and stick report opened a new connection, and from Windows into
+        # WSL each one can stall (2 s for "localhost": IPv6 first), long enough for the stick timeout to stop
+        # the mower again and again (manual drive 2026-11-01). Every reply sets Content-Length.
+        protocol_version = 'HTTP/1.1'
+
         def log_message(self, *args):  # quiet: the page polls 7x per second
             pass
 

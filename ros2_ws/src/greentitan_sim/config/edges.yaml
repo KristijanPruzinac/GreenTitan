@@ -25,7 +25,7 @@
 # Use: hil.launch.py world:=<share>/config/edges.yaml
 world:
   name: edges
-  physics: {engine: dart, step: 0.001, real_time_factor: 1.0}
+  physics: {engine: dart, step: 0.002, real_time_factor: 1.0}
   origin: {latitude: 45.5, longitude: 18.0, altitude: 90.0}
 
 terrain:

@@ -79,6 +79,7 @@ body.touch #hint { display: none; }
   <div class="badge" id="b-manual"><span class="k">Manual</span><span class="v">?</span></div>
   <div class="badge" id="b-assist"><span class="k">Assist</span><span class="v">?</span><span class="s"></span></div>
   <div class="badge" id="b-speed"><span class="k">Speed</span><span class="v">--</span><span class="s"></span></div>
+  <div class="badge" id="b-sim" style="display:none"><span class="k">Sim</span><span class="v">--</span><span class="s"></span></div>
   <div class="badge bad" id="rec"><span class="k">Recording</span><span class="v">REC</span><span class="s"></span></div>
 </div>
 <div id="btns">
@@ -186,6 +187,10 @@ function renderStatus() {
   badge("b-assist", acls, st.assist === false ? "OFF" : as, st.assist === false ? "" : st.assist_why);
   if (st.pose) badge("b-speed", "", st.pose.v.toFixed(2) + " m/s", (st.pose.w >= 0 ? "+" : "") + st.pose.w.toFixed(2) + " rad/s");
   else badge("b-speed", "", "--", "no pose");
+  // Sim speed (HIL only): the firmware runs on wall time, so a slow sim makes every result wrong
+  $("b-sim").style.display = st.rtf == null ? "none" : "";
+  if (st.rtf != null) badge("b-sim", st.rtf >= 0.95 ? "ok" : st.rtf >= 0.85 ? "warn" : "bad", st.rtf.toFixed(2) + "x",
+    st.rtf >= 0.95 ? "real time" : "too slow: driving and walls not valid");
   const n = st.outlines.reduce((a, o) => a + o.length, 0);
   $("rec").className = "badge bad" + (st.recording ? " on" : "");
   $("rec").querySelector(".s").textContent = st.outlines.length + " outline(s), " + n + " pts";

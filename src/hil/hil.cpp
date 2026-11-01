@@ -2,6 +2,10 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/stream_buffer.h"
+#include "esp_timer.h"
+#include <math.h>
+
+static const double HIL_RTF_WINDOW = 2.0;   // s of wall time per sim-speed measurement
 
 static StreamBufferHandle_t gnss_stream = NULL;
 
@@ -70,9 +74,12 @@ bool hil_imu_get(hil_imu_sample_t* sample) {
   // The rate is the angle change over the simulator's stamps: the mean rate between two sim
   // samples, as a real gyro would read it. Over the ESP's arrival times instead (until
   // 2026-10-28) samples that came in a burst gave rates many times too high, and the trapezoid
-  // in imu_task carried them over the next gap: every spin was over-counted by 20-30 %. The
-  // price is a heading error in proportion when the simulation runs off real time.
+  // in imu_task carried them over the next gap: every spin was over-counted by 20-30 %.
+  // imu_task integrates over ESP (wall) time, so the sim rate is scaled by the sim's speed
+  // (sim s per wall s, measured over HIL_RTF_WINDOW where bursts average out): at 0.4x every
+  // turn was counted 2.5x and the wall map came out rotated (manual drive 2026-11-01).
   static double last_angle = 0.0, last_stamp = 0.0;
+  static double rtf = 1.0, win_stamp = 0.0, win_wall = 0.0;
   portENTER_CRITICAL(&imu_mux);
   bool valid = imu_valid;
   *sample = imu_sample;
@@ -80,8 +87,15 @@ bool hil_imu_get(hil_imu_sample_t* sample) {
   if (!valid || sample->stamp <= 0.0) return valid;
   if (sample->stamp == last_stamp) return false;
   bool restarted = sample->stamp < last_stamp;   // simulator restarted: its angle starts over
+  double wall = esp_timer_get_time() * 1e-6;
+  if (restarted || win_wall == 0.0) {
+    win_stamp = sample->stamp; win_wall = wall;
+  } else if (wall - win_wall >= HIL_RTF_WINDOW) {
+    rtf = fmin(1.2, fmax(0.1, (sample->stamp - win_stamp) / (wall - win_wall)));
+    win_stamp = sample->stamp; win_wall = wall;
+  }
   if (last_stamp > 0.0 && !restarted)
-    sample->gyro_z = (float)(remainder(sample->gyro_z_angle - last_angle, 2.0 * M_PI) / (sample->stamp - last_stamp));
+    sample->gyro_z = (float)(rtf * remainder(sample->gyro_z_angle - last_angle, 2.0 * M_PI) / (sample->stamp - last_stamp));
   last_angle = sample->gyro_z_angle;
   last_stamp = sample->stamp;
   return true;

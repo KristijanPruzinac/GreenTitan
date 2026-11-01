@@ -94,7 +94,7 @@ GZ_IP=127.0.0.1 ros2 launch greentitan_sim hil.launch.py gui:=true rviz:=true
 ros2 run greentitan_sim console                                     # debug console over ROS
 ```
 `gui:=true` opens the Gazebo window (true mower, WSLg on Windows 11). `rviz:=true` opens RViz with `config/hil.rviz`: top-down view in `odom` following `base_link`, EKF pose trail, outline/infill markers.
-Drive page (joystick, live map, wall map, sim truth): both launch files start `web_ui`; open `http://localhost:8080/` (phone: `http://<host ip>:8080/`), `ui:=false` turns it off (ARCHITECTURE §10).
+Drive page (joystick, live map, wall map, sim truth): both launch files start `web_ui`; open `http://127.0.0.1:8080/` (not `localhost`: from Windows into WSL that tries IPv6 first and stalls 2 s; phone: `http://<host ip>:8080/`), `ui:=false` turns it off (ARCHITECTURE §10).
 Without firmware: `hil.launch.py robot:=<share>/config/mower_teleop.yaml agent:=false` and drive with `teleop_twist_keyboard`. HIL-vs-real differences are listed in ARCHITECTURE §11.
 Wall-assist bench (WSL/Linux, g++ + numpy, no ROS, no board): `python3 tools/wall_bench/run_all.py --seeds 3` (all scenarios, pass/fail table) or `python3 tools/wall_bench/run.py --scenario inner_90 --plot /tmp/x.png` (ARCHITECTURE §11).
 
