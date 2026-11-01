@@ -262,6 +262,11 @@ def check(name, B, tr, ev, res):
     if sc.get('outer'):
         to = [t for t, s in states if s == 'OUTER']
         out['outer'] = (bool(to), f'OUTER at {to[0]} s' if to else 'never OUTER')
+    for key, ends in (('no_outer', ('OUTER', 'FREE')), ('no_free', ('FREE',))):
+        if sc.get(key):   # a continuous wall has no ends / the assist never lets go of it
+            bad = [(t, line.split('[WALL] ')[-1]) for t, line in ev
+                   if line.split('->')[1].split(':')[0].strip() in ends and 'stop key' not in line]
+            out[key] = (not bad, f'{bad[0][1]} at {bad[0][0]} s' if bad else 'held through')
     if 'follow' in sc:
         f = sc['follow']
         a, b = np.array(f['wall'][0]), np.array(f['wall'][1])

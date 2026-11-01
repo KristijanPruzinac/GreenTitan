@@ -123,17 +123,19 @@ SCENARIOS = {
         'steps': [(0.25, 0, 70.0)],
         'checks': {'lock': True, 'following_at_end': True},
     },
-    # Inside the curved wall (radius 3.5 m), wall on the left.
+    # Inside the curved wall (radius 3.5 m), wall on the left: locked all along (until the stop key), map a chain.
     'arc_follow': {
         'world': 'garden', 'spawn': (-2.5, 4.45, math.pi / 3),
         'steps': [(0.25, 0, 28.0)],
-        'checks': {'lock': True},
+        'checks': {'lock': True, 'no_outer': True},
     },
-    # North along the wavy wall, wall on the left.
+    # North along the wavy wall, wall on the left, from 1.4 m before it starts (the heading is confirmed by then):
+    # bends away up to 35 deg must not read as ends (HIL 2026-11-01); its two ~37 deg bends are rounded as outer
+    # corners, and it must never let go.
     'wavy_follow': {
-        'world': 'garden', 'spawn': (-6.9, -3.8, math.pi / 2),
-        'steps': [(0.25, 0, 30.0)],
-        'checks': {'lock': True},
+        'world': 'garden', 'spawn': (-6.95, -5.4, math.pi / 2),
+        'steps': [(0.25, 0, 40.0)],
+        'checks': {'lock': True, 'no_free': True},
     },
     # Past the free-standing bush, 0.8 m off its line.
     'bush_pass': {

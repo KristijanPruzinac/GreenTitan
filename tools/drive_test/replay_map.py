@@ -43,10 +43,14 @@ def read(path, topics):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('bag')
-    ap.add_argument('--world', default='edges')
+    ap.add_argument('--world', default=None, help="default: the world of the scenario in the bag's name, else edges")
     ap.add_argument('--out', default='/tmp/replay_map')
     ap.add_argument('--plot', action='store_true')
     a = ap.parse_args()
+    if a.world is None:
+        from scenarios import SCENARIOS
+        base = os.path.basename(os.path.normpath(a.bag))
+        a.world = next((v['world'] for k, v in SCENARIOS.items() if base.startswith(f'scen_{k}_')), 'edges')
     os.makedirs(a.out, exist_ok=True)
 
     B = read(a.bag, ['/hil/tof', '/esp/fused_pose', '/esp/log'])

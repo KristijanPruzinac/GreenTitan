@@ -432,6 +432,9 @@ def evaluate(r, m, checks):
         elif c == 'parallel':
             h = m.get('heading_after_lock_deg')
             out.append((c, h is not None and h <= 10.0, f'{h} deg' if h is not None else 'no lock / too short'))
+        elif c == 'no_outer':   # a continuous wall has no ends
+            outs = [x for x in r.trans if x[2] == 'OUTER']
+            out.append((c, not outs, f'OUTER at {outs[0][0]:.1f} s: {outs[0][3]}' if outs else 'none'))
         elif c == 'reached':
             ok = 'reached' in r.marks
             out.append((c, ok, 'yes' if ok else (_last_free(r, lock or 0.0) or f'not reached ({r.state})')))
@@ -486,9 +489,11 @@ def run(name, seed=0, world=None, plot=None, slip=0.0, terrain='flat', plot_fail
 add('hedge_step', 'garden', along((-6.0, -4.0), (-1.0, -4.0), 'right', 0.5, FOLLOW + WT),
     follow_to(lambda r: r.plant.x > 6.0, tmax=80), ('lock', 'reached'),
     'along the wall, on past a lumpy hedge (centre 0.25 m out, face up to 0.7 m out) and a wall set back 0.2 m after it')
-add('arc_follow', 'garden', (-2.5, 4.45, 60), follow_to(lambda r: r.plant.x > 2.0, tmax=40), ('lock', 'reached'),
+add('arc_follow', 'garden', (-2.5, 4.45, 60), follow_to(lambda r: r.plant.x > 2.0, tmax=40), ('lock', 'no_outer', 'reached'),
     'inside a curved wall of radius 3.5 m, wall on the left')
 add('wavy_follow', 'garden', (-6.9, -3.8, 90), follow_to(lambda r: r.plant.y > 3.0, tmax=45), ('lock', 'reached'),
     'north along a wavy wall, wall on the left')
+add('wavy_bump', 'garden', (-7.05, -0.2, 90), follow_to(lambda r: r.plant.y > 2.5, tmax=30), ('lock', 'no_outer', 'reached'),
+    'north onto the wavy wall where it bends in and then away again (HIL 2026-11-01: the bend away was taken for its end)')
 add('bush_pass', 'garden', (2.6, 1.6, 19.3), follow_to(lambda r: r.plant.x > 6.0, tmax=25), (),
     'past a free-standing bush, 0.8 m off its line')

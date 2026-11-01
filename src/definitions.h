@@ -147,6 +147,10 @@ typedef struct {
 #define TOF_QUALITY_TIMEOUT_MS 500 // wall estimate bad this long: stop, FREE
 #define TOF_WALL_END_AHEAD 0.15f   // m: wall seen less than this past the front = wall end (round it, OUTER)
 #define TOF_GAP_BRIDGE 1.3f        // m: a wall end whose line goes on within this (gap, pocket mouth) is driven past
+#ifndef TOF_BEND_ANGLE
+#define TOF_BEND_ANGLE 0.61f       // rad (35 deg): a wall bending away from the mower by up to this right past the
+#endif
+#define TOF_BEND_REACH 0.6f        // m: end (points within this) goes on: no OUTER (wavy walls; 45 deg stays a corner)
 #define TOF_OUTER_MAX_TURN 4.71f   // rad round a wall end without finding the wall again: stop, FREE
 #define TOF_OUTER_END_DIST 0.2f    // m, the wall found round an end passes this close to the end point
 #define TOF_BLOCKED_MS 1000        // the guard holds the assist's command at a standstill this long: stop, FREE
@@ -214,6 +218,9 @@ typedef struct {
 #define TOF_MAP_MAX_RESIDUAL 0.06f // m rms of a new segment's cells off its line
 #define TOF_MAP_LINE_TOL 0.06f     // m: a face point this close to a segment's line (or 2.5 x its rms) joins it
 #define TOF_MAP_JOIN_GAP 0.30f     // m: confirmed cells up to this far past a segment's end extend it; a wider gap is an opening
+#ifndef TOF_MAP_EXTEND_TOL
+#define TOF_MAP_EXTEND_TOL 0.04f   // m: ... when this close to its line (fixed: on a curve the chord stops growing at
+#endif                             // a few cm of bow and a new segment starts, 2026-11-01)
 #define TOF_MAP_POST_MAX 0.30f     // m: a cluster shorter than this with nothing else around is a post ...
 #define TOF_MAP_POST_TIME_MS 1000  // ... once seen over this long
 #define TOF_MAP_POST_MIN_RADIUS 0.03f
@@ -227,6 +234,15 @@ typedef struct {
 #ifndef TOF_MAP_CORNER_DIST
 #define TOF_MAP_CORNER_DIST 0.25f  // ... with an end this close to their crossing meet there (a corner)
 #endif
+#ifndef TOF_MAP_BOW
+#define TOF_MAP_BOW 0.04f          // m: a segment whose middle third lies this far off the line of its outer thirds ...
+#endif
+#define TOF_MAP_BOW_MIN_LEN 0.60f  // m ... and is at least this long ...
+#define TOF_MAP_BOW_MIN_W 20.0f    // ... with this many recent points in each third, splits at the middle (curves)
+#ifndef TOF_MAP_CHAIN_ANGLE
+#define TOF_MAP_CHAIN_ANGLE 0.08f  // rad: segments closer in angle are one face (heading error); further apart and end
+#endif                             // to end: chords of a curve unless in line within TOF_MAP_EXTEND_TOL
+#define TOF_MAP_BOW_WEIGHT 600.0f  // recent points per segment kept for that (older ones halved)
 #define TOF_MAP_REPLACE_DIST 0.30f // m: a new object this close to one from before a pose jump replaces it
 #define TOF_MAP_MAX_WEIGHT 4000.0f // face points in a segment's line sums before old ones are halved
 // Rays crossing an object: hit, or seen through (no target, or TOF_MAP_THROUGH past it)
@@ -264,6 +280,10 @@ typedef struct {
 #ifndef TOF_MAP_SMEAR_HITS
 #define TOF_MAP_SMEAR_HITS 0.3f    // ... at most this share of its hits, is a corner smear: left out
 #endif
+#ifndef TOF_MAP_JOINT_GAP
+#define TOF_MAP_JOINT_GAP 0.30f    // m: facing ends of lines at less than the corner angle meet at the crossing
+#endif                             // when it is this close to both (a curved face as a chain of chords)
+#define TOF_MAP_JOINT_OVERLAP 0.10f // m: ... the ends may overlap this much
 #ifndef TOF_MAP_PUB_CORNER
 #define TOF_MAP_PUB_CORNER 0.40f   // m: published ends this close to two lines' crossing meet there
 #endif

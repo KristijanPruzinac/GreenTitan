@@ -290,12 +290,18 @@ static bool sees_open_space(int s, const WallLine& L) {
 // The wall goes on past its end across a gap the mower should not turn into: points on its line from
 // 0.1 m past the last inlier to TOF_GAP_BRIDGE past it
 static bool wall_goes_on(const WallLine& L) {
-  int n = 0;
+  int n = 0, nb = 0;
   float t_end = (L.x_max - L.cx) / L.ux;
+  float away = L.ux * L.cy - L.uy * L.cx > 0.0f ? 1.0f : -1.0f;   // sign of the side away from the mower
+  float bend = tanf(TOF_BEND_ANGLE);
   for (int k = 0; k < rn; k++) {
-    if (!near_line(L, rx[k], ry[k], TOF_FIT_TOLERANCE)) continue;
     float t = (rx[k] - L.cx) * L.ux + (ry[k] - L.cy) * L.uy - t_end;
-    if (t > 0.10f && t < TOF_GAP_BRIDGE && ++n >= TOF_AHEAD_MIN_INLIERS) return true;
+    if (t <= 0.10f) continue;
+    float off = away * (L.ux * (ry[k] - L.cy) - L.uy * (rx[k] - L.cx));
+    if (fabsf(off) < TOF_FIT_TOLERANCE) { if (t < TOF_GAP_BRIDGE && ++n >= TOF_AHEAD_MIN_INLIERS) return true; }
+    // or it bends away from the mower right at the end (a curved or wavy wall), not as much as an outer corner
+    else if (off > 0.0f && off < TOF_FIT_TOLERANCE + t * bend && t < TOF_BEND_REACH && ++nb >= TOF_AHEAD_MIN_INLIERS)
+      return true;
   }
   return false;
 }

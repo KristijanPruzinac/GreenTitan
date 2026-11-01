@@ -115,6 +115,7 @@ struct Obj {
   uint32_t empty_since;
   float e0, e1;                      // along the segment, m: where they passed
   float side;                        // face points seen from the left (+1 each) or right (-1) of x0 -> x1
+  float bow_s[3], bow_w[3];          // signed offsets of recent points off the line, per third of its length (curvature)
 };
 
 // A candidate cell: face points not (yet) part of an object
@@ -193,8 +194,20 @@ static void seg_coords(const Obj& o, float x, float y, float* perp, float* along
   *perp = fabsf((y - o.y0) * o.ux - (x - o.x0) * o.uy);
 }
 
+static void bow_reset(Obj& o) { for (int i = 0; i < 3; i++) o.bow_s[i] = o.bow_w[i] = 0.0f; }
+
 // Weighted point (world) into the sums
 static void add_sum(Obj& o, float x, float y, float w) {
+  float len = hypotf(o.x1 - o.x0, o.y1 - o.y0);
+  if (!o.post && len > 1e-3f) {
+    float along = ((x - o.x0) * o.ux + (y - o.y0) * o.uy) / len;
+    if (along >= 0.0f && along <= 1.0f) {
+      int b = along < 1.0f / 3.0f ? 0 : along < 2.0f / 3.0f ? 1 : 2;
+      o.bow_s[b] += w * ((y - o.y0) * o.ux - (x - o.x0) * o.uy); o.bow_w[b] += w;
+      if (o.bow_w[0] + o.bow_w[1] + o.bow_w[2] > TOF_MAP_BOW_WEIGHT)   // recent points count most
+        for (int i = 0; i < 3; i++) { o.bow_s[i] *= 0.5f; o.bow_w[i] *= 0.5f; }
+    }
+  }
   float dx = x - o.ax, dy = y - o.ay;
   o.sw += w; o.sx += w * dx; o.sy += w * dy;
   o.sxx += w * dx * dx; o.syy += w * dy * dy; o.sxy += w * dx * dy;
@@ -505,6 +518,7 @@ static void merge_sums(Obj& a, const Obj& b) {
   a.side += a.ux * b.ux + a.uy * b.uy >= 0.0f ? b.side : -b.side;
   if (b.t_first < a.t_first) a.t_first = b.t_first;
   if (b.t_ms > a.t_ms) a.t_ms = b.t_ms;
+  bow_reset(a);
 }
 
 // Ends of a merged segment: the farthest of both pairs along the refitted line
@@ -666,8 +680,57 @@ static void extract(uint32_t now) {
     Obj& o = objs[slot];
     o = tmp;
     o.sw = o.sx = o.sy = o.sxx = o.syy = o.sxy = 0.0f;
+    bow_reset(o);
     for (int a = best_s; a <= best_e; a++) absorb_cell(o, cells[in[a]]);
     refit(o);
+  }
+}
+
+// Sums of a straight run P -> Q with weight w spread evenly along it, rms r across it
+static void set_run_sums(Obj& o, float px, float py, float qx, float qy, float w, float r) {
+  float L = hypotf(qx - px, qy - py), ux = (qx - px) / L, uy = (qy - py) / L;
+  float va = L * L / 12.0f, vn = r * r;
+  o.ax = 0.5f * (px + qx); o.ay = 0.5f * (py + qy);
+  o.sw = w; o.sx = o.sy = 0.0f;
+  o.sxx = w * (va * ux * ux + vn * uy * uy);
+  o.syy = w * (va * uy * uy + vn * ux * ux);
+  o.sxy = w * (va - vn) * ux * uy;
+  o.x0 = px; o.y0 = py; o.x1 = qx; o.y1 = qy; o.ux = ux; o.uy = uy;
+  bow_reset(o);
+}
+
+// A segment whose middle third lies off the line of its outer thirds (a curved face fitted with one chord)
+// splits in two at the middle: a chain of chords that follows the curve (2026-11-01, garden arc wall)
+static void split_bowed() {
+  for (int i = 0; i < TOF_MAP_OBJECTS; i++) {
+    Obj& o = objs[i];
+    if (!o.used || o.post || o.epoch != epoch) continue;
+    float len = seg_len(o);
+    if (len < TOF_MAP_BOW_MIN_LEN || o.bow_w[0] < TOF_MAP_BOW_MIN_W || o.bow_w[1] < TOF_MAP_BOW_MIN_W ||
+        o.bow_w[2] < TOF_MAP_BOW_MIN_W) continue;
+    float m0 = o.bow_s[0] / o.bow_w[0], m1 = o.bow_s[1] / o.bow_w[1], m2 = o.bow_s[2] / o.bow_w[2];
+    if (fabsf(m1 - 0.5f * (m0 + m2)) < TOF_MAP_BOW) continue;
+    int j = 0;
+    while (j < TOF_MAP_OBJECTS && objs[j].used) j++;
+    if (j == TOF_MAP_OBJECTS) return;   // full: no split (nothing is evicted for it)
+    Obj& b = objs[j];
+    float nx = -o.uy, ny = o.ux;   // the side the offsets are measured to
+    float ex = 0.5f * (o.x0 + o.x1) + m1 * nx, ey = 0.5f * (o.y0 + o.y1) + m1 * ny;   // the joint
+    float ax0 = o.x0 + m0 * nx, ay0 = o.y0 + m0 * ny, bx1 = o.x1 + m2 * nx, by1 = o.y1 + m2 * ny;
+    float w = 0.5f * o.sw, r = 0.5f * o.residual;
+    b = o;
+    b.epoch = epoch;
+    set_run_sums(o, ax0, ay0, ex, ey, w, r);
+    set_run_sums(b, ex, ey, bx1, by1, w, r);
+    // the evidence is shared out
+    Obj* h[2] = { &o, &b };
+    for (int k = 0; k < 2; k++) {
+      Obj& q = *h[k];
+      q.hits /= 2; q.face_obs *= 0.5f; q.top_obs *= 0.5f; q.gap_obs *= 0.5f; q.lo_sum *= 0.5f; q.hi_sum *= 0.5f;
+      q.cross_hit *= 0.5f; q.cross_through *= 0.5f; q.side *= 0.5f;
+      q.empty_frames = 0;
+      refit(q);
+    }
   }
 }
 
@@ -696,8 +759,12 @@ static void merge_objects() {
       float tol = fmaxf(absorb_tol(a), absorb_tol(b));
       seg_coords(a, b.x0, b.y0, &pa, &ta);
       seg_coords(a, b.x1, b.y1, &pb, &tb);
-      if (pa > tol || pb > tol) continue;
       float lo = fminf(ta, tb), hi = fmaxf(ta, tb);
+      // end to end (overlapping by less than a third of the shorter) at more than TOF_MAP_CHAIN_ANGLE: as in line
+      // as an extension (a chain of chords stays a chain)
+      float ov = fminf(hi, len) - fmaxf(lo, 0.0f);
+      if (ov < fminf(len, hi - lo) / 3.0f && fabsf(a.ux * b.ux + a.uy * b.uy) < cosf(TOF_MAP_CHAIN_ANGLE)) tol = TOF_MAP_EXTEND_TOL;
+      if (pa > tol || pb > tol) continue;
       if (lo > len + TOF_MAP_MERGE_GAP || hi < -TOF_MAP_MERGE_GAP) continue;
       if (b.hits > a.hits) {   // keep the better-known one's direction sign
         Obj t = a; a = b; b = t;
@@ -793,8 +860,13 @@ static bool same_face(const Obj& a, const Obj& b) {
   float lo = fminf(ta, tb), hi = fmaxf(ta, tb);
   float overlap = fminf(hi, la) - fmaxf(lo, 0.0f);   // < 0: the gap between them
   float off = fmaxf(fmaxf(pa, pb), fmaxf(qa, qb));
-  if (overlap > 0.0f) return off <= TOF_MAP_PUB_DIST;
-  return -overlap <= TOF_MAP_PUB_GAP && off <= TOF_MAP_PUB_GAP_DIST;
+  if (fabsf(dot) >= cosf(TOF_MAP_CHAIN_ANGLE)) {   // parallel: one face, maybe seen twice with a heading error
+    if (overlap > 0.0f) return off <= TOF_MAP_PUB_DIST;
+    return -overlap <= TOF_MAP_PUB_GAP && off <= TOF_MAP_PUB_GAP_DIST;
+  }
+  // at a small angle: seen twice when they overlap well, else (end to end) only in line: not two chords of a curve
+  if (overlap >= fminf(la, hi - lo) / 3.0f) return off <= TOF_MAP_PUB_DIST;
+  return -overlap <= TOF_MAP_PUB_GAP && off <= TOF_MAP_EXTEND_TOL;
 }
 
 // The published map (2026-11-01): the objects keep their own evidence, the snapshot is filtered on each update.
@@ -829,6 +901,16 @@ static bool link_closed(float ax, float ay, float mx, float my, float bx, float 
   l.zcap = zcap - 0.01f;
   l.t_ms = now;
   return !(l.through >= TOF_MAP_LINK_THROUGH && l.through > l.hit);
+}
+
+// An end of published line k at (x, y) already joined to a line other than `other` (an end within TOF_MAP_JOINT_GAP):
+// a chain's joint, not to be moved to a corner further away
+static bool end_taken(const MapObject* m, int n, int k, int other, float x, float y) {
+  for (int j = 0; j < n; j++) {
+    if (j == k || j == other || m[j].hits == 0) continue;
+    if (hypotf(m[j].x0 - x, m[j].y0 - y) <= TOF_MAP_JOINT_GAP || hypotf(m[j].x1 - x, m[j].y1 - y) <= TOF_MAP_JOINT_GAP) return true;
+  }
+  return false;
 }
 
 static int group_root(int i) { while (pub_group[i] != i) i = pub_group[i] = pub_group[pub_group[i]]; return i; }
@@ -903,7 +985,9 @@ static void publish_snapshot() {
       if (fabsf(ux * (B.x1 - B.x0) + uy * (B.y1 - B.y0)) < lb * cosf(TOF_MAP_PUB_ANGLE)) continue;
       float t0 = (B.x0 - A.x0) * ux + (B.y0 - A.y0) * uy, t1 = (B.x1 - A.x0) * ux + (B.y1 - A.y0) * uy;
       float p0 = fabsf(-(B.x0 - A.x0) * uy + (B.y0 - A.y0) * ux), p1 = fabsf(-(B.x1 - A.x0) * uy + (B.y1 - A.y0) * ux);
-      if (fmaxf(p0, p1) > TOF_MAP_PUB_GAP_DIST) continue;
+      // in line, or parallel (not the next chord of a curve)
+      if (fmaxf(p0, p1) > (fabsf(ux * (B.x1 - B.x0) + uy * (B.y1 - B.y0)) >= lb * cosf(TOF_MAP_CHAIN_ANGLE)
+                               ? TOF_MAP_PUB_GAP_DIST : TOF_MAP_EXTEND_TOL)) continue;
       float lo = fminf(t0, t1), hi = fmaxf(t0, t1), gap = lo > la ? lo - la : hi < 0.0f ? -hi : -1.0f;
       if (gap <= 0.0f || gap > TOF_MAP_LINK_GAP) continue;
       // the gap: A's end -> its middle -> B's near end
@@ -923,6 +1007,41 @@ static void publish_snapshot() {
   kept = 0;
   for (int k = 0; k < n; k++) if (snap_new[k].hits > 0) snap_new[kept++] = snap_new[k];
   n = kept;
+  // joints of a curved face (a chain of chords): facing ends of lines at less than the corner angle meet at
+  // the lines' crossing when it is within TOF_MAP_JOINT_GAP of both (not across a step), unless seen open
+  for (int a = 0; a < n; a++) {
+    MapObject& A = snap_new[a];
+    for (int b = a + 1; b < n; b++) {
+      MapObject& B = snap_new[b];
+      if ((A.kind == MAP_LOW) != (B.kind == MAP_LOW)) continue;
+      float la = hypotf(A.x1 - A.x0, A.y1 - A.y0), lb = hypotf(B.x1 - B.x0, B.y1 - B.y0);
+      if (la < TOF_MAP_MIN_LENGTH || lb < TOF_MAP_MIN_LENGTH) continue;
+      float aux = (A.x1 - A.x0) / la, auy = (A.y1 - A.y0) / la, bux = (B.x1 - B.x0) / lb, buy = (B.y1 - B.y0) / lb;
+      float cr = aux * buy - auy * bux;
+      if (fabsf(cr) >= sinf(TOF_MAP_CORNER_ANGLE)) continue;
+      // the closest pair of ends; each must be the end facing the other line
+      float* ax[2] = { &A.x0, &A.x1 }; float* ay[2] = { &A.y0, &A.y1 };
+      float* bx[2] = { &B.x0, &B.x1 }; float* by[2] = { &B.y0, &B.y1 };
+      int ea = 0, eb = 0;
+      float best = 1e9f;
+      for (int i = 0; i < 2; i++)
+        for (int j = 0; j < 2; j++) {
+          float d = hypotf(*ax[i] - *bx[j], *ay[i] - *by[j]);
+          if (d < best) { best = d; ea = i; eb = j; }
+        }
+      if (best < 1e-3f || best > TOF_MAP_JOINT_GAP) continue;
+      float sa = ea ? 1.0f : -1.0f, sb = eb ? 1.0f : -1.0f;   // outward along each line at that end
+      float gx = *bx[eb] - *ax[ea], gy = *by[eb] - *ay[ea];
+      if (sa * (gx * aux + gy * auy) < -TOF_MAP_JOINT_OVERLAP || -sb * (gx * bux + gy * buy) < -TOF_MAP_JOINT_OVERLAP) continue;
+      if ((aux * bux + auy * buy) * sa * sb > 0.0f) continue;   // both ends point the same way: side by side
+      if (fabsf(cr) < 1e-3f) continue;   // parallel: in line is a link above, offset is a step
+      float ta = ((*bx[eb] - *ax[ea]) * buy - (*by[eb] - *ay[ea]) * bux) / cr;
+      float X = *ax[ea] + ta * aux, Y = *ay[ea] + ta * auy;
+      if (hypotf(X - *ax[ea], Y - *ay[ea]) > TOF_MAP_JOINT_GAP || hypotf(X - *bx[eb], Y - *by[eb]) > TOF_MAP_JOINT_GAP) continue;
+      if (!link_closed(*ax[ea], *ay[ea], X, Y, *bx[eb], *by[eb], fminf(A.height, B.height), now)) continue;
+      *ax[ea] = X; *ay[ea] = Y; *bx[eb] = X; *by[eb] = Y;
+    }
+  }
   // corners between published lines: ends up to TOF_MAP_PUB_CORNER from the crossing meet there, up to
   // TOF_MAP_LINK_CORNER short of it unless the gap was seen open
   for (int a = 0; a < n; a++) {
@@ -955,8 +1074,11 @@ static void publish_snapshot() {
         if (!b_end) { bx = X; by = Y; }
         if (!link_closed(ax, ay, X, Y, bx, by, fminf(A.height, B.height), now)) continue;
       }
-      if (a_end && !a_mid) { if (fabsf(ta) < fabsf(ta - la)) { A.x0 = X; A.y0 = Y; } else { A.x1 = X; A.y1 = Y; } }
-      if (b_end && !b_mid) { if (fabsf(tb) < fabsf(tb - lb)) { B.x0 = X; B.y0 = Y; } else { B.x1 = X; B.y1 = Y; } }
+      bool a0 = fabsf(ta) < fabsf(ta - la), b0 = fabsf(tb) < fabsf(tb - lb);
+      if ((a_end && !a_mid && end_taken(snap_new, n, a, b, a0 ? A.x0 : A.x1, a0 ? A.y0 : A.y1)) ||
+          (b_end && !b_mid && end_taken(snap_new, n, b, a, b0 ? B.x0 : B.x1, b0 ? B.y0 : B.y1))) continue;
+      if (a_end && !a_mid) { if (a0) { A.x0 = X; A.y0 = Y; } else { A.x1 = X; A.y1 = Y; } }
+      if (b_end && !b_mid) { if (b0) { B.x0 = X; B.y0 = Y; } else { B.x1 = X; B.y1 = Y; } }
     }
   }
   for (int i = 0; i < TOF_MAP_LINKS; i++)
@@ -1002,7 +1124,8 @@ void tof_map_update(const TofFramePose& p, uint32_t now) {
       }
       float perp, along, len = seg_len(o);
       seg_coords(o, x, y, &perp, &along);
-      if (perp > absorb_tol(o) || along < -TOF_MAP_JOIN_GAP || along > len + TOF_MAP_JOIN_GAP) continue;
+      if (perp > (along < 0.0f || along > len ? TOF_MAP_EXTEND_TOL : absorb_tol(o)) ||
+          along < -TOF_MAP_JOIN_GAP || along > len + TOF_MAP_JOIN_GAP) continue;
       if (along < 0.0f) { o.x0 += along * o.ux; o.y0 += along * o.uy; }
       else if (along > len) { o.x1 = o.x0 + along * o.ux; o.y1 = o.y0 + along * o.uy; }
       absorb_cell(o, c);
@@ -1025,6 +1148,7 @@ void tof_map_update(const TofFramePose& p, uint32_t now) {
     o.x0 = o.ax + mx - half_len * o.ux; o.y0 = o.ay + my - half_len * o.uy;
     o.x1 = o.ax + mx + half_len * o.ux; o.y1 = o.ay + my + half_len * o.uy;
   }
+  split_bowed();
   merge_objects();
   join_corners();
   drop_replaced();
