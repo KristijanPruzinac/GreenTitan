@@ -1,0 +1,56 @@
+# Full test course (2026-11-02), the default for driving by hand: edges.yaml (every wall-assist edge case,
+# unchanged positions) plus garden.yaml's features in the free lawn round them. Spawn at the origin facing +x.
+# Edge cases: see edges.yaml. Garden features (see garden.yaml), moved:
+#   far south (y -11): wall (-6..-1), lumpy hedge 0.25 m further out (-0.6..3), wall set back 0.2 m (3.4..7);
+#   east: curved wall, radius 3.5 m round (11.3, 4), lawn inside it;
+#   south-east: wavy freeform wall along x ~13 (y -9..-1), lawn west of it;
+#   far north-west: a free bush (-9, 11)..(-7, 11.7).
+# The scripted drive tests keep using edges.yaml and garden.yaml (their spawns are in those frames).
+# Use: hil.launch.py world:=<share>/config/course.yaml
+world:
+  name: course
+  physics: {engine: dart, step: 0.002, real_time_factor: 1.0}
+  origin: {latitude: 45.5, longitude: 18.0, altitude: 90.0}
+
+terrain:
+  type: mesh
+  size: [30.0, 30.0]
+  resolution: 0.05
+  tile_size: 5.0
+  seed: 42
+  friction: {mu: 0.5}
+  layers:
+    - {wavelength: 8.0,  amplitude: 0.01}    # barely undulating
+    - {wavelength: 1.5,  amplitude: 0.006}   # uneven turf
+    - {wavelength: 0.25, amplitude: 0.003}   # tufts
+  features:
+    - {type: flatten, position: [0.0, 0.0], radius: 1.0, blend: 1.0}                # base station
+
+objects:
+  - {name: long_wall, type: wall, height: 1.0, thickness: 0.15, points: [[-7.0, -6.5], [2.5, -6.5]]}
+  - {name: hedge, shape: {box: [3.0, 0.6, 1.2]}, position: [6.0, -6.5], reflectance: 0.2, roughness: 0.15,
+     color: [0.15, 0.35, 0.12]}                                                     # foliage, est.: rays get up to 15 cm in
+  - {name: island, type: wall, height: 1.0, thickness: 0.15, closed: true,
+     points: [[-6.5, -3.5], [-3.0, -3.5], [-3.0, -2.0], [-5.0, -2.0]]}
+  - {name: thin_wall, type: wall, height: 1.0, thickness: 0.08, points: [[-1.0, -3.0], [1.5, -3.0]]}
+  - {name: pocket, type: wall, height: 1.0, thickness: 0.15,
+     points: [[4.5, -1.2], [4.5, -2.525], [6.075, -2.525], [6.075, -3.575], [4.5, -3.575], [4.5, -4.6]]}
+  - {name: gap_wall_w, type: wall, height: 1.0, thickness: 0.15, points: [[-6.0, 1.5], [-3.5, 1.5]]}
+  - {name: gap_wall_m, type: wall, height: 1.0, thickness: 0.15, points: [[-3.15, 1.5], [-0.65, 1.5]]}
+  - {name: gap_wall_e, type: wall, height: 1.0, thickness: 0.15, points: [[0.85, 1.5], [3.35, 1.5]]}
+  - {name: curb_8, type: curb, points: [[-5.5, 3.5], [-2.5, 3.5]], height: 0.08, thickness: 0.06}
+  - {name: curb_12, type: curb, points: [[0.0, 3.5], [3.0, 3.5]], height: 0.12, thickness: 0.06}
+  - {name: corner_45, type: wall, height: 1.0, thickness: 0.15, points: [[-5.4184, 6.1827], [-4.5, 8.4], [-3.5816, 6.1827]]}
+  - {name: corner_60, type: wall, height: 1.0, thickness: 0.15, points: [[-1.5, 6.6679], [-0.5, 8.4], [0.5, 6.6679]]}
+  - {name: corner_90, type: wall, height: 1.0, thickness: 0.15, points: [[2.2272, 7.1272], [3.5, 8.4], [4.7728, 7.1272]]}
+  - {name: corner_120, type: wall, height: 1.0, thickness: 0.15, points: [[6.0, 2.8321], [7.0, 1.1], [6.0, -0.6321]]}
+  - {name: post, shape: {cylinder: [0.05, 1.0]}, position: [5.5, 4.5], reflectance: 0.3, color: [0.42, 0.32, 0.2]}
+  - {name: step, type: wall, height: 1.0, thickness: 0.15, points: [[-11.0, -5.0], [-11.0, -2.0], [-11.8, -2.0], [-11.8, 1.0]]}
+
+  # garden features (garden.yaml), moved into the free lawn round the edge cases
+  - {name: south_wall_w, type: wall, height: 1.0, thickness: 0.15, points: [[-6.000, -11.000], [-1.000, -11.000]]}
+  - {name: south_hedge, type: hedge, height: 1.1, points: [[-0.600, -10.750], [3.000, -10.750]], seed: 3}
+  - {name: south_wall_e, type: wall, height: 1.0, thickness: 0.15, points: [[3.400, -11.200], [7.000, -11.200]]}
+  - {name: arc_wall, type: wall, height: 1.0, thickness: 0.15, points: [[14.589, 5.197], [14.331, 5.750], [13.981, 6.250], [13.550, 6.681], [13.050, 7.031], [12.497, 7.289], [11.908, 7.447], [11.300, 7.500], [10.692, 7.447], [10.103, 7.289], [9.550, 7.031], [9.050, 6.681], [8.619, 6.250], [8.269, 5.750], [8.011, 5.197]]}
+  - {name: wavy_wall, type: wall, height: 1.0, thickness: 0.15, points: [[12.666, -9.000], [12.502, -8.600], [12.631, -8.200], [12.934, -7.800], [13.145, -7.400], [13.168, -7.000], [13.160, -6.600], [13.268, -6.200], [13.394, -5.800], [13.316, -5.400], [13.000, -5.000], [12.684, -4.600], [12.606, -4.200], [12.732, -3.800], [12.840, -3.400], [12.832, -3.000], [12.855, -2.600], [13.066, -2.200], [13.369, -1.800], [13.498, -1.400], [13.334, -1.000]]}
+  - {name: bush, type: hedge, height: 1.0, radius: [0.2, 0.35], points: [[-9.0, 11.0], [-7.0, 11.7]], seed: 7}

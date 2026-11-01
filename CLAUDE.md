@@ -53,7 +53,7 @@ ros2_ws/src/robot_package/   ROS 2 (ament_python) package
   robot_package/path_visualizer.py, fused_pose_relay.py (EKF Odometry → compact esp/fused_pose), web_ui.py + web/drive.html (drive page)
 ros2_ws/src/sim_env/     generic Gazebo sim: YAML world/robot → SDF, device models (gnss, imu, stepper, tof),
                          obstacles.py (walls/fences/curbs as parts), raycast.py (numpy rays for the ToF model)
-ros2_ws/src/greentitan_sim/  mower + lawn configs (fences.yaml: wall-following course, edges.yaml: wall-assist edge cases), hil.launch.py, console tool
+ros2_ws/src/greentitan_sim/  mower + lawn configs (course.yaml: all wall-assist cases in one world, for driving by hand; fences.yaml, edges.yaml, garden.yaml: the parts), hil.launch.py, console tool
 ros2_ws/build|install|log   colcon output (gitignored)
 tools/android/           phone provisioning (adb debloat, Termux, camera over adb)
 tools/drive_test/        HIL drive tests: scripted stick drives (scenarios.py, drive.py) and a scorer against the sim truth (score.py)
