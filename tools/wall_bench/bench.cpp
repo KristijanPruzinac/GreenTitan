@@ -19,6 +19,7 @@
 //   M                    print the ToF map
 //   Q                    quit
 
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <functional>
@@ -251,6 +252,25 @@ esp_err_t esp_timer_delete(esp_timer_handle_t t) { t->next = NEVER; return ESP_O
 int64_t esp_timer_get_time() { return (int64_t)now_us; }
 
 uint32_t millis() { return (uint32_t)(now_us / 1000); }
+// The host's clock, for the wall assist planner's cost (assist_planner.cpp, -DPLAN_CLOCK_US)
+uint32_t bench_wall_us() {
+  return (uint32_t)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// main.cpp's predictor: the last pose carried to now (here with its own turn rate, the bench has no gyro yaw)
+static fused_pose_data_t pose_now_ref = {};
+static uint64_t pose_now_us = 0;
+static bool pose_now_valid = false;
+bool fused_pose_now(fused_pose_data_t* out) {
+  double dt = (now_us - pose_now_us) * 1e-6;
+  if (!pose_now_valid || dt > MOTION_POSE_TIMEOUT_MS / 1000.0) return false;
+  float turn = pose_now_ref.omega * (float)dt, mid = pose_now_ref.yaw + 0.5f * turn;
+  *out = pose_now_ref;
+  out->x += cosf(mid) * pose_now_ref.vx * dt;
+  out->y += sinf(mid) * pose_now_ref.vx * dt;
+  out->yaw = normalize_angle(pose_now_ref.yaw + turn);
+  return true;
+}
 uint32_t micros() { return (uint32_t)now_us; }
 void delay(uint32_t ms) { vTaskDelay(ms); }
 void pinMode(uint8_t, uint8_t) {}
@@ -396,6 +416,7 @@ int main() {
       double x, y, yaw, vx, w;
       if (sscanf(line + 1, "%lf %lf %lf %lf %lf", &x, &y, &yaw, &vx, &w) == 5) {
         p.x = x; p.y = y; p.yaw = (float)yaw; p.vx = (float)vx; p.omega = (float)w;
+        pose_now_ref = p; pose_now_us = now_us; pose_now_valid = true;
         DDS_PUBLISH("/fused_pose", p);
       }
     } else if (cmd == 'H') {                    // H 0|1: heading guess / confirmed (the GPS yaw gate in main.cpp)

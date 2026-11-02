@@ -15,7 +15,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 OUT = os.environ.get('WALL_BENCH_BUILD', os.path.expanduser('~/.cache/wall_bench'))
 BINARY = os.path.join(OUT, 'bench')
-FLAGS = ['-std=gnu++17', '-O2', '-g0', '-w', '-pthread', '-DHIL_ENABLED=1', '-DESP_PLATFORM', '-DARDUINO=10800'] + \
+FLAGS = ['-std=gnu++17', '-O2', '-g0', '-w', '-pthread', '-DHIL_ENABLED=1', '-DESP_PLATFORM', '-DARDUINO=10800',
+         '-DPLAN_CLOCK_US=bench_wall_us'] + \
     os.environ.get('WALL_BENCH_CFLAGS', '').split()   # e.g. -DWALL_DEBUG (with its own WALL_BENCH_BUILD)
 
 
@@ -31,7 +32,7 @@ def _dds_dir():
 
 def _inputs(dds):
     srcs = sorted(glob.glob(os.path.join(REPO, 'src/sensor/tof*.cpp')))
-    srcs += [os.path.join(REPO, p) for p in ('src/motion/wall_assist.cpp', 'src/functions.cpp', 'src/hil/hil.cpp')]
+    srcs += [os.path.join(REPO, p) for p in ('src/motion/wall_assist.cpp', 'src/motion/assist_planner.cpp', 'src/functions.cpp', 'src/hil/hil.cpp')]
     srcs += [os.path.join(dds, 'esp_dds.cpp'), os.path.join(HERE, 'bench.cpp')]
     headers = glob.glob(os.path.join(REPO, 'src/**/*.h'), recursive=True) + glob.glob(os.path.join(HERE, 'shim/**/*.h'), recursive=True)
     return srcs, headers

@@ -241,8 +241,12 @@ def score(B, world_yaml, res, map_rows=None):
         for _, _, x, y, yaw, _, _ in tr[::5]:
             fp = footprint(x, y, yaw)
             edge = np.vstack([fp[i] + np.linspace(0, 1, 8)[:, None] * (fp[(i + 1) % 4] - fp[i]) for i in range(4)])
-            mins.append(min(float(np.min(poly_dist(edge, f[2]))) for f in faces))
-        res['body'] = {'min_clearance_cm': round(min(mins) * 100, 1)}
+            mins.append(min((float(np.min(poly_dist(edge, f[2]))), f[0]) for f in faces))
+        i = int(np.argmin([m[0] for m in mins]))
+        tm = tr[::5][i]
+        st = next((e[1].split('-> ')[1].split(':')[0] for e in reversed(ev) if e[0] <= tm[0] - t0), 'FREE')
+        res['body'] = {'min_clearance_cm': round(mins[i][0] * 100, 1), 't': round(float(tm[0] - t0), 1),
+                       'at': [round(float(tm[2]), 2), round(float(tm[3]), 2)], 'face': str(mins[i][1]), 'state': st}
     for ln in lines:
         ln.pop('pts', None)
     res['map_lines'] = lines

@@ -12,6 +12,7 @@ Checks: safe     no contact, body clearance >= bench.PASS_CLEARANCE all run long
 """
 import math
 import os
+import re
 
 import bench
 
@@ -423,6 +424,9 @@ def evaluate(r, m, checks):
                 out.append((c, False, f"contact with {m['contact']['part']} at {m['contact']['t']} s ({r.state})"))
             else:
                 out.append((c, mc['m'] >= bench.PASS_CLEARANCE, f"min {mc['m']*100:.1f} cm ({mc['part']}, {mc['t']} s)"))
+        elif c == 'goal':
+            ok = 'reached' in r.marks
+            out.append((c, ok, f"{m.get('time_to_goal')} s" if ok else f'not reached ({r.state})'))
         elif c == 'backed':   # reversed at least 0.1 m out along its trail
             b = getattr(r, 'backed', 0.0)
             out.append((c, b >= 0.1, f'{b * 100:.0f} cm back'))
@@ -472,11 +476,21 @@ def run(name, seed=0, world=None, plot=None, slip=0.0, terrain='flat', plot_fail
     finally:
         if os.path.isfile(os.path.join(bench.REPO, 'src/sensor/tof_map.h')):
             maps = r.map_objects()
+        try:
+            r.key('i')   # status, with the planner's cost
+            r.idle(0.05)
+        except Exception:
+            pass
         r.close()
     m = bench.metrics(r, maps)
     checks = evaluate(r, m, sc['checks'])
     res = {'name': name, 'seed': seed, 'world': world or sc['world'], 'pass': all(ok for _, ok, _ in checks),
-           'checks': checks, 'metrics': {k: v for k, v in m.items() if not k.startswith('_')}, 'sim_s': r.t}
+           'checks': checks, 'metrics': {k: v for k, v in m.items() if not k.startswith('_')}, 'sim_s': r.t,
+           'log': [(t, s) for t, s in r.log if '[WALL]' in s]}
+    pl = [s for _, s in r.log if '[WALL] planner:' in s]
+    if pl:
+        n, mean, mx = (int(x) for x in re.findall(r'(\d+) (?:plans|us)', pl[-1]))
+        res['planner'] = {'n': n, 'mean_us': mean, 'max_us': mx}
     if plot and not (plot_failed_only and res['pass']):
         fails = ', '.join(f'{c}: {d}' for c, ok, d in checks if not ok)
         bench.plot(r, m, plot, f'{name} seed {seed}: ' + ('PASS' if res['pass'] else 'FAIL ' + fails))
@@ -496,3 +510,51 @@ add('wavy_bump', 'garden', (-7.05, -0.2, 90), follow_to(lambda r: r.plant.y > 2.
     'north onto the wavy wall where it bends in and then away again (HIL 2026-11-01: the bend away was taken for its end)')
 add('bush_pass', 'garden', (2.6, 1.6, 19.3), follow_to(lambda r: r.plant.x > 6.0, tmax=25), (),
     'past a free-standing bush, 0.8 m off its line')
+
+
+# ---------------------------------------------------------------- goal-directed (2026-11-02)
+# The user holds the stick toward a goal at full manual speed (MANUAL_LINEAR_SPEED, or $WALL_BENCH_STICK) and never
+# steers round anything: the assist must get there. Checks: goal reached within tmax; metrics: time to goal, time
+# standing while pushed, speed over the stick (bench.metrics 'push').
+STICK = float(os.environ.get('WALL_BENCH_STICK') or bench.FW['MANUAL_LINEAR_SPEED'])
+
+
+def push_to(goal, tmax, ang=0.0):
+    def script(r):
+        assert not goal(r), 'scenario goal already true at the start'
+        r.mark('go')
+        end = r.t + tmax
+        while r.t < end and not goal(r):
+            r.v(STICK, ang)
+        if goal(r):
+            r.mark('reached')
+        finish(r)
+    return script
+
+
+add('goal_wall_45', 'edges', APP45, push_to(lambda r: r.plant.x > -0.5, 30), ('goal',),
+    'stick held 45 deg into the long wall (wall right): on along it to x -0.5')
+add('goal_wall_60', 'edges', (-4.0, FACE + 1.5, -60), push_to(lambda r: r.plant.x > -0.5, 30), ('goal',),
+    'stick held 60 deg into the long wall: on along it to x -0.5')
+add('goal_head_on', 'edges', (-2.0, FACE + 1.6, -90), push_to(lambda r: abs(r.plant.x + 2.0) > 2.0, 30), ('goal',),
+    'stick held straight at the long wall, head-on: 2 m along it either way')
+add('goal_head_on_lean', 'edges', (-2.0, FACE + 1.6, -90), push_to(lambda r: r.plant.x > 0.0, 30, ang=0.25), ('goal',),
+    'head-on at the long wall, the stick leaning left (0.25 rad/s): 2 m along it to the east (left)')
+add('goal_post', 'edges', (7.5, 4.65, 180), push_to(lambda r: r.plant.x < 4.0, 25), ('goal',),
+    'west at the lone post, 0.15 m off the centreline: round it and on to x 4')
+add('goal_bush', 'garden', (1.5, 2.9, 0.0), push_to(lambda r: r.plant.x > 6.8, 30), ('goal',),
+    'east straight at the bush: round it and on to x 6.8')
+add('goal_gap', 'edges', (0.1, -0.5, 90), push_to(lambda r: r.plant.y > 2.8, 20), ('goal',),
+    'north through the 1.5 m gap, centred')
+add('goal_gap_off', 'edges', (0.55, -0.5, 90), push_to(lambda r: r.plant.y > 2.8, 20), ('goal',),
+    'north through the 1.5 m gap, 0.45 m off its centre (body 0.1 m inside the gap end)')
+add('goal_outer', 'edges', along(A, B, 'left', 1.5, FOLLOW + WT), push_to(lambda r: past(r, B, C, 0.8), 30), ('goal',),
+    'along the island (on the left), stick held: round the outer corner B and on along BC')
+add('goal_inner', 'edges', V90, push_to(lambda r: past(r, *V[90][1:], 0.9), 30), ('goal',),
+    'along the 90 deg corner\'s arm, stick held: round the inner corner and on along the other arm')
+add('goal_step', 'edges', along(STEP[0], STEP[1], 'left', 0.3, FOLLOW + WT), push_to(lambda r: past(r, STEP[2], STEP[3], 0.8), 40),
+    ('goal',), 'along the step wall, stick held: outer corner, 0.8 m, inner corner, on')
+add('goal_hedge', 'garden', along((-6.0, -4.0), (-1.0, -4.0), 'right', 0.5, FOLLOW + WT), push_to(lambda r: r.plant.x > 6.0, 90),
+    ('goal',), 'along the wall, the lumpy hedge and the set-back wall, stick held')
+add('goal_thin_end', 'edges', (-2.0, -3.6, 0.0), push_to(lambda r: r.plant.x > 2.5, 45), ('goal',),
+    'east along the thin wall\'s south side, 0.6 m off, past its free end')
