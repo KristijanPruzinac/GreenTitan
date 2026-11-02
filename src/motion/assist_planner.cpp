@@ -239,8 +239,9 @@ static IRAM_ATTR PlanResult eval(const PlanRequest& rq, float vc, float wc, floa
     float g = q / (fabsf(vc) + fabsf(wc) * 0.5f * B), a = TOF_GUARD_DECEL * g, td = TOF_GUARD_DELAY;
     float qa = sqrtf(2.0f * a * free + a * a * td * td) - a * td;
     s = fminf(1.0f, qa / q);
-    a = PLAN_SOFT_DECEL * g;   // the same at a gentle deceleration: what the score sees, so it turns off early
-    soft = fminf(1.0f, sqrtf(2.0f * a * free) / q);
+    // What the score sees: the share of PLAN_SOFT_TIME it runs free, at any speed (a braking distance made it turn
+    // off a wall ahead in time at full speed only; at 0.3 m/s it went straight until too close to turn, HIL head_on)
+    soft = sqrtf(fminf(1.0f, free / (q * PLAN_SOFT_TIME)));
   }
   res.ok = s > 0.02f;
   res.scale = s;

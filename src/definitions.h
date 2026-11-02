@@ -139,10 +139,16 @@ typedef struct {
 #define TOF_LOCK_MAX_DIST 0.8f     // m, centreline to wall: a side wall closer than this counts as followed
 #define TOF_LOCK_MAX_ANGLE 0.52f   // rad: a side fit within 30 deg of the heading ends the round of a wall end
 #define TOF_WALL_CLEARANCE 0.35f   // m, body side to wall when locked: centreline 0.55, tail swing 0.46 + ToF noise (HIL: 0.30 refused corners)
-#ifndef TOF_WALL_MAX_SPEED
-#define TOF_WALL_MAX_SPEED 0.2f    // m/s, following (ALIGN once it curves, LOCKED, CORNER, OUTER); the stick's full speed (0.45)
-                                   // came to 1-3 cm of the lumpy hedge (bench hedge_step, goal_hedge 2026-11-02)
+#ifndef TOF_FOLLOW_SPEED
+#define TOF_FOLLOW_SPEED 0.3f      // m/s, following (ALIGN, LOCKED) at most: the stick's speed up to this, curvature held by
+                                   // the turn rate. 0.45 brought the body onto a lumpy hedge's end (bench goal_hedge
+                                   // 2026-11-02, contact; 0.3: 16 cm)
 #endif
+#ifndef TOF_CORNER_SPEED
+#define TOF_CORNER_SPEED 0.2f      // m/s toward an inner corner (CORNER) and round a wall end (OUTER): a step's corner after
+                                   // an end was reached too fast to turn on the spot (bench pocket_head_on: 3.9 cm at 0.3)
+#endif
+#define TOF_LANE_SLOW 1.0f         // m: following, anything in the body's lane ahead slows it to TOF_CORNER_SPEED by this far
 #define TOF_MAP_SAME_FACE 0.25f   // m: map lines with both ends this close to the followed wall's fit are that wall
 #define TOF_WALL_MAX_TURN MANUAL_ANGULAR_SPEED  // rad/s
 #define TOF_WALL_MIN_SPEED 0.05f   // m/s, slowest forward speed while braking toward a stop point
