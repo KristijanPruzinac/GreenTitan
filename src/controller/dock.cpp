@@ -117,7 +117,7 @@ bool dock_track_heading(int ref, bool reverse, float yaw_guess, float* yaw, floa
         est = (float)atan2(sy, sx);
         double ss = 0.0;
         for (int i = 0; i < count; i++) {
-            float d = normalize_angle(ests[i] - est);
+            float d = wrap_pi(ests[i] - est);
             ss += (double)d * d;
         }
         spread = (float)sqrt(ss / count) * (float)RAD_TO_DEG;
@@ -143,7 +143,7 @@ static Meas held[DOCK_MOVE_COUNT];
 static int held_n = 0;
 
 void dock_station_init(double x, double y, float yaw) {
-    DOCK_STATION = { true, x, y, normalize_angle(yaw), 1 };
+    DOCK_STATION = { true, x, y, wrap_pi(yaw), 1 };
     recent_n = recent_i = 0;
     held_n = 0;
 }
@@ -160,14 +160,14 @@ int dock_station_measure(double x, double y, float yaw) {
     double dx = x - S.x, dy = y - S.y;
     float along = (float)(c * dx + s * dy), lat = (float)(-s * dx + c * dy);
     float dpos = hypotf(along, lat);
-    float dyaw = normalize_angle(yaw - S.yaw);
+    float dyaw = wrap_pi(yaw - S.yaw);
     float gate_pos = fmaxf(DOCK_GATE_MIN_POS, DOCK_GATE_SIGMAS * (recent_n >= 3 ? rms(recent_pos, recent_n) : 0.0f));
     float gate_yaw = fmaxf(DOCK_GATE_MIN_YAW_DEG * (float)DEG_TO_RAD,
                            DOCK_GATE_SIGMAS * (recent_n >= 3 ? rms(recent_yaw, recent_n) : 0.0f));
     if (dpos <= gate_pos && fabsf(dyaw) <= gate_yaw) {
         S.x += DOCK_EST_WEIGHT * dx;
         S.y += DOCK_EST_WEIGHT * dy;
-        S.yaw = normalize_angle(S.yaw + DOCK_EST_WEIGHT * dyaw);
+        S.yaw = wrap_pi(S.yaw + DOCK_EST_WEIGHT * dyaw);
         if (S.n < 65535) S.n++;
         recent_pos[recent_i] = dpos;
         recent_yaw[recent_i] = dyaw;
@@ -182,7 +182,7 @@ int dock_station_measure(double x, double y, float yaw) {
     if (held_n > 0) {
         const Meas& h0 = held[0];
         bool agree = hypot(x - h0.x, y - h0.y) <= DOCK_MOVE_AGREE_POS &&
-                     fabsf(normalize_angle(yaw - h0.yaw)) <= DOCK_MOVE_AGREE_YAW_DEG * (float)DEG_TO_RAD;
+                     fabsf(wrap_pi(yaw - h0.yaw)) <= DOCK_MOVE_AGREE_YAW_DEG * (float)DEG_TO_RAD;
         if (!agree) held_n = 0;
     }
     held[held_n++] = { x, y, yaw };

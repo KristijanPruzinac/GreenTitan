@@ -59,6 +59,7 @@ static float  rev_speed;
 static bool   rev_gyro_heading = false;   // heading = rev_yaw0 + gyro turn since the start
 static float  rev_yaw0;
 static double rev_gyro0;
+static uint32_t rev_turn_ms = 0;          // turning on the spot since (0 = backing)
 
 static bool     teleport_active   = false;
 static uint32_t teleport_deadline = 0;
@@ -193,6 +194,7 @@ static void reverse_start(const motion_command_t* c) {
     rev_speed = c->speed > 0.0f ? fminf(c->speed, MOTION_REVERSE_SPEED_MAX) : MOTION_REVERSE_SPEED_MAX;
     rev_gyro_heading = !isnan(c->start_yaw) && imu_yaw_now(&rev_gyro0);
     rev_yaw0 = c->start_yaw;
+    rev_turn_ms = 0;
     mode = MOVING_REVERSE;
     stall_anchor_set = false;
     last_pose_ms = millis();
@@ -205,7 +207,7 @@ static void reverse_start(const motion_command_t* c) {
 static void reverse_update(uint32_t now_ms) {
     float h = yaw;
     double g;
-    if (rev_gyro_heading && imu_yaw_now(&g)) h = normalize_angle(rev_yaw0 + (float)(g - rev_gyro0));
+    if (rev_gyro_heading && imu_yaw_now(&g)) h = wrap_pi(rev_yaw0 + (float)(g - rev_gyro0));
     double ax = x + GNSS_ANTENNA_BEHIND_AXLE * cos(h);
     double ay = y + GNSS_ANTENNA_BEHIND_AXLE * sin(h);
     double px = ax - rev_ax, py = ay - rev_ay;
@@ -221,14 +223,17 @@ static void reverse_update(uint32_t now_ms) {
     // Backing up, the axle travels along yaw + pi: aim that direction back at the line
     float line = atan2f((float)rev_uy, (float)rev_ux);
     float travel = line - atanf((float)e / MOTION_REVERSE_LOOKAHEAD);
-    float want_yaw = normalize_angle(travel + (float)M_PI);
-    float err = normalize_angle(want_yaw - h);
+    float want_yaw = wrap_pi(travel + (float)M_PI);
+    float err = wrap_pi(want_yaw - h);   // normalize_angle is [0, 2 pi): a tiny -err read as a full turn (HIL 2026-11-02)
     float w = fmaxf(-MAX_ANGULAR_VEL, fminf(MAX_ANGULAR_VEL, MOTION_ROTATE_GAIN * err));
     float v = 0.0f;
     if (fabsf(err) < MOTION_REVERSE_MAX_HEADING_ERROR) {   // far off: turn on the spot first
         float speed = fminf(rev_speed, last_speed + nav_config.accel / MOTION_UPDATE_FREQUENCY);
         speed = fminf(speed, fmaxf((float)(rev_len - s) * 2.0f, nav_config.v_min));   // ease into the end
         v = -speed;
+        rev_turn_ms = 0;
+    } else if (rev_turn_ms == 0) {
+        rev_turn_ms = now_ms;
     }
     last_speed = -v;
 
@@ -240,8 +245,11 @@ static void reverse_update(uint32_t now_ms) {
         stall_anchor_y = y;
         stall_anchor_ms = now_ms;
     }
-    if (now_ms - stall_anchor_ms > MOTION_STALL_TIME_MS) {
-        SerialDebug.printf("[MOTION] Stalled reversing at (%.2f, %.2f), stopping\r\n", x, y);
+    // A turn on the spot that never ends (wedged, or a heading that keeps running away) is a stall too
+    bool turn_stuck = rev_turn_ms != 0 && now_ms - rev_turn_ms > MOTION_ROTATE_TIMEOUT_MS;
+    if (now_ms - stall_anchor_ms > MOTION_STALL_TIME_MS || turn_stuck) {
+        SerialDebug.printf("[MOTION] Stalled reversing at (%.2f, %.2f) (%s), stopping\r\n", x, y,
+                           turn_stuck ? "turn did not finish" : "no progress");
         motion_stop(true);
         signal_controller(SIGNAL_OBSTACLE);
         return;

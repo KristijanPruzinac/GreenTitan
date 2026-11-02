@@ -104,6 +104,8 @@ float normalize_angle(float radians) {
     return radians;
 }
 
+float wrap_pi(float radians) { return angle_diff(0.0f, radians); }
+
 float angle_diff(float current, float target) {
     float diff = fmod(target - current, 2.0 * M_PI);
     if (diff > M_PI)  diff -= 2.0f * M_PI;

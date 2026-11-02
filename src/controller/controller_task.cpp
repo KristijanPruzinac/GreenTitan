@@ -342,7 +342,7 @@ static void route_to_predock() {
         double ax = p.x + GNSS_ANTENNA_BEHIND_AXLE * cos(p.yaw), ay = p.y + GNSS_ANTENNA_BEHIND_AXLE * sin(p.yaw);
         double dx = ax - DOCK_STATION.x, dy = ay - DOCK_STATION.y;
         double along = dx * st_ux() + dy * st_uy(), side = -dx * st_uy() + dy * st_ux();
-        float dyaw = normalize_angle(p.yaw - DOCK_STATION.yaw);
+        float dyaw = wrap_pi(p.yaw - DOCK_STATION.yaw);
         if (fabs(along + pre) < 0.3 && fabs(side - lat) < 0.10 && fabsf(dyaw) < 0.35f) {
             start_approach();
             return;
@@ -553,6 +553,8 @@ static void set_station_backout_done() {
     route_to_predock();   // standing on the axis about DOCK_SET_BACKOUT out: straight into the approach
 }
 
+static void handle_obstacle();
+
 // 50 ms tick: power, contact, track
 static void dock_tick() {
     power_poll();
@@ -589,6 +591,7 @@ static void dock_tick() {
             break;
         case DP_SET_BACKOUT:
             if (!rtk_fixed()) { set_station_reject("no RTK fix: the station needs open sky"); break; }
+            if (now - phase_ms > DOCK_REVERSE_TIMEOUT_MS) { set_station_reject("the back-out did not finish"); break; }
             if (!set_dropped && prev_contact && !contact && pose_ok && prev_pose_ok) {
                 // Contacts opened between the last tick and this one: the midpoint is sample 0
                 contact_pose = p;
@@ -602,6 +605,13 @@ static void dock_tick() {
             break;
         case DP_UNDOCK:
         case DP_BACKOFF:
+            // Motion's stall checks should end it; this catches anything they miss
+            if (now - phase_ms > DOCK_REVERSE_TIMEOUT_MS) {
+                SerialDebug.printf("[DOCK] Reversing took over %d s\r\n", DOCK_REVERSE_TIMEOUT_MS / 1000);
+                motion_stop();
+                handle_obstacle();
+            }
+            break;
         default:
             break;
     }

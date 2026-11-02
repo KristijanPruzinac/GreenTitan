@@ -67,6 +67,7 @@ typedef struct {
 #define DOCK_SLOW_SPEED 0.08f          // m/s, recovery approaches
 #define DOCK_OVERRUN 0.05f             // m past the expected contact: no voltage by then = a miss
 #define DOCK_APPROACH_TIMEOUT_MS 30000
+#define DOCK_REVERSE_TIMEOUT_MS 60000  // a back-out (set station, undock, back-off; 1.5 m ~15 s) not done by then = blocked
 #define DOCK_REVERSE_SPEED 0.10f       // m/s, every reverse move (straight line follower, slow)
 #define DOCK_UNDOCK_DIST 1.5f          // m, reverse out of the station before going on (= pre-dock: home goes straight in)
 #define DOCK_TRIES 3                   // approaches from the pre-dock point, then the recovery
@@ -474,6 +475,7 @@ typedef struct {
 #define FUSED_YAW_LAG                     0.15   // s, EKF yaw behind its own stamp while turning (HIL 2026-10-30 with host and ESP clocks in step: 0.147 s; measure on the robot)
 #define GPS_YAW_RELOCK                    10     // GPS yaws in a row outside the gate (2 s of driving): fuse the next anyway
 #define GPS_YAW_CONFIRM                   5      // GPS yaws in a row inside the gate (~1 s of driving): the heading counts as known
+#define GPS_YAW_DIR_MIN                   0.5f   // forwards/backwards only when |left + right| >= this x (|left| + |right|): not in a pivot
 #define GPS_YAW_CONFIRM_DEG               15.0   // ... and each within this of the EKF yaw
 #define GPS_STILL_YAW_VAR                 3e-4   // rad^2 ((1 deg)^2): parked with the heading known, gps/odom holds the yaw from the stop
 #define MOTION_POSE_TIMEOUT_MS            500    // stop driving if /fused_pose (10 Hz) goes quiet

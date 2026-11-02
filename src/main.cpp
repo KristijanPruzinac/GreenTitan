@@ -548,7 +548,11 @@ void gps_topic_callback(dds_callback_context_t* context) {
         int dir = 0;                                                   // +1 forwards, -1 backwards
         float left, right;
         motor_get_step_rates(&left, &right);                           // ramped rates: where the wheels turn now
-        if (left + right > 0) dir = 1; else if (left + right < 0) dir = -1;
+        // Only while the wheels clearly drive one way: in a pivot the sum is a ramp rounding error, and
+        // a wedged pivot (HIL 2026-11-02, in the station rails) slid the axle and turned the boot yaw 90 deg
+        if (fabsf(left + right) >= GPS_YAW_DIR_MIN * (fabsf(left) + fabsf(right))) {
+            if (left + right > 0) dir = 1; else if (left + right < 0) dir = -1;
+        }
         if (dir != 0) {
             yaw_meas = normalize_angle(dir > 0 ? travel : travel + M_PI);
             yaw_var = (sigma / axle_speed) * (sigma / axle_speed);
