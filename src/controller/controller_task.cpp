@@ -318,14 +318,19 @@ static void set_state(int s) {
 // correction (m, + = left) to apply to the approach line, 0 = none.
 static float dock_tof_centring() { return 0.0f; }
 
+// A trial docked with retries on one held-back measurement: DOCK_STATION is that candidate, in RAM only
+// (NVS keeps dock_backup) until a second measurement agrees with it (station_measure_save). Lost on a
+// reboot: the stored estimate stays.
+static bool cand_pending = false;
+
 static void dock_failed(const char* why) {
     motion_stop();
     stop_motors();
-    if (dock_verifying) {
-        DOCK_STATION = dock_backup;
-        dock_verifying = false;
+    if (dock_verifying || cand_pending) {
+        dock_station_restore(dock_backup);
+        dock_verifying = cand_pending = false;
     }
-    dock_station_doubt(true);   // the next undock measurement, if held back, is adopted
+    dock_station_doubt(true);   // fewer agreeing undock measurements are needed to adopt
     dock_phase = DP_NONE;
     set_state(ROBOT_STATE_DOCK_FAILED);
     SerialDebug.printf("[DOCK] Failed (%s): Couldn't dock. Check the station is clear, or set it again\r\n", why);
@@ -417,7 +422,8 @@ static void approach_failed(const char* why) {
     if (reroute) {
         SerialDebug.printf("[DOCK] Trying the held-back undock measurement(s) x=%.3f y=%.3f yaw=%.2f (mean of %d)\r\n",
                            hx, hy, hyaw * RAD_TO_DEG, held_k);
-        dock_backup = DOCK_STATION;
+        if (!cand_pending) dock_backup = DOCK_STATION;   // the stored estimate (a pending candidate is RAM only)
+        cand_pending = false;
         dock_station_init(hx, hy, hyaw, (uint16_t)held_k);
         dock_verifying = true;
         dock_missed_before = dock_attempt;
@@ -477,6 +483,25 @@ static void go_home(bool from_mission, bool resume) {
     route_to_predock();
 }
 
+// One dock or undock measurement into the estimate, then saved. A pending candidate is stored once this
+// one agrees with it (within the gate: blended in); otherwise it is dropped, the stored estimate is back,
+// and this measurement counts against that.
+static void station_measure_save(double x, double y, float yaw) {
+    int r = dock_station_measure(x, y, yaw);
+    if (cand_pending) {
+        cand_pending = false;
+        if (r == DOCK_MEAS_ACCEPTED) {
+            SerialDebug.printf("[DOCK] Station candidate confirmed by a second measurement: stored\r\n");
+        } else {
+            SerialDebug.printf("[DOCK] Station candidate not confirmed: back to the stored estimate\r\n");
+            dock_station_restore(dock_backup);
+            dock_station_measure(x, y, yaw);
+        }
+    }
+    SaveStation();
+    log_station();
+}
+
 // Contacts closed and held: docked. A clean approach is a measurement of the station.
 static void docked() {
     motion_stop();
@@ -489,12 +514,24 @@ static void docked() {
     dock_track_add(contact_pose.x, contact_pose.y, contact_gyro);
     float yaw, spread, chord, drift;
     bool ok = dock_track_heading(dock_track_count() - 1, false, contact_pose.yaw, &yaw, &spread, &chord, &drift);
-    if (dock_verifying) {
+    bool trial = dock_verifying && dock_missed_before > 0;   // docked on the held-back mean
+    if (dock_verifying && !trial) {   // set station
         dock_verifying = false;
         SaveStation();
         SerialDebug.printf("[DOCK] Station set (verified by a dock)\r\n");
         log_station();
-        if (!dock_missed_before) return;   // set station; a moved-station trial goes on: its approach measures
+        return;
+    }
+    dock_verifying = false;
+    if (trial) {
+        if (DOCK_STATION.n >= 2) {   // the mean of 2 held-back measurements: stored
+            SaveStation();
+            SerialDebug.printf("[DOCK] Station candidate stored (mean of %u, verified by a dock)\r\n", DOCK_STATION.n);
+            log_station();
+        } else {                     // one measurement: never stored alone
+            cand_pending = true;
+            SerialDebug.printf("[DOCK] Station candidate (one measurement) kept in RAM until a second one agrees\r\n");
+        }
     }
     if (!approach_clean) {
         SerialDebug.printf("[DOCK] Not a measurement (retries, creep or no RTK fix on the approach)\r\n");
@@ -509,9 +546,7 @@ static void docked() {
     double cy = contact_pose.y + GNSS_ANTENNA_BEHIND_AXLE * sin(yaw);
     SerialDebug.printf("[DOCK] Dock measurement x=%.3f y=%.3f yaw=%.2f (track %.2f m, spread %.2f deg)\r\n",
                        cx, cy, yaw * RAD_TO_DEG, chord, spread);
-    dock_station_measure(cx, cy, yaw);
-    SaveStation();
-    log_station();
+    station_measure_save(cx, cy, yaw);
 }
 
 // The station back-out: reverse straight out DOCK_SET_BACKOUT on a gyro heading hold from the parked
@@ -622,9 +657,7 @@ static void undock_measure() {
     double cx = c.x + GNSS_ANTENNA_BEHIND_AXLE * cos(yaw), cy = c.y + GNSS_ANTENNA_BEHIND_AXLE * sin(yaw);
     SerialDebug.printf("[DOCK] Undock measurement x=%.3f y=%.3f yaw=%.2f (track %.2f m, spread %.2f deg, drift %.2f deg)\r\n",
                        cx, cy, yaw * RAD_TO_DEG, chord, spread, drift);
-    dock_station_measure(cx, cy, yaw);
-    SaveStation();
-    log_station();
+    station_measure_save(cx, cy, yaw);
 }
 
 static void undock_done() {
@@ -719,7 +752,8 @@ static void set_station_backout_done() {
     bool now_verify = backout_then == THEN_VERIFY;
     SerialDebug.printf("[DOCK] Measured station x=%.3f y=%.3f yaw=%.2f (track %.2f m, spread %.2f deg, drift %.2f deg); %s\r\n",
                        cx, cy, yaw * RAD_TO_DEG, chord, spread, drift, now_verify ? "verifying" : "the next dock verifies it");
-    dock_backup = DOCK_STATION;
+    if (!cand_pending) dock_backup = DOCK_STATION;
+    cand_pending = false;
     dock_station_init(cx, cy, yaw);
     dock_verifying = true;   // in RAM until a dock confirms it (docked() saves it)
     if (!now_verify) {
@@ -1233,7 +1267,7 @@ static void controller_signal_callback(dds_callback_context_t* context) {
             double nx, ny;
             st_point(DOCK_SHIFT[0], DOCK_SHIFT[1], &nx, &ny);
             dock_station_init(nx, ny, DOCK_STATION.yaw + DOCK_SHIFT[2], DOCK_STATION.n);
-            dock_verifying = false;
+            dock_verifying = cand_pending = false;
             SaveStation();
             SerialDebug.printf("[DOCK] Station moved by the console\r\n");
             log_station();
@@ -1245,7 +1279,7 @@ static void controller_signal_callback(dds_callback_context_t* context) {
                 break;
             }
             DOCK_STATION.set = false;
-            dock_verifying = false;
+            dock_verifying = cand_pending = false;
             SaveStation();
             log_station();
             break;

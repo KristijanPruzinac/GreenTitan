@@ -50,6 +50,8 @@ int dock_station_measure(double x, double y, float yaw);
 // The last dock needed retries or failed (true) or went in first try (false). Cleared by an accepted
 // measurement and a new station.
 void dock_station_doubt(bool d);
+// Back to an earlier estimate (a trial candidate nothing confirmed): no history, in doubt
+void dock_station_restore(const dock_station_t& s);
 // The mean of the held-back measurements; returns how many (0: none since the last accepted one or
 // the last new station)
 int dock_station_held_mean(double* x, double* y, float* yaw);

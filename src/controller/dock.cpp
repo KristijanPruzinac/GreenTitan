@@ -162,6 +162,13 @@ void dock_station_init(double x, double y, float yaw, uint16_t n) {
 
 void dock_station_doubt(bool d) { doubt = d; }
 
+void dock_station_restore(const dock_station_t& s) {
+    DOCK_STATION = s;
+    recent_n = recent_i = 0;
+    held_n = 0;
+    doubt = true;
+}
+
 static void held_mean(double* x, double* y, float* yaw) {
     double mx = 0.0, my = 0.0, sx = 0.0, sy = 0.0;
     for (int i = 0; i < held_n; i++) {
