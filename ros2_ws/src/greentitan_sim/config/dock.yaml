@@ -1,0 +1,28 @@
+# Docking tests (2026-11-02): an open-sky lawn with the charging station at the origin, facing +x (the mower
+# drives in towards +x; its axle is at the origin when the contacts close). Flat pad under the station, a shed
+# wall behind it, uneven turf elsewhere. Written in the station's frame: tools/drive_test/scenarios.py moves the
+# station with its pad and shed to a scenario's `station` pose (`python3 scenarios.py world NAME > world.yaml`),
+# so the station can be moved between runs while the board keeps its stored estimate.
+# Use: hil.launch.py world:=<share>/config/dock.yaml
+world:
+  name: dock
+  physics: {engine: dart, step: 0.002, real_time_factor: 1.0}
+  origin: {latitude: 45.5, longitude: 18.0, altitude: 90.0}
+
+terrain:
+  type: mesh
+  size: [20.0, 20.0]
+  resolution: 0.05
+  tile_size: 5.0
+  seed: 42
+  friction: {mu: 0.5}
+  layers:
+    - {wavelength: 8.0,  amplitude: 0.01}    # barely undulating
+    - {wavelength: 1.5,  amplitude: 0.006}   # uneven turf
+    - {wavelength: 0.25, amplitude: 0.003}   # tufts
+  features:
+    - {type: flatten, position: [-0.15, 0.0], radius: 0.7, blend: 0.3}             # station pad
+
+objects:
+  - {name: station, type: station, pose: [0.0, 0.0, 0.0]}
+  - {name: shed, shape: {box: [0.2, 3.0, 2.0]}, position: [0.75, 0.0], color: [0.75, 0.72, 0.68]}   # the wall the station stands against

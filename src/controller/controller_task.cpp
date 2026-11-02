@@ -1,10 +1,12 @@
 #include "controller_task.h"
+#include "dock.h"
 #include "../sensor/imu_task.h"
 
 static volatile int robot_state = ROBOT_STATE_IDLE;
 
 bool controller_path_edit_allowed() {
-    return robot_state == ROBOT_STATE_IDLE || robot_state == ROBOT_STATE_MANUAL;
+    return robot_state == ROBOT_STATE_IDLE || robot_state == ROBOT_STATE_MANUAL ||
+           robot_state == ROBOT_STATE_CHARGING || robot_state == ROBOT_STATE_DOCK_FAILED;
 }
 
 // GPS cache (updated by gps_callback)
@@ -15,6 +17,24 @@ static bool       gps_valid_ctrl  = false;
 static uint32_t datum_capture_start_ms  = 0;
 static double   datum_capture_start_lat = 0;
 static double   datum_capture_start_lon = 0;
+
+static const char* state_name(int s) {
+    switch (s) {
+        case ROBOT_STATE_IDLE: return "IDLE";
+        case ROBOT_STATE_MOWING: return "MOWING";
+        case ROBOT_STATE_PAUSED: return "PAUSED";
+        case ROBOT_STATE_RETURNING_TO_BASE: return "RETURNING";
+        case ROBOT_STATE_DOCKING: return "DOCKING";
+        case ROBOT_STATE_CHARGING: return "CHARGING";
+        case ROBOT_STATE_UNDOCKING: return "UNDOCKING";
+        case ROBOT_STATE_RECORDING_OUTLINE: return "RECORDING";
+        case ROBOT_STATE_MANUAL: return "MANUAL";
+        case ROBOT_STATE_CAPTURING_DATUM: return "DATUM";
+        case ROBOT_STATE_SETTING_STATION: return "SETTING_STATION";
+        case ROBOT_STATE_DOCK_FAILED: return "DOCK_FAILED";
+        default: return "?";
+    }
+}
 
 // -------------------------------------------------------- HELPERS ---------------------------------------------------------------
 
@@ -42,15 +62,31 @@ static void motor_main_off() {
     }
 }
 
-static void motion_send(int mode) {
-    motion_command_t cmd = { mode, 0, 0, 0, 0, NAV_TOOL_KEEP, 0 };
+static void motion_publish(const motion_command_t& cmd) {
     dds_result_t result = DDS_PUBLISH("/motion/command", cmd);
     if (result != DDS_SUCCESS) {
         SerialDebug.printf("[CTRL] Failed to send motion command: %d\r\n", result);
     }
 }
 
+static void motion_send(int mode) {
+    motion_command_t cmd = { mode, 0, 0, 0, 0, NAV_TOOL_KEEP, 0, 0.0f, NAN };
+    motion_publish(cmd);
+}
+
 static void motion_stop() { motion_send(WAITING); }
+
+// Forward along the path to (x, y), blade off, at most `speed` (0 = path profile)
+static void motion_to(double x, double y, float speed) {
+    motion_command_t cmd = { MOVING, 0, 0, x, y, NAV_TOOL_OFF, 0, speed, NAN };
+    motion_publish(cmd);
+}
+
+// Backwards along the line (sx, sy) -> (ex, ey) (axle), line follower on the fused pose
+static void motion_reverse(double sx, double sy, double ex, double ey, float start_yaw) {
+    motion_command_t cmd = { MOVING_REVERSE, sx, sy, ex, ey, NAV_TOOL_KEEP, 0, DOCK_REVERSE_SPEED, start_yaw };
+    motion_publish(cmd);
+}
 
 static void abort_mission(const char* reason) {
     SerialDebug.printf("[CTRL] Mission aborted (%s), returning to IDLE\r\n", reason);
@@ -109,7 +145,8 @@ static void go_to_base() {
 }
 
 static void enter_manual_mode() {
-    if (robot_state != ROBOT_STATE_IDLE) {
+    if (robot_state != ROBOT_STATE_IDLE && robot_state != ROBOT_STATE_CHARGING &&
+        robot_state != ROBOT_STATE_DOCK_FAILED) {
         SerialDebug.printf("[CTRL] Manual ON rejected: must be IDLE (state=%d)\r\n", robot_state);
         return;
     }
@@ -135,7 +172,7 @@ static void exit_manual_mode() {
     MANUAL_MOTORS_STOPPED = true;
 
     MANUAL_MODE_ACTIVE = false;
-    robot_state = ROBOT_STATE_IDLE;
+    robot_state = ROBOT_STATE_IDLE;   // docked by hand: the tick sees the contact and goes CHARGING
 }
 
 // -------------------------------------------------------- DATUM CAPTURE ---------------------------------------------------------------
@@ -172,6 +209,464 @@ static void start_datum_capture() {
     SerialDebug.printf("[CTRL] Datum set to lat=%.7f lon=%.7f\r\n", BASE_LAT, BASE_LON);
 }
 
+// -------------------------------------------------------- DOCKING ---------------------------------------------------------------
+// ARCHITECTURE §7 "Docking". Station: DOCK_STATION (dock.h), the axle where the contacts close and
+// the heading into the station. All moves are closed loop on the fused (RTK) pose: forward on the
+// path tracker, backwards on the reverse line follower (motion_task).
+
+enum dock_phase {
+    DP_NONE,
+    DP_ROUTE_LAWN,   // planner's way home through the lawn (from a mission), then DP_ROUTE
+    DP_ROUTE,        // NavPath to the lead-in and pre-dock points
+    DP_APPROACH,     // straight in along the axis, until the contacts close
+    DP_HOLD,         // stopped on contact, waiting DOCK_CONFIRM_MS
+    DP_BACKOFF,      // reversing to the next approach's pre-dock point
+    DP_UNDOCK,       // reversing out of the station
+    DP_SET_BACKOUT,  // set station: reversing out, recording the track
+};
+
+static int      dock_phase = DP_NONE;
+static int      dock_attempt = 0;          // approaches that failed in this docking
+static bool     dock_verifying = false;    // first dock with a just-measured station (not stored yet)
+static dock_station_t dock_backup;         // the station before set station, back on a failed verify
+static bool     resume_after_charge = false;   // mission interrupted (battery, rain): go on once charged
+static bool     mow_after_undock = false;
+static uint32_t phase_ms = 0;
+static bool     approach_clean = true;     // RTK fixed all the way, first try, no creep
+static fused_pose_data_t contact_pose;
+static double   contact_gyro = 0.0;
+static uint32_t contact_ms = 0;
+static bool     set_dropped = false;       // set station: the contacts opened (track sample 0)
+static bool     prev_contact = false;
+static fused_pose_data_t prev_pose;
+static double   prev_gyro = 0.0;
+static bool     prev_pose_ok = false;
+static uint32_t gps_seen_ms = 0;           // last /gps the track sampled
+
+static double st_ux() { return cos(DOCK_STATION.yaw); }
+static double st_uy() { return sin(DOCK_STATION.yaw); }
+// Station-frame point: `along` the axis (+ = into the station, 0 = contact), `lat` to its left
+static void st_point(float along, float lat, double* x, double* y) {
+    *x = DOCK_STATION.x + along * st_ux() - lat * st_uy();
+    *y = DOCK_STATION.y + along * st_uy() + lat * st_ux();
+}
+
+// The approach plan per attempt: DOCK_TRIES normal ones, then the recovery (a fresh, longer straight
+// approach, slow), then one slow approach each side DOCK_SEARCH_LATERAL off the axis.
+static int dock_attempts_total() { return DOCK_TRIES + 3; }
+static void attempt_plan(int k, float* predock, float* lat, float* speed) {
+    *predock = DOCK_PREDOCK_DIST; *lat = 0.0f; *speed = DOCK_APPROACH_SPEED;
+    if (k == DOCK_TRIES) { *predock = DOCK_RECOVERY_PREDOCK; *speed = DOCK_SLOW_SPEED; }
+    else if (k == DOCK_TRIES + 1) { *lat = DOCK_SEARCH_LATERAL; *speed = DOCK_SLOW_SPEED; }
+    else if (k == DOCK_TRIES + 2) { *lat = -DOCK_SEARCH_LATERAL; *speed = DOCK_SLOW_SPEED; }
+}
+
+static bool rtk_fixed() {
+    return GPS_CARR_SOLN == 2 && (millis() - GPS_CARR_SOLN_MS) < DOCK_RTK_MAX_AGE_MS;
+}
+
+static void log_station() {
+    if (!DOCK_STATION.set) {
+        SerialDebug.printf("[DOCK] Station not set\r\n");
+        return;
+    }
+    SerialDebug.printf("[DOCK] Station x=%.3f y=%.3f yaw=%.2f n=%u\r\n", DOCK_STATION.x, DOCK_STATION.y,
+                       DOCK_STATION.yaw * RAD_TO_DEG, DOCK_STATION.n);
+}
+
+static void set_state(int s) {
+    if (robot_state == s) return;
+    robot_state = s;
+    SerialDebug.printf("[DOCK] State %s\r\n", state_name(s));
+}
+
+// Hook (not implemented): in the last metre the ToF sensors see both funnel walls; their mid-line
+// could correct the lateral offset of the approach line before the contacts. Returns the lateral
+// correction (m, + = left) to apply to the approach line, 0 = none.
+static float dock_tof_centring() { return 0.0f; }
+
+static void dock_failed(const char* why) {
+    motion_stop();
+    stop_motors();
+    if (dock_verifying) {
+        DOCK_STATION = dock_backup;
+        dock_verifying = false;
+    }
+    dock_phase = DP_NONE;
+    set_state(ROBOT_STATE_DOCK_FAILED);
+    SerialDebug.printf("[DOCK] Failed (%s): Couldn't dock. Check the station is clear, or set it again\r\n", why);
+}
+
+static void start_approach() {
+    float pre, lat, speed;
+    attempt_plan(dock_attempt, &pre, &lat, &speed);
+    lat += dock_tof_centring();
+    double ex, ey;
+    st_point(DOCK_OVERRUN, lat, &ex, &ey);   // past the contact: no voltage by there = a miss
+    dock_track_reset();
+    approach_clean = dock_attempt == 0;
+    dock_phase = DP_APPROACH;
+    phase_ms = millis();
+    set_state(ROBOT_STATE_DOCKING);
+    SerialDebug.printf("[DOCK] Approach %d (%.2f m/s, %.0f cm off the axis)\r\n", dock_attempt + 1, speed, lat * 100.0f);
+    motion_stop();
+    motion_to(ex, ey, speed);
+}
+
+// To the lead-in and pre-dock points of the current attempt; the last leg lies on the axis.
+// Already standing near the pre-dock point, facing in: straight into the approach.
+static void route_to_predock() {
+    float pre, lat, speed;
+    attempt_plan(dock_attempt, &pre, &lat, &speed);
+    fused_pose_data_t p;
+    if (fused_pose_now(&p)) {
+        double ax = p.x + GNSS_ANTENNA_BEHIND_AXLE * cos(p.yaw), ay = p.y + GNSS_ANTENNA_BEHIND_AXLE * sin(p.yaw);
+        double dx = ax - DOCK_STATION.x, dy = ay - DOCK_STATION.y;
+        double along = dx * st_ux() + dy * st_uy(), side = -dx * st_uy() + dy * st_ux();
+        float dyaw = normalize_angle(p.yaw - DOCK_STATION.yaw);
+        if (fabs(along + pre) < 0.3 && fabs(side - lat) < 0.10 && fabsf(dyaw) < 0.35f) {
+            start_approach();
+            return;
+        }
+    }
+    double lx, ly, px, py;
+    st_point(-(pre + DOCK_LEADIN_DIST), lat, &lx, &ly);
+    st_point(-pre, lat, &px, &py);
+    motion_stop();
+    motor_main_off();
+    dock_phase = DP_ROUTE;
+    set_state(ROBOT_STATE_RETURNING_TO_BASE);
+    SerialDebug.printf("[DOCK] Route to the pre-dock point (%.2f, %.2f)\r\n", px, py);
+    motion_to(lx, ly, 0.0f);
+    motion_to(px, py, 0.0f);
+}
+
+// A failed approach: back off along the axis to the next attempt's pre-dock point, or give up
+static void approach_failed(const char* why) {
+    motion_stop();
+    dock_attempt++;
+    SerialDebug.printf("[DOCK] Approach missed (%s)\r\n", why);
+    if (dock_attempt >= dock_attempts_total()) {
+        dock_failed("all approaches missed");
+        return;
+    }
+    float pre, lat, speed;
+    attempt_plan(dock_attempt, &pre, &lat, &speed);
+    double sx, sy, ex, ey;
+    st_point(0.0f, lat, &sx, &sy);
+    st_point(-pre, lat, &ex, &ey);
+    dock_phase = DP_BACKOFF;
+    phase_ms = millis();
+    motion_reverse(sx, sy, ex, ey, NAN);
+}
+
+// Home now: through the lawn if a mission was running and a plan exists, then to the station
+static void go_home(bool from_mission, bool resume) {
+    if (!imu_ready()) {
+        SerialDebug.printf("[DOCK] Cannot go home: gyro not calibrated yet (keep still)\r\n");
+        return;
+    }
+    if (!DOCK_STATION.set) {
+        SerialDebug.printf("[DOCK] No station set: dock by hand, then set station (console S)\r\n");
+        return;
+    }
+    resume_after_charge = resume;
+    dock_attempt = 0;
+    stop_motors();
+    motor_main_off();
+    if (from_mission && CONFIG_PATH) {
+        dock_phase = DP_ROUTE_LAWN;
+        set_state(ROBOT_STATE_RETURNING_TO_BASE);
+        go_to_base();
+        return;
+    }
+    route_to_predock();
+}
+
+// Contacts closed and held: docked. A clean approach is a measurement of the station.
+static void docked() {
+    motion_stop();
+    stop_motors();
+    dock_phase = DP_NONE;
+    set_state(ROBOT_STATE_CHARGING);
+    SerialDebug.printf("[DOCK] Docked after %d approach(es)\r\n", dock_attempt + 1);
+    // The contact pose is the track's last sample: the heading there from the turned-back track
+    dock_track_add(contact_pose.x, contact_pose.y, contact_gyro);
+    float yaw, spread, chord;
+    bool ok = dock_track_heading(dock_track_count() - 1, false, contact_pose.yaw, &yaw, &spread, &chord);
+    if (dock_verifying) {
+        dock_verifying = false;
+        SaveStation();
+        SerialDebug.printf("[DOCK] Station set (verified by a dock)\r\n");
+        log_station();
+        return;
+    }
+    if (!approach_clean) {
+        SerialDebug.printf("[DOCK] Not a measurement (retries, creep or no RTK fix on the approach)\r\n");
+        return;
+    }
+    if (!ok || chord < DOCK_MEAS_MIN_TRACK || spread > DOCK_SET_MAX_SPREAD_DEG) {
+        SerialDebug.printf("[DOCK] Not a measurement (track %.2f m, spread %.2f deg)\r\n", ok ? chord : 0.0f, ok ? spread : 0.0f);
+        return;
+    }
+    double cx = contact_pose.x + GNSS_ANTENNA_BEHIND_AXLE * cos(yaw);
+    double cy = contact_pose.y + GNSS_ANTENNA_BEHIND_AXLE * sin(yaw);
+    SerialDebug.printf("[DOCK] Dock measurement x=%.3f y=%.3f yaw=%.2f (track %.2f m, spread %.2f deg)\r\n",
+                       cx, cy, yaw * RAD_TO_DEG, chord, spread);
+    dock_station_measure(cx, cy, yaw);
+    SaveStation();
+    log_station();
+}
+
+static void start_undock(bool then_mow) {
+    if (robot_state != ROBOT_STATE_CHARGING && robot_state != ROBOT_STATE_DOCK_FAILED && robot_state != ROBOT_STATE_IDLE) {
+        SerialDebug.printf("[DOCK] Cannot undock from state %s\r\n", state_name(robot_state));
+        return;
+    }
+    if (!imu_ready()) {
+        SerialDebug.printf("[DOCK] Cannot undock: gyro not calibrated yet (keep still)\r\n");
+        return;
+    }
+    fused_pose_data_t p;
+    if (!fused_pose_now(&p)) {
+        SerialDebug.printf("[DOCK] Cannot undock: no pose\r\n");
+        return;
+    }
+    mow_after_undock = then_mow;
+    double sx, sy, ex, ey;
+    float start_yaw = NAN;
+    if (DOCK_STATION.set && power_contact()) {
+        // In the station the heading is the station's, whatever the EKF thinks yet (boot)
+        st_point(0.0f, 0.0f, &sx, &sy);
+        st_point(-DOCK_UNDOCK_DIST, 0.0f, &ex, &ey);
+        if (!HEADING_CONFIRMED) start_yaw = DOCK_STATION.yaw;
+    } else {
+        sx = p.x + GNSS_ANTENNA_BEHIND_AXLE * cos(p.yaw);
+        sy = p.y + GNSS_ANTENNA_BEHIND_AXLE * sin(p.yaw);
+        ex = sx - DOCK_UNDOCK_DIST * cos(p.yaw);
+        ey = sy - DOCK_UNDOCK_DIST * sin(p.yaw);
+    }
+    motor_main_off();
+    dock_phase = DP_UNDOCK;
+    phase_ms = millis();
+    set_state(ROBOT_STATE_UNDOCKING);
+    motion_stop();
+    motion_reverse(sx, sy, ex, ey, start_yaw);
+}
+
+static void undock_done() {
+    dock_phase = DP_NONE;
+    if (mow_after_undock) {
+        mow_after_undock = false;
+        SerialDebug.printf("[DOCK] Out of the station, going on mowing\r\n");
+        set_state(ROBOT_STATE_MOWING);
+        plan_from_here(COVERAGE_MOW, false);
+        return;
+    }
+    set_state(ROBOT_STATE_IDLE);
+}
+
+// Set station (console S): the mower was docked by hand and the contacts are live. It reverses
+// straight out DOCK_SET_BACKOUT on the line follower and records the RTK track; the heading at the
+// contact comes from that track turned back by the gyro (dock_track_heading), never from the parked
+// EKF yaw. RTK fixed is required for the whole move.
+static void start_set_station() {
+    if (robot_state != ROBOT_STATE_IDLE && robot_state != ROBOT_STATE_CHARGING &&
+        robot_state != ROBOT_STATE_MANUAL && robot_state != ROBOT_STATE_DOCK_FAILED) {
+        SerialDebug.printf("[DOCK] Set station rejected: busy (%s)\r\n", state_name(robot_state));
+        return;
+    }
+    if (!power_contact()) {
+        SerialDebug.printf("[DOCK] Set station rejected: no contact voltage (dock the mower by hand first)\r\n");
+        return;
+    }
+    if (!rtk_fixed()) {
+        SerialDebug.printf("[DOCK] Set station rejected: no RTK fix: the station needs open sky\r\n");
+        return;
+    }
+    if (!imu_ready()) {
+        SerialDebug.printf("[DOCK] Set station rejected: gyro not calibrated yet (keep still)\r\n");
+        return;
+    }
+    fused_pose_data_t p;
+    if (!fused_pose_now(&p)) {
+        SerialDebug.printf("[DOCK] Set station rejected: no pose\r\n");
+        return;
+    }
+    if (robot_state == ROBOT_STATE_MANUAL) {
+        stop_motors();
+        MANUAL_MODE_ACTIVE = false;
+    }
+    // The line is drawn along the parked heading (it may be off by degrees; that only bends the
+    // line, not the result). Unconfirmed at boot: steer on the gyro from it, so an EKF relock
+    // halfway does not jerk the line.
+    double sx = p.x + GNSS_ANTENNA_BEHIND_AXLE * cos(p.yaw), sy = p.y + GNSS_ANTENNA_BEHIND_AXLE * sin(p.yaw);
+    double ex = sx - DOCK_SET_BACKOUT * cos(p.yaw), ey = sy - DOCK_SET_BACKOUT * sin(p.yaw);
+    dock_track_reset();
+    set_dropped = false;
+    dock_phase = DP_SET_BACKOUT;
+    phase_ms = millis();
+    set_state(ROBOT_STATE_SETTING_STATION);
+    SerialDebug.printf("[DOCK] Setting station: reversing out %.1f m\r\n", DOCK_SET_BACKOUT);
+    motion_stop();
+    motion_reverse(sx, sy, ex, ey, HEADING_CONFIRMED ? NAN : p.yaw);
+}
+
+static void set_station_reject(const char* why) {
+    motion_stop();
+    stop_motors();
+    dock_phase = DP_NONE;
+    set_state(ROBOT_STATE_IDLE);
+    SerialDebug.printf("[DOCK] Set station failed: %s\r\n", why);
+}
+
+static void set_station_backout_done() {
+    if (!set_dropped) { set_station_reject("the contact voltage never dropped"); return; }
+    float yaw, spread, chord;
+    if (!dock_track_heading(0, true, contact_pose.yaw, &yaw, &spread, &chord) || chord < DOCK_SET_MIN_TRACK) {
+        set_station_reject("too little RTK track behind the station");
+        return;
+    }
+    if (spread > DOCK_SET_MAX_SPREAD_DEG) {
+        SerialDebug.printf("[DOCK] Heading estimates spread %.2f deg\r\n", spread);
+        set_station_reject("the track and the gyro disagree (slip?): set it again");
+        return;
+    }
+    const dock_sample_t& c = dock_track_at(0);
+    double cx = c.x + GNSS_ANTENNA_BEHIND_AXLE * cos(yaw), cy = c.y + GNSS_ANTENNA_BEHIND_AXLE * sin(yaw);
+    SerialDebug.printf("[DOCK] Measured station x=%.3f y=%.3f yaw=%.2f (track %.2f m, spread %.2f deg); verifying\r\n",
+                       cx, cy, yaw * RAD_TO_DEG, chord, spread);
+    dock_backup = DOCK_STATION;
+    dock_station_init(cx, cy, yaw);
+    dock_verifying = true;
+    dock_attempt = 0;
+    resume_after_charge = false;
+    route_to_predock();   // standing on the axis about DOCK_SET_BACKOUT out: straight into the approach
+}
+
+// 50 ms tick: power, contact, track
+static void dock_tick() {
+    power_poll();
+    bool contact = power_contact();
+    uint32_t now = millis();
+    fused_pose_data_t p;
+    double g = 0.0;
+    bool pose_ok = fused_pose_now(&p) && imu_yaw_now(&g);
+
+    switch (dock_phase) {
+        case DP_APPROACH:
+            if (!rtk_fixed()) approach_clean = false;
+            if (contact) {
+                motion_stop();   // the moment it touches
+                if (pose_ok) { contact_pose = p; contact_gyro = g; }
+                contact_ms = now;
+                dock_phase = DP_HOLD;
+            } else if (now - phase_ms > DOCK_APPROACH_TIMEOUT_MS) {
+                approach_failed("timeout");
+            }
+            break;
+        case DP_HOLD:
+            if (!contact) {   // bounced off the springs: creep on
+                float pre, lat, speed;
+                attempt_plan(dock_attempt, &pre, &lat, &speed);
+                double ex, ey;
+                st_point(DOCK_OVERRUN, lat, &ex, &ey);
+                approach_clean = false;
+                dock_phase = DP_APPROACH;
+                motion_to(ex, ey, DOCK_SLOW_SPEED);
+            } else if (now - contact_ms >= DOCK_CONFIRM_MS) {
+                docked();
+            }
+            break;
+        case DP_SET_BACKOUT:
+            if (!rtk_fixed()) { set_station_reject("no RTK fix: the station needs open sky"); break; }
+            if (!set_dropped && prev_contact && !contact && pose_ok && prev_pose_ok) {
+                // Contacts opened between the last tick and this one: the midpoint is sample 0
+                contact_pose = p;
+                contact_pose.x = 0.5 * (p.x + prev_pose.x);
+                contact_pose.y = 0.5 * (p.y + prev_pose.y);
+                contact_gyro = 0.5 * (g + prev_gyro);
+                dock_track_reset();
+                dock_track_add(contact_pose.x, contact_pose.y, contact_gyro);
+                set_dropped = true;
+            }
+            break;
+        case DP_UNDOCK:
+        case DP_BACKOFF:
+        default:
+            break;
+    }
+
+    // Docked by hand or at boot: contacts held -> CHARGING; contacts lost while CHARGING -> IDLE
+    static uint32_t contact_since = 0, lost_since = 0;
+    if (contact) {
+        if (!prev_contact) contact_since = now;
+        lost_since = 0;
+        if ((robot_state == ROBOT_STATE_IDLE || robot_state == ROBOT_STATE_DOCK_FAILED) &&
+            now - contact_since >= DOCK_CONFIRM_MS) {
+            SerialDebug.printf("[DOCK] Contacts closed: docked\r\n");
+            set_state(ROBOT_STATE_CHARGING);
+        }
+    } else {
+        if (prev_contact) lost_since = now;
+        if (robot_state == ROBOT_STATE_CHARGING && lost_since && now - lost_since > 2000) {
+            SerialDebug.printf("[DOCK] Contacts lost while docked\r\n");
+            set_state(ROBOT_STATE_IDLE);
+        }
+    }
+
+    // Battery
+    static uint32_t low_since = 0, charged_since = 0;
+    if (power_battery_known()) {
+        float v = power_battery_v();
+        if (robot_state == ROBOT_STATE_MOWING && v < BATTERY_V_LOW) {
+            if (!low_since) low_since = now;
+            if (now - low_since > BATTERY_LOW_HOLD_MS) {
+                low_since = 0;
+                controller_signal_t s = { SIGNAL_LOW_BATTERY };
+                DDS_PUBLISH("/controller/signal", s);
+            }
+        } else low_since = 0;
+        if (robot_state == ROBOT_STATE_CHARGING && v >= BATTERY_V_CHARGED) {
+            if (!charged_since) charged_since = now;
+            if (now - charged_since > BATTERY_CHARGED_HOLD_MS) {
+                charged_since = 0;
+                controller_signal_t s = { SIGNAL_BATTERY_CHARGED };
+                DDS_PUBLISH("/controller/signal", s);
+            }
+        } else charged_since = 0;
+    }
+
+    // Status for the page: on a change, else every 10 s
+    static int last_state = -1, last_pct = -2;
+    static bool last_contact = false;
+    static uint32_t last_status_ms = 0;
+    int pct = power_battery_pct();
+    if ((robot_state != last_state || pct != last_pct || contact != last_contact || now - last_status_ms > 10000) &&
+        now - last_status_ms > 1000) {
+        SerialDebug.printf("[POWER] state=%s dock=%.1fV bat=%.1fV pct=%d\r\n", state_name(robot_state),
+                           power_dock_v(), power_battery_known() ? power_battery_v() : 0.0f, pct);
+        last_state = robot_state;
+        last_pct = pct;
+        last_contact = contact;
+        last_status_ms = now;
+    }
+
+    prev_contact = contact;
+    prev_pose = p;
+    prev_gyro = g;
+    prev_pose_ok = pose_ok;
+}
+
+// A new GPS fix while recording: one track sample (fused base_link + gyro)
+static void dock_gps_sample() {
+    if (dock_phase != DP_APPROACH && !(dock_phase == DP_SET_BACKOUT && set_dropped)) return;
+    if (!rtk_fixed()) return;   // the approach is then not clean; set station aborts in the tick
+    fused_pose_data_t p;
+    double g;
+    if (fused_pose_now(&p) && imu_yaw_now(&g)) dock_track_add(p.x, p.y, g);
+}
+
 // -------------------------------------------------------- STATE MACHINE ---------------------------------------------------------------
 
 static void start_mowing() {
@@ -195,6 +690,10 @@ static void start_mowing() {
     SerialDebug.printf("[CTRL] Starting mowing\r\n");
     // From the base after rain or charging it goes on where it stopped; else a new mission
     if (robot_state == ROBOT_STATE_IDLE || AlgorithmMowingDone()) AlgorithmReset();
+    if (robot_state == ROBOT_STATE_CHARGING && power_contact()) {
+        start_undock(true);   // out of the station first
+        return;
+    }
     robot_state = ROBOT_STATE_MOWING;
     plan_from_here(COVERAGE_MOW, false);
 }
@@ -204,7 +703,7 @@ static void pause_mowing() {
         SerialDebug.printf("[CTRL] Cannot pause from state: %d\r\n", robot_state);
         return;
     }
-    
+
     SerialDebug.printf("[CTRL] Pausing mowing\r\n");
     motion_send(MOTION_PAUSE);   // keeps the queued path, so resume continues on it
     robot_state = ROBOT_STATE_PAUSED;
@@ -215,33 +714,45 @@ static void resume_mowing() {
         SerialDebug.printf("[CTRL] Cannot resume from state: %d\r\n", robot_state);
         return;
     }
-    
+
     SerialDebug.printf("[CTRL] Resuming mowing\r\n");
     robot_state = ROBOT_STATE_MOWING;
     motion_send(MOTION_RESUME);
 }
 
-static void return_to_base() {
-    if (robot_state == ROBOT_STATE_RETURNING_TO_BASE) {
+// From a mission (lawn done, battery low, rain). Without a station: the old way, to the base point.
+static void return_to_base(bool resume) {
+    if (robot_state == ROBOT_STATE_RETURNING_TO_BASE || robot_state == ROBOT_STATE_DOCKING) {
         return; // Already returning
     }
-    
+    if (DOCK_STATION.set) {
+        SerialDebug.printf("[CTRL] Returning to the station\r\n");
+        go_home(true, resume);
+        return;
+    }
     SerialDebug.printf("[CTRL] Returning to base\r\n");
     stop_motors();
+    dock_phase = DP_NONE;
     robot_state = ROBOT_STATE_RETURNING_TO_BASE;
     go_to_base();
 }
 
-static void handle_charging_complete() {
-    SerialDebug.printf("[CTRL] Charging complete, going on mowing\r\n");
-    robot_state = ROBOT_STATE_MOWING;   // no dock to back out of yet
-    plan_from_here(COVERAGE_MOW, false);
-}
+// Hook for a timetable (not implemented): true when a scheduled mowing window has started
+static bool schedule_wants_mowing() { return false; }
 
-static void handle_docking_complete() {
-    SerialDebug.printf("[CTRL] Docked at charging station, starting charge\r\n");
-    robot_state = ROBOT_STATE_CHARGING;
-    // In a real system, you'd monitor battery level and call handle_charging_complete() when done
+static void handle_charging_complete() {
+    if (resume_after_charge || schedule_wants_mowing()) {
+        SerialDebug.printf("[CTRL] Charging complete, going on mowing\r\n");
+        resume_after_charge = false;
+        if (power_contact()) {
+            start_undock(true);
+            return;
+        }
+        robot_state = ROBOT_STATE_MOWING;
+        plan_from_here(COVERAGE_MOW, false);
+        return;
+    }
+    SerialDebug.printf("[CTRL] Charging complete, staying docked\r\n");
 }
 
 // -------------------------------------------------------- EVENT HANDLERS ---------------------------------------------------------------
@@ -252,21 +763,41 @@ static void handle_motion_done() {
             go_to_next_algorithm_point();   // the queue ran dry before the next point arrived
             if (planner_exhausted) {
                 SerialDebug.printf("[CTRL] Lawn mowed, returning to base\r\n");
-                return_to_base();
+                return_to_base(false);
             }
             break;
 
         case ROBOT_STATE_RETURNING_TO_BASE:
+            if (dock_phase == DP_ROUTE) {   // at the pre-dock point
+                start_approach();
+                break;
+            }
             go_to_next_algorithm_point();
             if (!planner_exhausted) break;
+            if (dock_phase == DP_ROUTE_LAWN) {   // at the base point: on to the station
+                route_to_predock();
+                break;
+            }
+            // No station: the base point stands in for it
             if (AlgorithmMowingDone()) {
                 complete_mission();
             } else {
-                // No dock yet: the base point stands in for the charging station
-                SerialDebug.printf("[CTRL] Reached base, entering charging station\r\n");
-                robot_state = ROBOT_STATE_ENTERING_CHARGING_STATION;
-                handle_docking_complete();
+                SerialDebug.printf("[CTRL] Reached base (no station set), waiting\r\n");
+                robot_state = ROBOT_STATE_CHARGING;
             }
+            break;
+
+        case ROBOT_STATE_DOCKING:
+            if (dock_phase == DP_APPROACH) approach_failed("no contact at the end of the approach");
+            else if (dock_phase == DP_BACKOFF) start_approach();
+            break;
+
+        case ROBOT_STATE_UNDOCKING:
+            if (dock_phase == DP_UNDOCK) undock_done();
+            break;
+
+        case ROBOT_STATE_SETTING_STATION:
+            if (dock_phase == DP_SET_BACKOUT) set_station_backout_done();
             break;
 
         default:
@@ -276,7 +807,27 @@ static void handle_motion_done() {
 
 static void handle_obstacle() {
     // Motion has already stopped and dropped its path
+    if (robot_state == ROBOT_STATE_DOCKING) {
+        if (dock_phase == DP_APPROACH) approach_failed("stalled");
+        else if (dock_phase == DP_BACKOFF) dock_failed("could not back off");
+        return;
+    }
+    if (robot_state == ROBOT_STATE_UNDOCKING) {
+        dock_phase = DP_NONE;
+        mow_after_undock = false;
+        SerialDebug.printf("[DOCK] Undock blocked\r\n");
+        set_state(power_contact() ? ROBOT_STATE_CHARGING : ROBOT_STATE_IDLE);
+        return;
+    }
+    if (robot_state == ROBOT_STATE_SETTING_STATION) {
+        set_station_reject("blocked while reversing out");
+        return;
+    }
     if (robot_state == ROBOT_STATE_RETURNING_TO_BASE) {
+        if (dock_phase == DP_ROUTE) {
+            dock_failed("blocked on the way to the station");
+            return;
+        }
         SerialDebug.printf("[CTRL] Obstacle hit, new way home from here\r\n");
         stop_motors();
         plan_from_here(COVERAGE_HOME, false);
@@ -290,9 +841,18 @@ static void handle_obstacle() {
 
 static void stop_mowing() {
     if (robot_state == ROBOT_STATE_MANUAL) return;
-    if (robot_state == ROBOT_STATE_IDLE) {   // also ends a console line test
+    if (robot_state == ROBOT_STATE_IDLE || robot_state == ROBOT_STATE_CHARGING) {   // also ends a console line test
         motion_stop();
         stop_motors();
+        return;
+    }
+    if (dock_phase != DP_NONE || robot_state == ROBOT_STATE_DOCK_FAILED) {
+        motion_stop();
+        stop_motors();
+        if (dock_verifying) { DOCK_STATION = dock_backup; dock_verifying = false; }
+        dock_phase = DP_NONE;
+        resume_after_charge = mow_after_undock = false;
+        set_state(power_contact() ? ROBOT_STATE_CHARGING : ROBOT_STATE_IDLE);
         return;
     }
     abort_mission("stop requested");
@@ -301,21 +861,42 @@ static void stop_mowing() {
 static void handle_rain() {
     if (robot_state != ROBOT_STATE_MOWING) return;
 
-    SerialDebug.printf("[CTRL] Rain detected — returning to base\r\n");
-    return_to_base();
+    SerialDebug.printf("[CTRL] Rain detected, returning to base\r\n");
+    return_to_base(true);
 }
 
 static void handle_low_battery() {
     if (robot_state != ROBOT_STATE_MOWING) return;
 
-    SerialDebug.printf("[CTRL] Low battery — returning to base\r\n");
-    return_to_base();
+    SerialDebug.printf("[CTRL] Low battery, returning to base\r\n");
+    return_to_base(true);
 }
 
 static void handle_battery_charged() {
     if (robot_state == ROBOT_STATE_CHARGING) {
         handle_charging_complete();
     }
+}
+
+static void handle_go_home() {
+    if (robot_state == ROBOT_STATE_MOWING || robot_state == ROBOT_STATE_PAUSED) {
+        return_to_base(false);
+        return;
+    }
+    if (robot_state == ROBOT_STATE_CHARGING && power_contact()) {
+        SerialDebug.printf("[DOCK] Already docked\r\n");
+        return;
+    }
+    if (robot_state != ROBOT_STATE_IDLE && robot_state != ROBOT_STATE_DOCK_FAILED &&
+        robot_state != ROBOT_STATE_MANUAL && robot_state != ROBOT_STATE_CHARGING) {
+        SerialDebug.printf("[DOCK] Cannot go home from state %s\r\n", state_name(robot_state));
+        return;
+    }
+    if (robot_state == ROBOT_STATE_MANUAL) {
+        stop_motors();
+        MANUAL_MODE_ACTIVE = false;
+    }
+    go_home(false, false);
 }
 
 // -------------------------------------------------------- DDS CALLBACKS ---------------------------------------------------------------
@@ -328,7 +909,8 @@ static void controller_signal_callback(dds_callback_context_t* context) {
             handle_motion_done();
             break;
         case SIGNAL_MOTION_WANT_POINT:
-            if (robot_state == ROBOT_STATE_MOWING || robot_state == ROBOT_STATE_RETURNING_TO_BASE) go_to_next_algorithm_point();
+            if (robot_state == ROBOT_STATE_MOWING ||
+                (robot_state == ROBOT_STATE_RETURNING_TO_BASE && dock_phase != DP_ROUTE)) go_to_next_algorithm_point();
             break;
         case SIGNAL_LOW_BATTERY:
             handle_low_battery();
@@ -360,6 +942,15 @@ static void controller_signal_callback(dds_callback_context_t* context) {
         case SIGNAL_STOP_MOWING:
             stop_mowing();
             break;
+        case SIGNAL_GO_HOME:
+            handle_go_home();
+            break;
+        case SIGNAL_UNDOCK:
+            start_undock(false);
+            break;
+        case SIGNAL_SET_STATION:
+            start_set_station();
+            break;
         default:
             SerialDebug.printf("[CTRL] Unknown signal: %d\r\n", signal->signal);
     }
@@ -369,6 +960,7 @@ static void gps_callback(dds_callback_context_t* context) {
     gps_data_t* data = (gps_data_t*)context->message_data.data;
     latest_gps_ctrl = *data;
     gps_valid_ctrl  = (data->accuracy > 0 && data->accuracy < 999);
+    dock_gps_sample();
 }
 
 // Where the planner (capture points, plan from here) sees the robot
@@ -382,17 +974,25 @@ static void fused_pose_callback(dds_callback_context_t* context) {
 static dds_thread_context_t thread_context;
 static void thread_timer_callback(void* arg) { xTaskNotify(thread_context.task, THREAD_NOTIFY_BIT, eSetBits); }
 
+// Console B: power and station
+void controller_print_dock_status() {
+    SerialDebug.printf("[POWER] state=%s dock=%.1fV bat=%.1fV pct=%d rtk=%d\r\n", state_name(robot_state),
+                       power_dock_v(), power_battery_known() ? power_battery_v() : 0.0f, power_battery_pct(),
+                       (int)GPS_CARR_SOLN);
+    log_station();
+}
+
 void controller_task(void* parameter) {
     thread_context.task = xTaskGetCurrentTaskHandle();
     thread_context.queue = xQueueCreate(5, sizeof(dds_callback_context_t));
     thread_context.sync_mutex = xSemaphoreCreateMutex();
-    
+
     esp_timer_create_args_t timer_args = {
         .callback = &thread_timer_callback,
         .arg = NULL,
     };
     esp_timer_create(&timer_args, &(thread_context.timer));
-    esp_timer_start_periodic(thread_context.timer, 200 * 1000); // 200 ms
+    esp_timer_start_periodic(thread_context.timer, 50 * 1000); // 50 ms: dock contact and power
 
     // ------- THREAD SETUP CODE START -------
 
@@ -412,6 +1012,10 @@ void controller_task(void* parameter) {
         SerialDebug.printf("Fused pose subscribe failed: %s\n", DDS_RESULT_TO_STRING(result));
     }
 
+    power_init();
+    LoadStation();
+    dock_track_reset();
+
     // ------- THREAD SETUP CODE END -------
 
     vTaskDelay(1500); // Allow some time for system stabilization before starting main loop
@@ -429,12 +1033,13 @@ void controller_task(void* parameter) {
     if (CONFIG_DATUM && CONFIG_PATH) {
         SerialDebug.printf("[CTRL] Datum + path confirmed, ready for MOWER/START.\r\n");
     }
-    
+    log_station();
+
     while(1) {
         // Wait for any notification (message or timer)
         uint32_t notification_value;
         xTaskNotifyWait(0x00, 0xFF, &notification_value, portMAX_DELAY);
-        
+
         if (notification_value & DDS_NOTIFY_BIT) { // DDS message notification
             DDS_TAKE_MUTEX(&thread_context);
             DDS_PROCESS_THREAD_MESSAGES(&thread_context);
@@ -444,7 +1049,9 @@ void controller_task(void* parameter) {
             DDS_TAKE_MUTEX(&thread_context);
 
             // ------- THREAD LOOP CODE START -------
-            
+
+            dock_tick();
+
             // ------- THREAD LOOP CODE END -------
 
             DDS_PROCESS_THREAD_MESSAGES(&thread_context);

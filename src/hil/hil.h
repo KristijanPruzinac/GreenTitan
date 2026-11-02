@@ -36,8 +36,12 @@ bool hil_imu_get(hil_imu_sample_t* sample);
 void hil_tof_push(const uint8_t* data, size_t len);
 bool hil_tof_get(int sensor, tof_frame_t* frame);
 
-// Contact-plate and pack voltage (V) from hil/power, in place of the two ADC dividers.
-// hil_power_get returns false until the first message and when the last is older than 1 s.
+// Contact-plate and pack voltage (V), in place of the two ADC dividers. They come as a block on
+// hil/tof (all 5 micro-ROS subscriptions of the build are taken): tag byte HIL_POWER_TAG, then
+// dock V and pack V as float32 LE (the sim's power model sends one block per message at 10 Hz).
+// hil_power_get returns false until the first block and when the last is older than 1 s.
+#define HIL_POWER_TAG 0x50
+#define HIL_POWER_BLOCK 9
 void hil_power_set(float dock_v, float battery_v);
 bool hil_power_get(float* dock_v, float* battery_v);
 

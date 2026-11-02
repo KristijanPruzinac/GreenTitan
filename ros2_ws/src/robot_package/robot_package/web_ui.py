@@ -59,7 +59,8 @@ PUSH_MIN = 0.015                             # s between two pushed messages (ca
 PUSH_IDLE = 0.25                             # s: push anyway (ages, sim truth) when nothing new came in
 ASSIST_WINDOW = 3.0                          # s after manual starts in which the node switches the assist on
 KEYS = {'manual': 'm', 'status': 'i', 'stop': ' ',
-        'capture': 'c', 'outline': 'o', 'point': 'p', 'finish': 'e'}   # c o p e: outline capture (console keys)
+        'capture': 'c', 'outline': 'o', 'point': 'p', 'finish': 'e',   # c o p e: outline capture (console keys)
+        'home': 'H', 'undock': 'U', 'set_station': 'S', 'power': 'B'}   # docking (ARCHITECTURE §7)
 METERS_PER_LAT = 111111.0                    # the firmware's flat-earth conversion (gps_topic_callback)
 
 RE_WALL_STATE = re.compile(r'\[WALL\] (\w+) -> (\w+): (.*)')
@@ -67,6 +68,11 @@ RE_POINT = re.compile(r'\[(?:WALL|DEBUG)\] Point added \((-?\d+), (-?\d+)\) cm( 
 RE_WEB_FILE = re.compile(r'^/web/[\w-]+\.json$')  # data files next to the page (no paths: nothing else is served)
 RE_DATUM = re.compile(r'(?:Datum published|Datum set to): lat=(-?[\d.]+) lon=(-?[\d.]+)')
 RE_GPS = re.compile(r'GPS: lat=-?[\d.]+ lon=-?[\d.]+ alt=(-?[\d.]+) acc=([\d.]+)')  # gps_task, every fix
+RE_POWER = re.compile(r'\[POWER\] state=(\w+) dock=([\d.]+)V bat=([\d.]+)V pct=(-?\d+)')   # controller, on change
+RE_DOCK_STATE = re.compile(r'\[DOCK\] State (\w+)')
+RE_STATION = re.compile(r'\[DOCK\] Station x=(-?[\d.]+) y=(-?[\d.]+) yaw=(-?[\d.]+)')    # odom m, deg
+RE_SET_REJECT = re.compile(r'\[DOCK\] Set station (?:rejected|failed): (.*)')
+DOCK_FAILED_MSG = "Couldn't dock. Check the station is clear, or set it again"
 
 CELL = 0.25                                  # m, terrain cell
 CELL_SAMPLES = 40                            # newest ground heights kept per cell
@@ -686,6 +692,9 @@ class WebUi(Node):
         self.outlines = []   # [[[x, y, corner], ...], ...] cm
         self.stick = None    # (lin, ang, monotonic time of the last report) while held
         self.notice = ''
+        # Docking: controller state, battery, station (odom x, y, yaw rad) and the one message the user sees
+        self.dock = {'state': None, 'pct': None, 'dock_v': None, 'bat_v': None, 'station': None, 'msg': ''}
+        self.dock_known, self.dock_ask = False, 0.0
 
         self.world = None
         self.world_rev = 0
@@ -746,6 +755,7 @@ class WebUi(Node):
         m = RE_DATUM.search(line)
         if m:
             self.set_datum(float(m.group(1)), float(m.group(2)))
+        self.parse_dock(line)
         if 'Manual mode ON' in line:
             if self.manual is not True:  # manual starts: the assist is always on while driving by hand
                 self.assist_due, self.assist_asked = time.monotonic() + ASSIST_WINDOW, False
@@ -765,6 +775,44 @@ class WebUi(Node):
             self.out_rev += 1
         elif 'Path capture completed' in line or 'Path capture failed' in line:
             self.recording = False
+
+    def parse_dock(self, line):
+        """[POWER] / [DOCK] lines -> self.dock. Only a failed dock or a refused set station is shown to the
+        user; retries, measurements and a silently adopted new station pose stay in the log.
+        The station is logged only when it changes: until it is known, ask (console B) every 10 s."""
+        if not self.dock_known and time.monotonic() > self.dock_ask:
+            self.dock_ask = time.monotonic() + 10.0
+            self.send(KEYS['power'])
+        if '[POWER]' not in line and '[DOCK]' not in line:
+            return
+        if '[DOCK] Station x=' in line or 'Station not set' in line:
+            self.dock_known = True
+        d = self.dock
+        m = RE_POWER.search(line)
+        state = None
+        if m:
+            state = m.group(1)
+            d['dock_v'], d['bat_v'] = float(m.group(2)), float(m.group(3))
+            d['pct'] = int(m.group(4)) if int(m.group(4)) >= 0 else None
+        m = RE_DOCK_STATE.search(line)
+        if m:
+            state = m.group(1)
+        if state and state != d['state']:
+            d['state'] = state
+            if state in ('RETURNING', 'DOCKING', 'CHARGING', 'SETTING_STATION', 'UNDOCKING'):
+                d['msg'] = ''
+        m = RE_STATION.search(line)
+        if m:
+            d['station'] = [float(m.group(1)), float(m.group(2)), math.radians(float(m.group(3)))]
+        elif 'Station not set' in line:
+            d['station'] = None
+        if '[DOCK] Failed' in line:
+            d['msg'] = DOCK_FAILED_MSG
+        m = RE_SET_REJECT.search(line)
+        if m:
+            d['msg'] = "Couldn't set the station: " + m.group(1).strip()
+        elif 'No station set' in line:
+            d['msg'] = 'No station set yet: dock the mower by hand, then "Set station here"'
 
     def ensure_assist(self, now):
         """Within ASSIST_WINDOW after manual started: assist off -> 'f' once; not known -> ask once ('i')."""
@@ -965,6 +1013,7 @@ class WebUi(Node):
             'world_rev': self.world_rev, 'tilt': self.tilt(now),
             'held': self.stick is not None, 'notice': self.notice, 'log_id': self.log_id,
             'limits': [MAX_LIN, MAX_REV, MAX_ANG],
+            'dock': self.dock,
         }
 
     def tilt(self, now):

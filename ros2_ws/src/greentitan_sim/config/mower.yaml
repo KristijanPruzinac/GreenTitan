@@ -98,6 +98,15 @@ devices:
       # the sim mounts them 1.5 / 1 deg off that, as a printed holder would be
       - {name: left,  position: [0.11,  0.15, 0.09], rpy: [0.0, 0.0, -0.8115781]}
       - {name: right, position: [0.11, -0.15, 0.09], rpy: [0.0, 0.0,  0.7679449]}
+  # Contact plates and pack voltage (the two proposed ADC dividers, HARDWARE §4): station contacts from the
+  # world's `station` object, a 7S battery that drains with driving and the blade. Sent on hil/tof as a power
+  # block (the ESP's micro-ROS build has no subscription left). time_factor > 1 for charge/low-battery tests.
+  - model: power
+    name: power
+    output_topic: hil/tof
+    truth_topic: sim/power
+    battery: {capacity_wh: 250, soc: 0.9, empty_v: 22.0, full_v: 29.4, idle_w: 6, drive_w: 40, blade_w: 120,
+              charge_w: 60, time_factor: 1.0}
   # DM542T + 23HS32 + MG23-G10. microsteps must match the driver DIP switches (HARDWARE.md §8).
   # No max_step_rate: STEP comes from LEDC hardware (2026-10-27), the firmware clamps speed itself.
   - model: stepper

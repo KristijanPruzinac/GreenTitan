@@ -68,7 +68,7 @@ typedef struct {
 #define DOCK_OVERRUN 0.05f             // m past the expected contact: no voltage by then = a miss
 #define DOCK_APPROACH_TIMEOUT_MS 30000
 #define DOCK_REVERSE_SPEED 0.10f       // m/s, every reverse move (straight line follower, slow)
-#define DOCK_UNDOCK_DIST 1.0f          // m, reverse out of the station before going on
+#define DOCK_UNDOCK_DIST 1.5f          // m, reverse out of the station before going on (= pre-dock: home goes straight in)
 #define DOCK_TRIES 3                   // approaches from the pre-dock point, then the recovery
 #define DOCK_RECOVERY_PREDOCK 2.0f     // m, recovery: a fresh, longer straight approach ...
 #define DOCK_SEARCH_LATERAL 0.05f      // m, ... then one slow approach each side, this far off the axis

@@ -29,6 +29,7 @@ setup(
             'tof_model = sim_env.devices.tof:main',
             'stepper_model = sim_env.devices.stepper:main',
             'diff_drive_mixer = sim_env.devices.diff_drive:main',
+            'power_model = sim_env.devices.power:main',
         ],
     },
 )

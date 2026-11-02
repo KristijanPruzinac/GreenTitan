@@ -4,10 +4,17 @@ Each scenario spawns the mower somewhere in a sim world and drives it through th
 holding the stick: steps of (forward m/s, turn rad/s, seconds) posted to /drive at 10 Hz. score.py checks
 the recorded drive against the sim truth. Stdlib only: drive.py runs on the Windows side too.
 
+Docking scenarios (dock*) use page actions as steps too (drive.py) and put the charging station at their
+`station` pose: the dock worlds are written in the station's frame, `world NAME` moves the station with its
+pad, shed and bumps there. The board keeps its station estimate in NVS between runs, so run set_station first
+(spawned docked: it measures the station), then the others; dock_nudge moves the station 8 cm / 4 deg.
+
     python3 scenarios.py list
     python3 scenarios.py robot NAME > robot.yaml     (mower.yaml with the scenario's spawn, needs ROS)
+    python3 scenarios.py world NAME > world.yaml     (the scenario's world with its station pose, needs ROS)
 """
 import math
+import os
 import sys
 
 
@@ -23,6 +30,26 @@ def wobbly(lin, dur, amp=0.12, seed=1, hold=0.5, lin_var=0.0):
         out.append((round(lin + lin_var * v, 3), round(amp * u, 3), min(hold, dur - t)))
         t += hold
     return out
+
+
+# Docking: the station pose (x, y, yaw deg; the axle at contact, facing into the station). 30 deg, so a mower
+# spawned docked boots with a 30 deg heading error (the EKF starts at 0): the error at the stop.
+STATION = (0.0, 0.0, 30.0)
+# Moved 8 cm to its left and turned 4 deg (dock_nudge): the board still has STATION stored
+STATION_NUDGED = (STATION[0] - 0.08 * math.sin(math.radians(STATION[2])),
+                  STATION[1] + 0.08 * math.cos(math.radians(STATION[2])), STATION[2] + 4.0)
+
+
+def at_station(st, along, lat=0.0, rel_yaw_deg=0.0):
+    """World (x, y, yaw rad) of the axle `along` m into the station (negative = out), `lat` m to its left."""
+    c, s = math.cos(math.radians(st[2])), math.sin(math.radians(st[2]))
+    return (round(st[0] + c * along - s * lat, 4), round(st[1] + s * along + c * lat, 4), math.radians(st[2] + rel_yaw_deg))
+
+
+DOCKED = 0.02                       # m past the contact point: spawned with the contacts closed
+SETTLE = {'wait': 12}               # gyro calibration and the first poses (keep still)
+HOME = [{'cmd': 'home'}, {'wait_state': 'CHARGING', 'timeout': 240}]
+CYCLE = [{'cmd': 'undock'}, {'wait_state': 'IDLE', 'timeout': 90}] + HOME
 
 # Positions in world metres (the world YAML's frame), yaw in radians. The first ~1 m of every drive is free
 # lawn: the heading at boot is a guess until about 2 s of driving.
@@ -150,6 +177,42 @@ SCENARIOS = {
         'steps': [(0.25, 0, 14.0)],
         'checks': {},
     },
+    # Docking (2026-11-02, ARCHITECTURE §7). Spawned docked (30 deg heading error at boot), set station: reverse
+    # 1.5 m over two one-wheel bumps (the back-out curves and slips), measure, verify by docking. Then out, turn,
+    # drive to ~4 m off at an angle and dock from there.
+    'set_station': {
+        'world': 'dock_bumps', 'station': STATION, 'spawn': at_station(STATION, DOCKED),
+        'steps': [SETTLE, {'cmd': 'set_station'}, {'wait_state': 'CHARGING', 'timeout': 180}] + CYCLE[:2] +
+                 [{'manual': True}, (0, 0.5, 4.7), (0.3, 0, 11.0), {'manual': False}] + HOME,
+        'checks': {'station_set': True, 'docks_min': 2, 'no_dock_msgs': True, 'docked_end': True,
+                   'station_err': (2.0, 1.0)},
+    },
+    # From 4 m off the axis, 1.5 m to the side, at boot (a short straight drive confirms the heading first).
+    'dock': {
+        'world': 'dock', 'station': STATION, 'spawn': at_station(STATION, -4.0, 1.5, 20.0),
+        'steps': [SETTLE, (0.25, 0, 3.0), {'manual': False}] + HOME,
+        'checks': {'docks_min': 1, 'no_dock_msgs': True, 'docked_end': True},
+    },
+    # Boot docked, undock (heading from the station yaw and the gyro), dock again.
+    'undock_redock': {
+        'world': 'dock', 'station': STATION, 'spawn': at_station(STATION, DOCKED),
+        'steps': [SETTLE] + CYCLE,
+        'checks': {'docks_min': 1, 'no_dock_msgs': True, 'docked_end': True},
+    },
+    # 20 undock/dock cycles with the sim's normal RTK noise: no message for the user, the estimate stays put.
+    'dock_repeat': {
+        'world': 'dock', 'station': STATION, 'spawn': at_station(STATION, DOCKED),
+        'steps': [SETTLE] + CYCLE * 20,
+        'checks': {'docks_min': 20, 'no_dock_msgs': True, 'docked_end': True, 'station_err': (1.0, 0.5)},
+    },
+    # The station was moved 8 cm / 4 deg since the board stored it: the funnel still guides the mower in, the
+    # estimate adopts the new pose silently within ~3 docks. Starts 3 m out on the old axis.
+    'dock_nudge': {
+        'world': 'dock', 'station': STATION_NUDGED, 'spawn': at_station(STATION, -3.0),
+        'steps': [SETTLE, (0.25, 0, 2.5), {'manual': False}] + HOME + CYCLE * 4,
+        'checks': {'docks_min': 5, 'no_dock_msgs': True, 'docked_end': True, 'adopted_within': 4,
+                   'station_err': (1.0, 0.5)},
+    },
 }
 
 # Checks every scenario gets: sim at real time, no contact, no phantom walls.
@@ -170,9 +233,41 @@ def robot_yaml(name):
     return new
 
 
+def world_path(name):
+    from ament_index_python.packages import get_package_share_directory
+    w = SCENARIOS[name]['world']
+    return w if w.endswith('.yaml') else os.path.join(get_package_share_directory('greentitan_sim'), 'config', w + '.yaml')
+
+
+def world_yaml(name):
+    """The scenario's world. With a `station` pose: the dock world (written in the station's frame) with its
+    objects and terrain features moved to that pose."""
+    txt = open(world_path(name)).read()
+    st = SCENARIOS[name].get('station')
+    if st is None:
+        return txt
+    import yaml
+    w = yaml.safe_load(txt)
+    c, s = math.cos(math.radians(st[2])), math.sin(math.radians(st[2]))
+    move = lambda p: [round(st[0] + c * p[0] - s * p[1], 4), round(st[1] + s * p[0] + c * p[1], 4)] + list(p[2:])  # noqa: E731
+    for f in (w.get('terrain') or {}).get('features') or []:
+        if 'position' in f:
+            f['position'] = move(f['position'])
+    for o in w.get('objects') or []:
+        if 'pose' in o:
+            o['pose'] = move(o['pose'][:2]) + [round(float((o['pose'] + [0, 0, 0])[2]) + st[2], 4)]
+        elif 'position' in o:
+            o['position'] = move(o['position'])
+            o['yaw'] = round(float(o.get('yaw', 0.0)) + math.radians(st[2]), 6)
+    head = f'# {os.path.basename(world_path(name))} with the station at {list(st)} (tools/drive_test/scenarios.py {name})\n'
+    return head + yaml.safe_dump(w, sort_keys=False, default_flow_style=None)
+
+
 if __name__ == '__main__':
     if len(sys.argv) > 2 and sys.argv[1] == 'robot':
         sys.stdout.write(robot_yaml(sys.argv[2]))
+    elif len(sys.argv) > 2 and sys.argv[1] == 'world':
+        sys.stdout.write(world_yaml(sys.argv[2]))
     else:
         for k, v in SCENARIOS.items():
             print(k, v['world'], v['spawn'])

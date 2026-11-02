@@ -306,7 +306,7 @@ void init_micro_ros(){
     imu_msg.header.frame_id.size = strlen(imu_frame_id_buf);
 
     // create executor
-    const size_t hil_handles = (HIL_ENABLED ? 4 : 0) + (DEBUG_OVER_ROS ? 1 : 0);
+    const size_t hil_handles = (HIL_ENABLED ? 3 : 0) + (DEBUG_OVER_ROS ? 1 : 0);
     RCCHECK(rclc_executor_init(&executor, &support.context, 2 + hil_handles, &allocator));
 
     RCCHECK(rclc_executor_add_subscription(
@@ -757,7 +757,6 @@ void fused_pose_callback(const void* msgin) {
 rcl_subscription_t hil_gnss_subscriber;
 rcl_subscription_t hil_imu_subscriber;
 rcl_subscription_t hil_tof_subscriber;
-rcl_subscription_t hil_power_subscriber;
 rcl_subscription_t console_subscriber;
 rcl_publisher_t hil_stepper_publisher;
 rcl_publisher_t log_publisher;
@@ -770,8 +769,6 @@ static std_msgs__msg__UInt8MultiArray hil_tof_msg;
 static uint8_t hil_tof_buf[2 * HIL_TOF_BLOCK + 8];   // both sensors in one message (386 B)
 static std_msgs__msg__Float32MultiArray hil_stepper_msg;
 static float hil_stepper_buf[3];   // left, right steps/s; blade relay (1 on, 0 off) for the sim battery
-static std_msgs__msg__Float32MultiArray hil_power_msg;
-static float hil_power_buf[4];
 static std_msgs__msg__String console_msg;
 static char console_buf[64];
 static std_msgs__msg__String log_msg;
@@ -795,12 +792,7 @@ static void hil_imu_callback(const void* msgin) {
 
 static void hil_tof_callback(const void* msgin) {
     const std_msgs__msg__UInt8MultiArray* msg = (const std_msgs__msg__UInt8MultiArray*)msgin;
-    hil_tof_push(msg->data.data, msg->data.size);
-}
-
-static void hil_power_callback(const void* msgin) {
-    const std_msgs__msg__Float32MultiArray* msg = (const std_msgs__msg__Float32MultiArray*)msgin;
-    if (msg->data.size >= 2) hil_power_set(msg->data.data[0], msg->data.data[1]);
+    hil_tof_push(msg->data.data, msg->data.size);   // also carries the sim's power blocks (hil.h)
 }
 
 static void console_callback(const void* msgin) {
@@ -839,16 +831,6 @@ void hil_ros_init() {
             ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt8MultiArray), "hil/tof"));
         RCCHECK(rclc_executor_add_subscription(&executor, &hil_tof_subscriber, &hil_tof_msg,
                                                &hil_tof_callback, ON_NEW_DATA));
-
-        // [dock contact V, pack V] from the sim's power model, best effort at 10 Hz
-        hil_power_msg.data.data = hil_power_buf;
-        hil_power_msg.data.capacity = 4;
-        hil_power_msg.data.size = 0;
-        RCCHECK(rclc_subscription_init_best_effort(
-            &hil_power_subscriber, &node,
-            ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "hil/power"));
-        RCCHECK(rclc_executor_add_subscription(&executor, &hil_power_subscriber, &hil_power_msg,
-                                               &hil_power_callback, ON_NEW_DATA));
 
         hil_stepper_msg.data.data = hil_stepper_buf;
         hil_stepper_msg.data.capacity = 3;
@@ -907,7 +889,6 @@ static void destroy_micro_ros() {
         RCSOFTCHECK(rcl_subscription_fini(&hil_gnss_subscriber, &node));
         RCSOFTCHECK(rcl_subscription_fini(&hil_imu_subscriber, &node));
         RCSOFTCHECK(rcl_subscription_fini(&hil_tof_subscriber, &node));
-        RCSOFTCHECK(rcl_subscription_fini(&hil_power_subscriber, &node));
         RCSOFTCHECK(rcl_publisher_fini(&hil_stepper_publisher, &node));
     }
     if (DEBUG_OVER_ROS) {
@@ -1288,6 +1269,11 @@ void setup() {
     SerialDebug.println("  h       task stacks / heap");
     SerialDebug.println("  k       simulate obstacle");
     SerialDebug.println("  b       simulate rain");
+    SerialDebug.println("--- Docking ---");
+    SerialDebug.println("  H       home now: dock at the station");
+    SerialDebug.println("  U       undock (reverse out) and stay");
+    SerialDebug.println("  S       set station (docked by hand, contacts live)");
+    SerialDebug.println("  B       power, contacts, station");
     SerialDebug.println("==================================");
     SerialDebug.println("");
 }
@@ -1521,6 +1507,22 @@ void loop() {
                     SerialDebug.println("[DEBUG] Triggering rain sensor via serial");
                     controller_signal_t signal = { SIGNAL_RAIN };
                     DDS_PUBLISH("/controller/signal", signal);
+                }
+                // Docking (ARCHITECTURE §7)
+                else if (c == 'H') {  // Home now: dock
+                    controller_signal_t signal = { SIGNAL_GO_HOME };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'U') {  // Undock and stay
+                    controller_signal_t signal = { SIGNAL_UNDOCK };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'S') {  // Set station: docked by hand, contacts live
+                    controller_signal_t signal = { SIGNAL_SET_STATION };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'B') {  // Power and station status
+                    controller_print_dock_status();
                 }
             }
 

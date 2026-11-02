@@ -58,6 +58,9 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 .chip { padding: 6px 12px; border-radius: 15px; font-size: 13px; font-weight: 600; display: none; }
 .chip.show { display: block; }
 .chip.warn { background: var(--warn-soft); color: var(--warn-ink); border: 1px solid var(--warn); }
+#c-dock { pointer-events: auto; display: none; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; }
+#c-dock.show { display: flex; }
+#c-dock .btn { padding: 5px 10px; font-size: 13px; }
 .chip i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 7px; box-shadow: 0 0 0 3px var(--accent-soft); }
 #toast { position: absolute; left: 50%; top: calc(max(var(--gut), env(safe-area-inset-top)) + 56px); transform: translateX(-50%);
   max-width: calc(100% - 32px); padding: 9px 16px; border-radius: 12px; font-weight: 600; text-align: center;
@@ -145,6 +148,7 @@ body.touch .hint { display: none; }
     <div id="c-assist" class="chip glass"><i></i><span></span></div>
     <div id="c-sim" class="chip warn"></div>
     <div id="c-rec" class="chip glass"></div>
+    <div id="c-dock" class="chip warn"><span></span><button class="btn" data-cmd="set_station">Set station here</button></div>
   </div>
   <div id="toast"></div>
   <div id="dock">
@@ -162,6 +166,13 @@ body.touch .hint { display: none; }
     <div class="row"><span>Speed</span><span id="d-speed">--</span></div>
     <div class="row"><span>Wall assist</span><span id="d-assist">--</span></div>
     <div class="row" id="d-sim-row" style="display:none"><span>Sim speed</span><span id="d-sim">--</span></div>
+    <h3>Station</h3>
+    <div class="row"><span>Battery</span><span id="d-bat">--</span></div>
+    <div class="row"><span>Station</span><span id="d-station">--</span></div>
+    <div class="btns" style="margin-top:8px">
+      <button class="btn" data-cmd="home">Home</button><button class="btn" data-cmd="undock">Leave station</button>
+      <button class="btn" data-cmd="set_station">Set station here</button>
+    </div>
     <h3>Map</h3>
     <div class="row"><span>Terrain</span><span id="d-terrain">--</span></div>
     <label class="tg">Sensor fields<input type="checkbox" id="o-fields"></label>
@@ -196,7 +207,7 @@ const EXTRAP_MAX = 0.25, SMOOTH_TAU = 0.07;                 // s: pose extrapola
 // Colours: the CSS tokens on :root, read once (one theme for the panels, the 2D and the 3D view)
 const COL = (() => {
   const cs = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null, o = {};
-  for (const k of ["floor", "grid", "axis", "panel", "ink", "muted", "accent", "accent-dark", "warn", "bad", "wall", "wall-top", "low",
+  for (const k of ["floor", "grid", "axis", "panel", "ink", "muted", "accent", "accent-dark", "accent-soft", "warn", "bad", "wall", "wall-top", "low",
                    "low-top", "post", "post-top", "outline", "sensor", "sensor-cone", "shadow", "part-frame", "part-brace",
                    "part-wheel", "part-caster", "part-body", "part-edge"])
     o[k] = (cs && cs.getPropertyValue("--" + k).trim()) || "#808080";
@@ -213,7 +224,12 @@ const CLS = {wall: {name: "wall", color: COL.wall, top: COL["wall-top"]}, low: {
 const FILLET = 0.04, FADE = 0.2;                            // m: outer corner radius of a joint, fade towards an unseen side
 const ASSIST_TEXT = {ALIGN: "Lining up with the wall", LOCKED: "Following the wall", CORNER: "Inner corner",
                      PIVOT: "Turning at the corner", OUTER: "Rounding the end"};
-const THREE_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
+// Charging station (sim_env obstacles.py STATION_*): station frame, x into the station, 0 = axle at contact
+const ST_BACK = [[0.18, 0.30], [0.38, 0.30], [0.38, -0.30], [0.18, -0.30]];
+const ST_RAILS = [1, -1].map(s => [[-0.70, 0.42 * s], [-0.30, 0.24 * s], [0.18, 0.24 * s]]);
+const DOCK_TEXT = {RETURNING: "Returning", DOCKING: "Docking", CHARGING: "Charging", UNDOCKING: "Leaving the station",
+                   SETTING_STATION: "Setting the station", DOCK_FAILED: "Couldn't dock"};
+const THREE_URL ="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
 
 const $ = id => document.getElementById(id);
 const DEG = Math.PI / 180;
@@ -650,6 +666,21 @@ function drawOutlines() {
   }
 }
 
+function drawStation() {                                    // the firmware's station estimate (odom), teal, soft shadow
+  const s = st && st.dock && st.dock.station;
+  if (!s) return;
+  const [x, y, yaw] = s;
+  ctx.save();
+  ctx.shadowColor = rgba(COL.shadow, 0.3); ctx.shadowBlur = 8 * DPR; ctx.shadowOffsetX = 2 * DPR; ctx.shadowOffsetY = -3 * DPR;
+  pathPoly(bodyPoly(x, y, yaw, ST_BACK), true); ctx.fillStyle = COL.accent; ctx.fill();
+  ctx.lineCap = ctx.lineJoin = "round"; ctx.strokeStyle = COL["accent-dark"]; ctx.lineWidth = Math.max(2, 0.03 * view.s);
+  for (const r of ST_RAILS) { pathPoly(bodyPoly(x, y, yaw, r), false); ctx.stroke(); }
+  ctx.restore();
+  const [px, py] = bodyPoly(x, y, yaw, [[0, 0]])[0];        // contact point: where the axle stops
+  ctx.beginPath(); ctx.arc(px, py, 4, 0, 2 * Math.PI); ctx.fillStyle = COL["accent-soft"]; ctx.fill();
+  ctx.strokeStyle = COL.accent; ctx.lineWidth = 1.5; ctx.stroke();
+}
+
 const FOOT = [[FRONT, HALF_W], [-REAR, HALF_W], [-REAR, -HALF_W], [FRONT, -HALF_W]];
 const ARROW = [[-0.08, 0.09], [FRONT - 0.02, 0], [-0.08, -0.09], [-0.04, 0]];
 
@@ -699,6 +730,7 @@ function draw2d() {
   if (prefs.truth && world.length) drawWorld();
   drawWalls();
   drawOutlines();
+  drawStation();
   if (prefs.truth && st && st.truth) drawTruth(st.truth);
   if (pose.disp) drawMower(pose.disp);
   else label(st ? "waiting for the mower position" : "connecting", W / 2, H / 2, COL.muted);
@@ -870,7 +902,8 @@ function init3d() {
 
   Object.assign(v3, {r, scene, cam3, cyl, clsMat, shadowMat, greyMat, greyEdge, blueMat, mower, boxBody, model, arrow3: am,
     fields, rays, truth, ground,
-    mapG: group(), worldG: group(), outG: group(), dot: new T.CircleGeometry(0.03, 12), bigDot: new T.CircleGeometry(0.05, 12)});
+    mapG: group(), worldG: group(), outG: group(), stG: group(),
+    stMat: new T.MeshLambertMaterial({color: COL.accent}), stRailMat: new T.MeshLambertMaterial({color: COL["accent-dark"]}), dot: new T.CircleGeometry(0.03, 12), bigDot: new T.CircleGeometry(0.05, 12)});
   for (const g of [cyl, v3.dot, v3.bigDot]) g.userData.shared = true;
   r.domElement.style.display = "none";
   $("view").insertBefore(r.domElement, $("top"));
@@ -1185,9 +1218,26 @@ function sync3dOutlines() {
   }
 }
 
+function sync3dStation() {                                  // the firmware's station estimate: teal block and rails
+  const s = st && st.dock && st.dock.station, key = s ? s.join(",") : "";
+  if (key === v3.stKey) return;
+  v3.stKey = key; clearGroup(v3.stG);
+  if (!s) return;
+  const [x, y, yaw] = s, c = Math.cos(yaw), sn = Math.sin(yaw), w = (u, v) => [x + c * u - sn * v, y + sn * u + c * v];
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.60, 0.25), v3.stMat);
+  const [bx, by] = w(0.28, 0);
+  back.position.set(bx, by, heightAt(bx, by) + 0.125); back.rotation.z = yaw; v3.stG.add(back);
+  for (const r of ST_RAILS) for (let i = 1; i < r.length; i++) {
+    const [ax, ay] = w(...r[i - 1]), [ex, ey] = w(...r[i]), l = Math.hypot(ex - ax, ey - ay);
+    const m = new THREE.Mesh(new THREE.BoxGeometry(l, 0.03, 0.08), v3.stRailMat);
+    m.position.set((ax + ex) / 2, (ay + ey) / 2, heightAt((ax + ex) / 2, (ay + ey) / 2) + 0.04);
+    m.rotation.z = Math.atan2(ey - ay, ex - ax); v3.stG.add(m);
+  }
+}
+
 function render3d() {
   if (!v3.ready) return;
-  sync3dGround(); sync3dMap(); sync3dWorld(); sync3dOutlines();
+  sync3dGround(); sync3dMap(); sync3dWorld(); sync3dOutlines(); sync3dStation();
   const p = pose.disp;
   v3.mower.visible = !!p; v3.fields.visible = prefs.fields; v3.rays.visible = prefs.rays;
   if (p) {                                                  // on the terrain, tilted as the accelerometer says
@@ -1320,14 +1370,20 @@ function renderStatus() {
   if (!live()) {
     pill.className = "glass bad"; setText("pill-t", st ? "Offline" : "Connecting"); setText("pill-s", "");
     setText("d-link", "page server not reachable", "bad");
-    $("c-assist").classList.remove("show"); $("c-sim").classList.remove("show");
+    $("c-assist").classList.remove("show"); $("c-sim").classList.remove("show"); $("c-dock").classList.remove("show");
     return;
   }
   const esp = [st.age_imu, st.age_log].filter(a => a != null), ageEsp = esp.length ? Math.min(...esp) : null;
   const ce = ageCls(ageEsp), cp = ageCls(st.age_pose), worst = [ce, cp].includes("bad") ? "bad" : [ce, cp].includes("warn") ? "warn" : "ok";
   const v = st.pose ? st.pose.v : 0;
   pill.className = "glass " + worst;
-  setText("pill-t", ce === "bad" ? "Mower not connected" : cp === "bad" ? "No position" : st.manual ? "Manual" : "Ready");
+  const dk = st.dock || {}, pct = dk.pct != null ? " " + dk.pct + " %" : "";
+  const dockText = DOCK_TEXT[dk.state] && (dk.state === "CHARGING" ? DOCK_TEXT.CHARGING + pct : DOCK_TEXT[dk.state]);
+  setText("pill-t", ce === "bad" ? "Mower not connected" : cp === "bad" ? "No position" : st.manual ? "Manual" : dockText || "Ready");
+  setText("d-bat", dk.bat_v != null ? `${dk.bat_v.toFixed(1)} V` + pct : "--");
+  setText("d-station", dk.station ? `${dk.station[0].toFixed(2)}, ${dk.station[1].toFixed(2)} m · ${(dk.station[2] / DEG).toFixed(1)}°` : "not set");
+  $("c-dock").querySelector("span").textContent = dk.msg || "";
+  $("c-dock").classList.toggle("show", !!dk.msg);
   setText("pill-s", worst === "bad" ? "" : Math.abs(v) >= 0.02 ? Math.abs(v).toFixed(2) + " m/s" : worst === "warn" ? "weak link" : "");
   setText("d-link", "mower " + ageText(ageEsp) + " · position " + ageText(st.age_pose), worst);
   setText("d-rate", rate.hz == null || st.age_pose == null || st.age_pose > 2 ? "--" : rate.hz.toFixed(1) + " /s");

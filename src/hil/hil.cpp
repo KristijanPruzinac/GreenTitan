@@ -37,6 +37,12 @@ static tof_frame_t tof_frames[2];
 static bool tof_new[2] = { false, false };
 
 void hil_tof_push(const uint8_t* data, size_t len) {
+  if (len >= HIL_POWER_BLOCK && data[0] == HIL_POWER_TAG) {
+    float v[2];
+    memcpy(v, data + 1, sizeof(v));
+    hil_power_set(v[0], v[1]);
+    return;
+  }
   for (size_t at = 0; at + HIL_TOF_BLOCK <= len; at += HIL_TOF_BLOCK) {
     int sensor = data[at];
     if (sensor < 0 || sensor > 1) continue;
