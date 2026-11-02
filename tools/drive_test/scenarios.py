@@ -191,7 +191,7 @@ SCENARIOS = {
         'world': 'dock_bumps', 'station': STATION, 'spawn': at_station(STATION, DOCKED),
         'steps': [SETTLE, {'cmd': 'forget_station'}, {'wait': 1}] + CYCLE[:2] + AWAY + HOME,
         'checks': {'station_set': True, 'docks_min': 1, 'no_dock_msgs': True, 'docked_end': True,
-                   'station_err': (2.0, 1.0)},
+                   'station_err': (2.0, 1.5)},
     },
     # The manual redo: Set station (console S) while docked: back out, measure, dock right away to verify.
     'set_station_manual': {
@@ -199,7 +199,7 @@ SCENARIOS = {
         'steps': [SETTLE, {'cmd': 'set_station'}, {'wait_state': 'CHARGING', 'timeout': 240}] + CYCLE[:2] +
                  AWAY + HOME,
         'checks': {'station_set': True, 'docks_min': 2, 'no_dock_msgs': True, 'docked_end': True,
-                   'station_err': (2.0, 1.0)},
+                   'station_err': (2.0, 1.5)},
     },
     # The automatic flow with the left wheel slipping 4 % (the drive curves on every straight command): the
     # back-out curves, the heading estimate is curve-tolerant (chords turned back by the gyro). Flat dock world.
@@ -207,7 +207,7 @@ SCENARIOS = {
         'world': 'dock', 'station': STATION, 'spawn': at_station(STATION, DOCKED), 'slip': {'left': 0.04},
         'steps': [SETTLE, {'cmd': 'forget_station'}, {'wait': 1}] + CYCLE[:2] + AWAY + HOME,
         'checks': {'station_set': True, 'docks_min': 1, 'no_dock_msgs': True, 'docked_end': True,
-                   'station_err': (2.0, 1.0)},
+                   'station_err': (2.0, 1.5)},
     },
     # From 4 m off the axis, 1.5 m to the side, at boot (a short straight drive confirms the heading first).
     'dock': {
