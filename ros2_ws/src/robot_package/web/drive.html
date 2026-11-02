@@ -152,6 +152,8 @@ body.touch .hint { display: none; }
     <h3>Map</h3>
     <label class="tg">Aerial imagery<input type="checkbox" id="o-imagery"></label>
     <label class="tg">Sensor fields<input type="checkbox" id="o-fields"></label>
+    <label class="tg">Sensor rays, cut by the mower (3D)<input type="checkbox" id="o-rays"></label>
+    <div class="row"><span>Line of sight</span><span id="d-los">--</span></div>
     <label class="tg" id="o-truth-row" style="display:none">Sim truth (debug)<input type="checkbox" id="o-truth"></label>
     <div class="legend" id="legend"></div>
     <h3>Outline capture</h3>
@@ -172,7 +174,11 @@ let MAX_LIN = 0.45, MAX_REV = 0.15, MAX_ANG = 0.9;           // m/s, m/s, rad/s;
 const DEAD = 0.12, CURVE = 1.7, ANGLE_P = 1.6;               // stick deadzone, speed curve, angle shaping exponent
 const ANT_BEHIND = 0.18;                                    // GNSS_ANTENNA_BEHIND_AXLE: base_link is behind the axle
 const FRONT = 0.12, REAR = 0.415, HALF_W = 0.20;            // MOWER_* footprint around the axle
-const TOF = [{x: 0.11, y: 0.15, yaw: 20}, {x: 0.11, y: -0.15, yaw: -20}], TOF_FOV = 45, TOF_RANGE = 1.5;
+// Range sensor mounts (web/sensors.json, a mirror of definitions.h TOF_MOUNT_*; these are the fallback): robot frame
+// (ground under the axle midpoint, x forward, y left), m and degrees
+let SENSORS = [-1, 1].map(s => ({name: s > 0 ? "ToF left" : "ToF right", shape: "rect", x: 0.11, y: 0.15 * s, z: 0.09,
+  yaw: 20 * s, pitch: 0, roll: 0, fov_h: 45, fov_v: 45, zones_h: 8, zones_v: 8, range: 1.5}));
+let MESH = null;                                            // web/mower_v3.json: the real Mower V3 parts (mm, robot frame)
 const TRAIL_S = 180;                                        // trail fades out over this many seconds
 const EXTRAP_MAX = 0.25, SMOOTH_TAU = 0.07;                 // s: pose extrapolation limit, display smoothing
 const M_LAT = 111111.0;                                     // the firmware's flat-earth metres per degree
@@ -198,7 +204,7 @@ let mapObjs = [], outlines = [], logLines = [], trail = [];
 let dirty = true;                                           // redraw needed (new state, input, tile)
 
 // per-viewer preferences (browser storage may be missing: defaults then)
-const prefs = {mode: "3d", imagery: true, fields: false, truth: false};
+const prefs = {mode: "3d", imagery: true, fields: false, rays: false, truth: false};
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("gt.prefs") || "{}")); } catch (e) {}
 if (/^#(2d|3d)$/.test(location.hash)) prefs.mode = location.hash.slice(1);   // a link may pick the view
 const savePrefs = () => { try { localStorage.setItem("gt.prefs", JSON.stringify(prefs)); } catch (e) {} };
@@ -456,11 +462,11 @@ const ARROW = [[-0.08, 0.09], [FRONT - 0.02, 0], [-0.08, -0.09], [-0.04, 0]];
 
 function drawMower(p) {                                     // p: axle pose
   const {x, y, yaw} = p;
-  if (prefs.fields) for (const t of TOF) {                  // ToF fields of view
-    const pts = [[t.x, t.y]];
-    for (let a = -TOF_FOV / 2; a <= TOF_FOV / 2 + 0.1; a += 4.5) {
+  if (prefs.fields) for (const t of SENSORS) {              // sensor fields of view, seen from above
+    const pts = [[t.x, t.y]], fov = t.shape === "cone" ? t.fov : t.fov_h;
+    for (let a = -fov / 2; a <= fov / 2 + 0.1; a += fov / 10) {
       const r = (t.yaw + a) * DEG;
-      pts.push([t.x + TOF_RANGE * Math.cos(r), t.y + TOF_RANGE * Math.sin(r)]);
+      pts.push([t.x + t.range * Math.cos(r), t.y + t.range * Math.sin(r)]);
     }
     pathPoly(bodyPoly(x, y, yaw, pts), true);
     ctx.fillStyle = "rgba(79,178,255,.14)"; ctx.fill();
@@ -540,7 +546,7 @@ cv.addEventListener("wheel", e => { e.preventDefault(); zoomAt(e.offsetX, e.offs
 // ---- 3D view (default): three.js r128, odom frame, metres, z up ----
 // Meshes are built once and moved; map, world, outlines and the aerial ground are rebuilt only when they change.
 const BODY_Z0 = 0.05, BODY_Z1 = 0.29;                       // body box height (sim mower.yaml cover envelope)
-const WHEEL_R = 0.075, WHEEL_Y = 0.182, TOF_Z = 0.09;        // drive wheels, ToF mount height (est.)
+const WHEEL_R = 0.075;                                      // drive wheel radius (box mower until the mesh loads)
 const SKY = 0xb9cfdc, GROUND = 0x34482f;
 const v3 = {on: false, loading: false, ready: false, mapKey: null, worldKey: null, outKey: null, groundKey: null, trailN: -1,
             cam: {az: -Math.PI / 2, el: 0.95, d: 8, tx: 0, ty: 0}, pending: []};
@@ -613,33 +619,20 @@ function init3d() {
   const blueMat = new T.MeshBasicMaterial({color: 0x4fb2ff});
   const group = () => { const g = new T.Group(); scene.add(g); return g; };
 
-  // mower: body around the axle (front = drive wheels), dark top, wheels, green heading arrow, ToF frusta
+  // mower: the real Mower V3 parts (web/mower_v3.json, build3dModel) or, until it loads, a box around the axle
+  // (front = drive wheels) with its wheels; a green heading arrow; the sensor fields (build3dSensors)
   const L = FRONT + REAR, bodyGeo = new T.BoxGeometry(L, 2 * HALF_W, BODY_Z1 - BODY_Z0);
   bodyGeo.translate((FRONT - REAR) / 2, 0, (BODY_Z0 + BODY_Z1) / 2);
   const bodyEdges = new T.EdgesGeometry(bodyGeo);
-  const mower = group();
-  mower.add(new T.Mesh(bodyGeo, new T.MeshLambertMaterial({color: 0xf1f4f2})));
-  mower.add(new T.LineSegments(bodyEdges, new T.LineBasicMaterial({color: 0x56605a})));
-  const topGeo = new T.PlaneGeometry(L - 0.06, 2 * HALF_W - 0.06); topGeo.translate((FRONT - REAR) / 2, 0, BODY_Z1 + 0.002);
-  mower.add(new T.Mesh(topGeo, new T.MeshLambertMaterial({color: 0x2b322e})));
+  const mower = group(), boxBody = new T.Group(), model = new T.Group(); mower.add(boxBody, model);
+  boxBody.add(new T.Mesh(bodyGeo, new T.MeshLambertMaterial({color: 0xf1f4f2})));
+  boxBody.add(new T.LineSegments(bodyEdges, new T.LineBasicMaterial({color: 0x56605a})));
   const wheelGeo = new T.CylinderGeometry(WHEEL_R, WHEEL_R, 0.045, 20), dark = new T.MeshLambertMaterial({color: 0x1b1f1d});
-  for (const s of [1, -1]) { const w = new T.Mesh(wheelGeo, dark); w.position.set(0, s * (HALF_W + 0.025), WHEEL_R); mower.add(w); }
+  for (const s of [1, -1]) { const w = new T.Mesh(wheelGeo, dark); w.position.set(0, s * (HALF_W + 0.025), WHEEL_R); boxBody.add(w); }
   const arrow = new T.Shape(ARROW.map(([x, y]) => new T.Vector2(x, y)));
-  const am = new T.Mesh(new T.ShapeGeometry(arrow), new T.MeshBasicMaterial({color: 0x3fd17a, side: T.DoubleSide}));
+  const am = new T.Mesh(new T.ShapeGeometry(arrow), new T.MeshBasicMaterial({color: 0x3fd17a, side: T.DoubleSide, transparent: true, opacity: 0.85}));
   am.position.z = BODY_Z1 + 0.005; mower.add(am);
-  const h = TOF_RANGE * Math.tan(TOF_FOV / 2 * DEG), R = TOF_RANGE;
-  const fc = [[R, h, h], [R, -h, h], [R, -h, -h], [R, h, -h]], tri = [];
-  for (let i = 0; i < 4; i++) tri.push(0, 0, 0, ...fc[i], ...fc[(i + 1) % 4]);
-  const fGeo = new T.BufferGeometry(); fGeo.setAttribute("position", new T.Float32BufferAttribute(tri, 3));
-  const eGeo = new T.BufferGeometry(); eGeo.setAttribute("position", new T.Float32BufferAttribute(
-    fc.flatMap((c, i) => [0, 0, 0, ...c, ...c, ...fc[(i + 1) % 4]]), 3));
-  const fMat = new T.MeshBasicMaterial({color: 0x4fb2ff, transparent: true, opacity: 0.12, side: T.DoubleSide, depthWrite: false});
-  const eMat = new T.LineBasicMaterial({color: 0x4fb2ff, transparent: true, opacity: 0.45});
-  const fields = new T.Group(); mower.add(fields);
-  for (const t of TOF) {
-    const g = new T.Group(); g.position.set(t.x, t.y, TOF_Z); g.rotation.z = t.yaw * DEG;
-    g.add(new T.Mesh(fGeo, fMat), new T.LineSegments(eGeo, eMat)); fields.add(g);
-  }
+  const fields = new T.Group(), rays = new T.Group(); mower.add(fields, rays);
   // true mower (sim): dashed outline of the same box
   const truth = new T.LineSegments(bodyEdges, new T.LineDashedMaterial({color: 0xffffff, dashSize: 0.04, gapSize: 0.03, transparent: true, opacity: 0.8}));
   truth.computeLineDistances(); scene.add(truth);
@@ -649,13 +642,105 @@ function init3d() {
   const trailMesh = new T.Mesh(trailGeo, new T.MeshBasicMaterial({color: 0xd9ff6e, transparent: true, opacity: 0.6, side: T.DoubleSide, depthWrite: false}));
   trailMesh.frustumCulled = false; scene.add(trailMesh);
 
-  Object.assign(v3, {r, scene, cam3, box, cyl, clsMat, greyMat, greyEdge, blueMat, mower, fields, truth, trailGeo, grid, ground,
+  Object.assign(v3, {r, scene, cam3, box, cyl, clsMat, greyMat, greyEdge, blueMat, mower, boxBody, model, arrow3: am, fields, rays,
+    truth, trailGeo, grid, ground,
     mapG: group(), worldG: group(), outG: group(), dot: new T.CircleGeometry(0.03, 12), bigDot: new T.CircleGeometry(0.05, 12)});
   for (const g of [box, cyl, v3.dot, v3.bigDot]) g.userData.shared = true;
   r.domElement.style.display = "none";
   $("view").insertBefore(r.domElement, $("top"));
   bind3dInput(r.domElement);
   v3.ready = true;
+  build3dModel(); build3dSensors();
+}
+
+// ---- the real mower and its sensors' line of sight ----
+const PART_MAT = {frame: [0xb9c0c6, 70], brace: [0x6c7378, 40], wheel: [0x161818, 8], caster: [0x55595c, 30], tyre: [0x161818, 8]};
+function build3dModel() {
+  if (!v3.ready || !MESH || v3.model.children.length) return;
+  for (const p of MESH.parts) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(p.pos.map(v => v / 1000), 3));
+    g.setIndex(p.idx); g.computeVertexNormals();
+    const kind = p.kind === "caster" && /Wheel\/Wheel/.test(p.name) ? "tyre" : p.kind, [color, shininess] = PART_MAT[kind] || PART_MAT.frame;
+    const m = new THREE.Mesh(g, new THREE.MeshPhongMaterial({color, shininess, side: THREE.DoubleSide}));   // both sides: rays from inside count
+    m.userData.part = p.name; v3.model.add(m);
+  }
+  v3.boxBody.visible = false;
+  let top = 0;
+  for (const p of MESH.parts) for (let i = 2; i < p.pos.length; i += 3) top = Math.max(top, p.pos[i] / 1000);
+  v3.arrow3.position.z = top + 0.005;
+  build3dSensors();
+}
+
+// Each sensor: a translucent frustum (rect) or cone from its mount, and its rays (zone centres; cone: centre and two
+// rings) cut where they hit the mower's own parts: free rays light blue to full range, blocked ones orange to the hit.
+function build3dSensors() {
+  if (!v3.ready) return;
+  clearGroup(v3.fields); clearGroup(v3.rays);
+  const T = THREE, hasModel = v3.model.children.length > 0, cast = new T.Raycaster(), los = [];
+  v3.mower.updateMatrixWorld(true);                         // the raycaster works in world coordinates
+  for (const s of SENSORS) {
+    const g = new T.Group();
+    g.position.set(s.x, s.y, s.z); g.rotation.set((s.roll || 0) * DEG, -(s.pitch || 0) * DEG, s.yaw * DEG, "ZYX");
+    g.updateMatrix();
+    const R = s.range, color = s.shape === "cone" ? 0xffb347 : 0x4fb2ff;
+    const fMat = new T.MeshBasicMaterial({color, transparent: true, opacity: 0.10, side: T.DoubleSide, depthWrite: false});
+    const eMat = new T.LineBasicMaterial({color, transparent: true, opacity: 0.5});
+    const dirs = [];
+    if (s.shape === "cone") {
+      const geo = new T.ConeGeometry(R * Math.tan(s.fov / 2 * DEG), R, 32, 1, true);
+      geo.rotateZ(Math.PI / 2); geo.translate(R / 2, 0, 0);   // tip at the mount, opening along +x
+      g.add(new T.Mesh(geo, fMat));
+      dirs.push([1, 0, 0]);
+      for (const f of [0.5, 1]) for (let k = 0; k < 8; k++) {
+        const t = Math.tan(f * s.fov / 2 * DEG), a = k * Math.PI / 4;
+        dirs.push([1, t * Math.cos(a), t * Math.sin(a)]);
+      }
+    } else {
+      const th = Math.tan(s.fov_h / 2 * DEG) * R, tv = Math.tan(s.fov_v / 2 * DEG) * R;
+      const fc = [[R, th, tv], [R, -th, tv], [R, -th, -tv], [R, th, -tv]], tri = [];
+      for (let i = 0; i < 4; i++) tri.push(0, 0, 0, ...fc[i], ...fc[(i + 1) % 4]);
+      const fGeo = new T.BufferGeometry(); fGeo.setAttribute("position", new T.Float32BufferAttribute(tri, 3));
+      const eGeo = new T.BufferGeometry(); eGeo.setAttribute("position", new T.Float32BufferAttribute(
+        fc.flatMap((c, i) => [0, 0, 0, ...c, ...c, ...fc[(i + 1) % 4]]), 3));
+      g.add(new T.Mesh(fGeo, fMat), new T.LineSegments(eGeo, eMat));
+      const nh = s.zones_h || 8, nv = s.zones_v || 8;
+      for (let j = 0; j < nv; j++) for (let i = 0; i < nh; i++)   // zone centres: angle steps, row 0 = top, col 0 = left
+        dirs.push([1, Math.tan(((nh - 1) / 2 - i) / nh * s.fov_h * DEG), Math.tan(((nv - 1) / 2 - j) / nv * s.fov_v * DEG)]);
+    }
+    v3.fields.add(g);
+    // rays in the mower frame (range is radial), cast against the model where the mower stands now
+    const o = new T.Vector3(s.x, s.y, s.z), pos = [], col = [], free = [0.62, 0.85, 1], hit = [1, 0.45, 0.2];
+    let blocked = 0;
+    for (const d0 of dirs) {
+      const d = new T.Vector3(...d0).normalize().applyEuler(g.rotation);
+      let end = R;
+      if (hasModel) {
+        const ow = o.clone().applyMatrix4(v3.mower.matrixWorld), dw = d.clone().transformDirection(v3.mower.matrixWorld);
+        cast.set(ow, dw); cast.near = 0.005; cast.far = end;
+        const h = cast.intersectObjects(v3.model.children, false)[0];
+        if (h) { end = h.distance; blocked++; }
+        pos.push(...o.toArray(), ...o.clone().addScaledVector(d, end).toArray()); col.push(...(h ? hit : free), ...(h ? hit : free));
+      } else {
+        pos.push(...o.toArray(), ...o.clone().addScaledVector(d, end).toArray()); col.push(...free, ...free);
+      }
+    }
+    const rg = new T.BufferGeometry();
+    rg.setAttribute("position", new T.Float32BufferAttribute(pos, 3)); rg.setAttribute("color", new T.Float32BufferAttribute(col, 3));
+    v3.rays.add(new T.LineSegments(rg, new T.LineBasicMaterial({vertexColors: true, transparent: true, opacity: 0.8})));
+    los.push(`${s.name}: ${hasModel ? `${dirs.length - blocked}/${dirs.length} clear` : "no model"}`);
+  }
+  v3.los = los;
+  $("d-los").textContent = los.join(" · ");
+  dirty = true;
+}
+
+async function loadMowerData() {
+  try {
+    const j = await (await fetch("/web/sensors.json")).json();
+    if (Array.isArray(j.sensors) && j.sensors.length) { SENSORS = j.sensors; build3dSensors(); dirty = true; }
+  } catch (e) {}
+  try { MESH = await (await fetch("/web/mower_v3.json")).json(); build3dModel(); } catch (e) { MESH = null; }
 }
 
 function clearGroup(g) {                                    // frees the group's own geometries, not the shared ones
@@ -779,7 +864,7 @@ function render3d() {
   if (!v3.ready) return;
   sync3dGround(); sync3dMap(); sync3dWorld(); sync3dOutlines(); sync3dTrail();
   const p = pose.disp;
-  v3.mower.visible = !!p; v3.fields.visible = prefs.fields;
+  v3.mower.visible = !!p; v3.fields.visible = prefs.fields; v3.rays.visible = prefs.rays;
   if (p) { v3.mower.position.set(p.x, p.y, 0); v3.mower.rotation.z = p.yaw; }
   const q = prefs.truth && st && st.truth;
   v3.truth.visible = !!q;
@@ -975,7 +1060,7 @@ $("close").onclick = $("scrim").onclick = () => openDrawer(false);
 for (const b of document.querySelectorAll("[data-cmd]")) b.onclick = () => cmd(b.dataset.cmd);
 $("legend").innerHTML = [[CLS.wall.color, "wall"], [CLS.low.color, "low edge"], [CLS.post.color, "post"], ["#4fb2ff", "outline"], ["#d9ff6e", "trail"]]
   .map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join("");
-for (const k of ["imagery", "fields", "truth"]) {
+for (const k of ["imagery", "fields", "rays", "truth"]) {
   const el = $("o-" + k); el.checked = !!prefs[k];
   el.onchange = () => { prefs[k] = el.checked; savePrefs(); renderAttr(); dirty = true; };
 }
@@ -989,7 +1074,7 @@ for (const b of document.querySelectorAll("button")) b.addEventListener("click",
 
 window.addEventListener("resize", () => { if (v3.on) resize3d(); resize(); });
 if (matchMedia("(pointer: coarse)").matches) document.body.classList.add("touch");
-resize(); renderSeg(prefs.mode); renderDock(); connect(); requestAnimationFrame(frame);
+resize(); renderSeg(prefs.mode); renderDock(); connect(); loadMowerData(); requestAnimationFrame(frame);
 setMode(prefs.mode === "2d" ? "2d" : "3d");
 </script>
 </body>

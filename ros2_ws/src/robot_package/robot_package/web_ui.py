@@ -57,6 +57,7 @@ METERS_PER_LAT = 111111.0                    # the firmware's flat-earth convers
 
 RE_WALL_STATE = re.compile(r'\[WALL\] (\w+) -> (\w+): (.*)')
 RE_POINT = re.compile(r'\[(?:WALL|DEBUG)\] Point added \((-?\d+), (-?\d+)\) cm( \(corner\))?')
+RE_WEB_FILE = re.compile(r'^/web/[\w-]+\.json$')  # data files next to the page (no paths: nothing else is served)
 RE_DATUM = re.compile(r'(?:Datum published|Datum set to): lat=(-?[\d.]+) lon=(-?[\d.]+)')
 
 
@@ -419,6 +420,8 @@ class WebUi(Node):
 
 
 def make_handler(ui, page_path):
+    web_dir = os.path.dirname(page_path)
+
     class Handler(BaseHTTPRequestHandler):
         # Keep-alive: with HTTP/1.0 every poll and stick report opened a new connection, and from Windows into
         # WSL each one can stall (2 s for "localhost": IPv6 first), long enough for the stick timeout to stop
@@ -462,6 +465,9 @@ def make_handler(ui, page_path):
                     pass
             elif path == '/world':
                 self.reply(200, ui.world_json())
+            elif RE_WEB_FILE.match(path) and os.path.isfile(os.path.join(web_dir, path[5:])):
+                with open(os.path.join(web_dir, path[5:]), 'rb') as f:  # the mower mesh, the sensor mounts
+                    self.reply(200, f.read())
             else:
                 self.reply(404, {'error': 'not found'})
 
