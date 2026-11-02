@@ -89,12 +89,9 @@ static float match_dist(const MapObject& m, const Truth& t) {
 
 struct Result { int fails = 0; std::string notes; };
 
-// Limits of the sim ToF model, not counted as failures (docs/ARCHITECTURE.md section 6): its zones average the 6x6 rays,
-// so mesh and pickets within ~0.9 m read solid, and a hedge reads as a smooth face behind its outer leaves
-// (the uneven hedge is near the 3 cm roughness limit: typed hedge in 2 of 3 noise draws)
-static bool known_kind(const std::string& n) {
-  return n == "mesh_air" || n == "picket" || n == "picket_bare" || n == "hedge" || n == "hedge_uneven" || n == "mesh_hedge";
-}
+// Limits of the sim ToF model, not counted as failures (docs/ARCHITECTURE.md section 6): a hedge reads as a smooth
+// face behind its outer leaves. Types are height classes only (wall, low, post), so no kind is a known limit
+static bool known_kind(const std::string&) { return false; }
 static bool known_offset(const std::string& n) { return n.rfind("hedge", 0) == 0 || n == "mesh_hedge"; }
 
 static void note(Result& r, bool fail, const char* fmt, ...) {

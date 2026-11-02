@@ -92,13 +92,24 @@ typedef struct {
 // Assumed from ST UM3109 / SparkFun examples (the ULD image is mirrored left-right); verify on hardware
 #define TOF_ULD_MIRROR_COLS 1
 #define TOF_ULD_FLIP_ROWS 0
-// Mount, robot frame (x forward, y left, z up, origin = axle midpoint on the ground), level (est.).
-// The right sensor is the mirror image (y and yaw negated)
+// Mount of the left sensor (sensor 0), robot frame (x forward, y left, z up, origin = axle midpoint on the
+// ground), level (est.). The right sensor is the mirror image (y and yaw negated). Crossed (2026-11-02,
+// position proposed): yaw < 0, each sensor looks across the nose to the other side, 45 deg off straight
+// ahead: it sees the new face round an outer corner sooner, and the fields overlap in the middle up to
+// 0.36 m ahead of the sensors (further out a middle strip is blind again, 0.44 m wide 1 m ahead; 20 deg
+// outward never saw a post on the centre line). tof_side_sensor(side) is the sensor looking
+// to that side. Replays of older bags need the old mount: -DTOF_MOUNT_YAW=0.3491f (20 deg outward)
+#ifndef TOF_MOUNT_X                // the wall bench and the map replay set these to try other mounts
 #define TOF_MOUNT_X 0.11f
+#endif
+#ifndef TOF_MOUNT_Y
 #define TOF_MOUNT_Y 0.15f
+#endif
+#ifndef TOF_MOUNT_Z
 #define TOF_MOUNT_Z 0.09f
-#ifndef TOF_MOUNT_YAW              // the wall bench sets it to try other mounts
-#define TOF_MOUNT_YAW 0.3491f      // rad, 20 deg outward: the two 45 deg fields overlap 5 deg straight ahead
+#endif
+#ifndef TOF_MOUNT_YAW
+#define TOF_MOUNT_YAW -0.7854f     // rad, crossed 45 deg
 #endif
 #define TOF_FRAME_DELAY 0.04f      // s, a frame is this old when read (integration + I2C or link; est.)
 #define TOF_FRAME_TIMEOUT_MS 300   // no frame for this long while the assist drives: stop
@@ -258,7 +269,7 @@ typedef struct {
 #define TOF_MAP_REPLACE_DIST 0.30f // m: a new object this close to one from before a pose jump replaces it
 #define TOF_MAP_MAX_WEIGHT 4000.0f // face points in a segment's line sums before old ones are halved
 // Rays crossing an object: hit, or seen through (no target, or TOF_MAP_THROUGH past it)
-#define TOF_MAP_SEE_RANGE 1.0f     // m, crossings this close count (also for the fence ratio)
+#define TOF_MAP_SEE_RANGE 1.0f     // m, crossings this close count
 #define TOF_MAP_THROUGH 0.15f
 #define TOF_MAP_EMPTY_RANGE 0.7f   // m: crossings this close all seen through in TOF_MAP_EMPTY_FRAMES frames over
 #define TOF_MAP_EMPTY_FRAMES 8     // TOF_MAP_EMPTY_MS: that part is not there (the sim's wire mesh is seen out to ~0.9 m)
@@ -315,14 +326,9 @@ typedef struct {
 #define TOF_MAP_LINK_MIN_LEN 0.30f // m: only between lines at least this long
 #define TOF_MAP_LINK_MATCH 0.20f   // m: a gap whose ends moved less than this is the same link (keeps its evidence)
 #define TOF_MAP_LINK_AGE_MS 30000  // a link not found for this long is forgotten
-// Types: fence if TOF_MAP_FENCE_THROUGH of the crossing rays pass or TOF_MAP_FENCE_GAP of its face points had a
-// see-through zone between them; low edge with its top seen below TOF_MAP_LOW_HEIGHT; hedge if rougher than
-// TOF_MAP_HEDGE_RESIDUAL; else wall. Post: from its shape
-#define TOF_MAP_FENCE_MIN_RAYS 20
-#define TOF_MAP_FENCE_THROUGH 0.30f
-#define TOF_MAP_FENCE_GAP 0.15f
+// Types by height only (2026-11-02): low edge with its top seen below TOF_MAP_LOW_HEIGHT, else wall (walls,
+// hedges, fences alike); post from its shape
 #define TOF_MAP_LOW_HEIGHT 0.35f
-#define TOF_MAP_HEDGE_RESIDUAL 0.03f
 // Top seen: in at least TOF_MAP_TOP_RATIO of the face points. Terrain: an object lower than TOF_MAP_TERRAIN_Z
 // whose top is seen in less than TOF_MAP_TERRAIN_TOP of them (a bump or slope rises on in the zone above, a
 // curb ends in a step); hidden, and dropped after TOF_MAP_TERRAIN_OBS face points

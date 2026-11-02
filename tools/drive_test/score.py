@@ -8,7 +8,9 @@ boot (the datum is sent once), from /gps/odom against the true antenna. Reports:
   sim        real-time factor (sim stamp / bag time); below 0.95 the drive is not valid
   pose       EKF axle position and yaw error against truth, from 0.4 m travelled on (the boot heading is a guess)
   map        the last esp/wall_map: map line -> nearest true face, phantom length (> 10 cm from any face),
-             tall/low class (curb vs the rest), height (map top vs true top, capped at what the sensors see)
+             class (wall / low edge / post: by height, a curb or anything under 0.35 m is low, a lone
+             cylinder a post, every taller face a wall), height (map top vs true top, capped at what the
+             sensors see)
   continuity share of the true faces passed within 1.2 m that a map line covers within 10 cm, gaps over 30 cm,
              map lines per covered face (1 = one piece) and face length covered twice (duplicates)
   assist     [WALL] state changes from esp/log
@@ -33,7 +35,10 @@ from scenarios import COMMON, SCENARIOS  # noqa: E402
 
 ANT = 0.18                                  # GNSS_ANTENNA_BEHIND_AXLE
 FRONT, REAR, HALF_W = 0.12, 0.415, 0.20     # MOWER_* footprint around the axle
-KINDS = ['wall', 'fence', 'low edge', 'hedge', 'post']   # esp/wall_map kind index (drive.html)
+# esp/wall_map kind index (drive.html). Height classes only since 2026-11-02: 1 (fence) and 3 (hedge) are
+# no longer sent and read as wall (older bags)
+KINDS = ['wall', 'wall', 'low edge', 'wall', 'post']
+LOW_TOP = 0.35                              # m, TOF_MAP_LOW_HEIGHT
 SEEN_TOP = 0.60                             # m, the highest top the ToF fields of view can confirm
 NEAR, PASS = 0.10, 1.2                      # m: map line on a face; a face counts as passed within this of the axle
 
@@ -72,6 +77,8 @@ def world_faces(world_yaml, to_odom):
                 out.append((kind, z + hz, np.array(poly)))
             elif 'cylinder' in p or 'sphere' in p:
                 r, ln = p['cylinder'] if 'cylinder' in p else (p['sphere'], 2 * p['sphere'])
+                if 'cylinder' in p and kind == 'object':
+                    kind = 'post'   # a lone pole or trunk (a fence's posts keep the fence's type)
                 cx, cy = to_odom(x, y)
                 a = np.linspace(0, 2 * math.pi, 16, endpoint=False)
                 out.append((kind, z + ln / 2, np.c_[cx + r * np.cos(a), cy + r * np.sin(a)]))
@@ -163,7 +170,11 @@ def score(B, world_yaml, res, map_rows=None):
                       'phantom_m': round(float(np.mean(dist > NEAR)) * L, 2), 'true_kind': faces[near][0],
                       'true_top_cm': round(faces[near][1] * 100), 'pts': pts})
     if lines:
-        tall_ok = [(ln['type'] == 'low edge') == (ln['true_kind'] == 'curb') for ln in lines]
+        def true_class(ln):
+            if ln['true_kind'] == 'curb' or ln['true_top_cm'] < LOW_TOP * 100:
+                return 'low edge'
+            return 'post' if ln['true_kind'] == 'post' else 'wall'
+        tall_ok = [ln['type'] == true_class(ln) for ln in lines]
         res['map'] = {'lines': len(lines), 'err_cm_median': round(float(np.median([ln['err_cm_median'] for ln in lines])), 1),
                       'err_cm_worst': max(ln['err_cm_max'] for ln in lines),
                       'phantom_m': round(sum(ln['phantom_m'] for ln in lines), 2),
@@ -317,7 +328,7 @@ def check(name, B, tr, ev, res):
     if sc.get('tall_low_all'):
         tl = res.get('map', {}).get('tall_low_correct')
         ok = tl is not None and tl.split('/')[0] == tl.split('/')[1]
-        out['tall_low'] = (ok, f'{tl} map lines with the right tall/low class' if tl else 'no map lines')
+        out['tall_low'] = (ok, f'{tl} map lines with the right class (wall/low edge/post)' if tl else 'no map lines')
     if 'map_has' in sc:
         kinds = [ln['type'] for ln in res.get('map_lines', [])]
         out['map_has'] = (sc['map_has'] in kinds, f'map kinds {kinds}')

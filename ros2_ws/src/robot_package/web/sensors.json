@@ -1,9 +1,9 @@
 {
   "about": "Range sensor mounts for the mower page (ARCHITECTURE §10), mirror of src/definitions.h TOF_MOUNT_*: keep them equal. Robot frame: origin on the ground under the axle midpoint, x forward, y left, z up; m and degrees. yaw left-positive, pitch up-positive, roll about the sensor axis. shape 'rect' (fov_h x fov_v, zones_h x zones_v rays) or 'cone' (fov = full angle).",
   "sensors": [
-    {"name": "ToF left", "type": "VL53L8CX", "shape": "rect", "x": 0.11, "y": 0.15, "z": 0.09, "yaw": 20, "pitch": 0, "roll": 0,
+    {"name": "ToF left", "type": "VL53L8CX", "shape": "rect", "x": 0.11, "y": 0.15, "z": 0.09, "yaw": -45, "pitch": 0, "roll": 0,
      "fov_h": 45, "fov_v": 45, "zones_h": 8, "zones_v": 8, "range": 1.5},
-    {"name": "ToF right", "type": "VL53L8CX", "shape": "rect", "x": 0.11, "y": -0.15, "z": 0.09, "yaw": -20, "pitch": 0, "roll": 0,
+    {"name": "ToF right", "type": "VL53L8CX", "shape": "rect", "x": 0.11, "y": -0.15, "z": 0.09, "yaw": 45, "pitch": 0, "roll": 0,
      "fov_h": 45, "fov_v": 45, "zones_h": 8, "zones_v": 8, "range": 1.5}
   ]
 }

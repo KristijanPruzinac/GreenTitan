@@ -242,9 +242,8 @@ add('gap_narrow', 'edges', along(*GAP_W, 'left', 0.3, FOLLOW + WT), follow_to(la
     ('lock', 'reached'), 'a 0.35 m gap in the wall (the mower does not fit): follow on past it')
 add('gap_wide', 'edges', along(*GAP_M, 'left', 0.3, FOLLOW + WT), follow_to(lambda r: r.plant.x > 1.5, tmax=30),
     ('lock',), 'a 1.5 m gap: any safe outcome (stop at the end, round it, cross it)')
-add('post_head_on', 'edges', (7.5, 4.5, 180), head_on(12), (), 'straight at the lone 0.1 m post',
-    known='the post stays in the blind strip between the two fields of view (each 20 deg outward from y +-0.15 m): '
-          'no ToF point of it in the whole run')
+add('post_head_on', 'edges', (7.5, 4.5, 180), head_on(12), (), 'straight at the lone 0.1 m post '
+    '(in the blind strip of the old 20 deg outward mount, seen by the crossed one)')
 def guard_only(tmax, lin=0.3):   # the assist off: only the guard keeps the body off what the sensors see
     def script(r):
         r.assist(False)
