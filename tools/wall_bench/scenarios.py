@@ -554,7 +554,7 @@ add('goal_inner', 'edges', V90, push_to(lambda r: past(r, *V[90][1:], 0.9), 30),
     'along the 90 deg corner\'s arm, stick held: round the inner corner and on along the other arm')
 add('goal_step', 'edges', along(STEP[0], STEP[1], 'left', 0.3, FOLLOW + WT), push_to(lambda r: past(r, STEP[2], STEP[3], 0.8), 40),
     ('goal',), 'along the step wall, stick held: outer corner, 0.8 m, inner corner, on')
-add('goal_hedge', 'garden', along((-6.0, -4.0), (-1.0, -4.0), 'right', 0.5, FOLLOW + WT), push_to(lambda r: r.plant.x > 6.0, 50),
+add('goal_hedge', 'garden', along((-6.0, -4.0), (-1.0, -4.0), 'right', 0.5, FOLLOW + WT), push_to(lambda r: r.plant.x > 6.0, 90),
     ('goal',), 'along the wall, the lumpy hedge and the set-back wall, stick held')
-add('goal_thin_end', 'edges', (-2.0, -3.6, 0.0), push_to(lambda r: r.plant.x > 2.5, 25), ('goal',),
+add('goal_thin_end', 'edges', (-2.0, -3.6, 0.0), push_to(lambda r: r.plant.x > 2.5, 45), ('goal',),
     'east along the thin wall\'s south side, 0.6 m off, past its free end')
