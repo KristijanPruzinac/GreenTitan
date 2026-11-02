@@ -227,12 +227,14 @@ SCENARIOS = {
         'steps': [SETTLE] + CYCLE * 20,
         'checks': {'docks_min': 20, 'no_dock_msgs': True, 'docked_end': True, 'station_err': (1.0, 0.5)},
     },
-    # The station was moved 8 cm / 4 deg since the board stored it: the funnel still guides the mower in, the
-    # estimate adopts the new pose silently within ~3 docks. Starts 3 m out on the old axis.
+    # The station was moved 8 cm / 4 deg since the board stored it: the funnel (with retries) still brings the
+    # mower in. Retried docks are no measurements, but every undock from the live contacts is: 3 of them agree,
+    # the new pose is adopted silently (after dock 3), and the last docks need at most 2 approaches. Starts 3 m out
+    # on the old axis.
     'dock_nudge': {
         'world': 'dock', 'station': STATION_NUDGED, 'spawn': at_station(STATION, -3.0),
         'steps': [SETTLE, (0.25, 0, 2.5), {'manual': False}] + HOME + CYCLE * 4,
-        'checks': {'docks_min': 5, 'no_dock_msgs': True, 'docked_end': True, 'adopted_within': 4,
+        'checks': {'docks_min': 5, 'no_dock_msgs': True, 'docked_end': True, 'adopted_within': 4, 'last_approaches_max': 2,
                    'station_err': (1.0, 0.5)},
     },
 }

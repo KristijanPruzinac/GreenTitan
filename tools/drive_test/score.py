@@ -257,6 +257,7 @@ def score(B, world_yaml, res, map_rows=None):
     return tr, ek, ax, ay, faces, objs, ev
 
 
+RE_APPROACHES = re.compile(r'Docked after (\d+) approach')
 RE_ST = re.compile(r'\[DOCK\] (Station|Measured station|Dock measurement|Undock measurement) x=(-?[\d.]+) y=(-?[\d.]+) yaw=(-?[\d.]+)')
 USER_MSGS = ('[DOCK] Failed', 'Set station rejected', 'Set station failed', 'Cannot go home: no RTK fix',
              'No station set')   # what the drive page shows
@@ -274,7 +275,7 @@ def dock_score(B, world_yaml, W, res, t0):
     def err(x, y, yaw_deg):
         return round(math.hypot(x - tx, y - ty) * 100, 1), round(math.degrees(wrap(math.radians(yaw_deg) - syaw)), 2)
     d = {'truth_odom': [round(tx, 3), round(ty, 3), round(math.degrees(syaw), 2)], 'docks': 0, 'user_msgs': [],
-         'adopted': [], 'set_verified': False, 'estimates': [], 'measurements': [], 'log': []}
+         'adopted': [], 'approaches': [], 'set_verified': False, 'estimates': [], 'measurements': [], 'log': []}
     for t, m in B.get('/esp/log', []):
         for line in m.data.split('\n'):
             if '[DOCK]' not in line:
@@ -283,6 +284,9 @@ def dock_score(B, world_yaml, W, res, t0):
             tt = round(t - t0, 1)
             d['log'].append((tt, line[line.index('[DOCK]'):][:110]))
             d['docks'] += 'Docked after' in line
+            ma = RE_APPROACHES.search(line)
+            if ma:
+                d['approaches'].append(int(ma.group(1)))
             if any(u in line for u in USER_MSGS):
                 d['user_msgs'].append((tt, line[line.index('[DOCK]'):][:110]))
             if 'Station moved: adopted' in line:
@@ -388,7 +392,8 @@ def check(name, B, tr, ev, res):
         ok = e['x'][0] <= x <= e['x'][1] and abs(wrap(math.radians(yaw - e['yaw_deg']))) <= math.radians(e['yaw_tol'])
         out['end_pose'] = (ok, f'ended at x {x:.2f}, y {tr[-1, 6]:.2f}, heading {yaw:.0f} deg')
     d = res.get('dock')
-    if any(k in sc for k in ('docks_min', 'no_dock_msgs', 'docked_end', 'station_err', 'station_set', 'adopted_within')):
+    if any(k in sc for k in ('docks_min', 'no_dock_msgs', 'docked_end', 'station_err', 'station_set', 'adopted_within',
+                                 'last_approaches_max')):
         if d is None:
             out['dock'] = (False, 'no station in the world')
             return out
@@ -408,6 +413,10 @@ def check(name, B, tr, ev, res):
             ok = d['final_err_cm'] <= pc and abs(d['final_err_deg']) <= pd
             out['station_err'] = (ok, f"estimate {d['final_err_cm']} cm, {d['final_err_deg']} deg off the true station"
                                       f" (want <= {pc} cm, {pd} deg)")
+    if 'last_approaches_max' in sc:   # docks get faster once the estimate has learned the station
+        ap = d['approaches']
+        out['last_approaches'] = (bool(ap) and ap[-1] <= sc['last_approaches_max'],
+                                  f'approaches per dock {ap} (want the last <= {sc["last_approaches_max"]})')
     if 'adopted_within' in sc:
         a = d['adopted']
         out['adopted'] = (bool(a) and a[0][1] <= sc['adopted_within'],
