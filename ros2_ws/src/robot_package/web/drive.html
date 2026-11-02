@@ -2,122 +2,208 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>GreenTitan Drive</title>
-<!-- Drive page served by robot_package/web_ui.py. One file, no external resources for the 2D view (the phone may be
-     offline); the optional 3D view loads three.js from cdnjs the first time it is opened. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#111513">
+<title>GreenTitan</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%233fd17a'/%3E%3C/svg%3E">
+<!-- Mower page served by robot_package/web_ui.py (docs/ARCHITECTURE.md §10). One file. The state is pushed by the node
+     (/events, server-sent events); the 3D view (default) loads three.js from cdnjs, both views load aerial imagery tiles
+     placed with the datum. Offline the page falls back to the 2D view on a plain grid. -->
 <style>
 :root {
-  --bg: #eef0ea; --panel: #ffffff; --ink: #1d2320; --muted: #66706a; --line: #d3d8cf;
-  --ok: #1f8a3b; --warn: #c27c00; --bad: #c62828; --info: #2f5fb3; --off: #8a918c;
+  --glass: rgba(17, 21, 19, .74); --glass2: rgba(17, 21, 19, .97); --edge: rgba(255, 255, 255, .13);
+  --ink: #f2f5f3; --muted: #a3ada7; --accent: #3fd17a; --accent-ink: #052010;
+  --warn: #ffb020; --bad: #ff4d4d; --wall: #ff5a3c; --low: #ffc531; --post: #c48dff; --outline: #4fb2ff; --trail: #d9ff6e;
+  --gut: 12px;
 }
-* { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
-  font: 15px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
-body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
-#bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.badge { display: flex; flex-direction: column; justify-content: center; min-width: 74px; padding: 4px 10px;
-  border-radius: 8px; background: #f3f4f1; border: 1px solid var(--line); }
-.badge .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.badge .v { font-size: 19px; font-weight: 700; white-space: nowrap; }
-.badge .s { font-size: 11px; color: var(--muted); max-width: 210px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.badge.ok { background: #e3f3e6; border-color: #9fd3ab; } .badge.ok .v { color: var(--ok); }
-.badge.warn { background: #fdf1db; border-color: #ecc77d; } .badge.warn .v { color: var(--warn); }
-.badge.bad { background: #fbe3e1; border-color: #eba59f; } .badge.bad .v { color: var(--bad); }
-.badge.info { background: #e4ecfa; border-color: #a9bfe8; } .badge.info .v { color: var(--info); }
-#btns { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
-button { font: inherit; font-weight: 600; min-height: 40px; padding: 6px 12px; border-radius: 8px;
-  border: 1px solid #b9c0b5; background: #f7f8f5; color: var(--ink); cursor: pointer; touch-action: manipulation; }
-button:active { background: #e3e6df; }
-button.on { background: var(--ok); border-color: var(--ok); color: #fff; }
-button:disabled { opacity: .45; }
-#view { position: relative; flex: 1; min-height: 0; }
-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
-#legend { position: absolute; left: 8px; top: 8px; display: flex; flex-wrap: wrap; gap: 4px 10px; max-width: calc(100% - 16px);
-  padding: 4px 8px; background: rgba(255,255,255,.85); border-radius: 8px; font-size: 12px; pointer-events: none; }
-#legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-#legend i { display: inline-block; width: 14px; height: 4px; border-radius: 2px; }
-#notice { position: absolute; left: 50%; top: 44px; transform: translateX(-50%); padding: 6px 12px; border-radius: 8px;
-  background: var(--bad); color: #fff; font-weight: 600; display: none; max-width: calc(100% - 16px); text-align: center; }
-#log { position: absolute; right: 8px; top: 44px; width: min(440px, calc(100% - 16px)); max-height: 42%; overflow-y: auto;
-  background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 8px; padding: 4px 0; display: none;
-  font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; }
-#log.open { display: block; }
-#log div { padding: 1px 8px; white-space: pre-wrap; word-break: break-word; }
-#log div.wall { background: #fff1cf; color: #6b4300; font-weight: 600; }
-#joy { position: absolute; left: 16px; bottom: 16px; width: 150px; height: 150px; border-radius: 50%;
-  background: rgba(255,255,255,.55); border: 2px solid rgba(30,40,35,.35); touch-action: none; }
-#joy::before, #joy::after { content: ""; position: absolute; background: rgba(30,40,35,.18); }
-#joy::before { left: 50%; top: 10%; bottom: 10%; width: 2px; margin-left: -1px; }
-#joy::after { top: 50%; left: 10%; right: 10%; height: 2px; margin-top: -1px; }
-#knob { position: absolute; left: 50%; top: 50%; width: 62px; height: 62px; margin: -31px 0 0 -31px; border-radius: 50%;
-  background: #33433a; box-shadow: 0 2px 6px rgba(0,0,0,.35); pointer-events: none; z-index: 1; }
-#joy.held #knob { background: var(--ok); }
-#stop { position: absolute; right: 16px; bottom: 16px; width: 96px; height: 96px; border-radius: 50%;
-  background: var(--bad); border: 4px solid #fff; color: #fff; font-size: 22px; font-weight: 800; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
-#stop:active { background: #8e1515; }
-#hint { position: absolute; left: 180px; bottom: 18px; right: 124px; font-size: 12px; color: var(--muted); pointer-events: none; }
-body.touch #hint { display: none; }
-@media (max-width: 600px) {
-  #bar, #btns { gap: 4px; padding: 4px 6px; }
-  .badge { min-width: 0; flex: 1 1 0; padding: 3px 5px; }
-  .badge .k { font-size: 10px; }
-  .badge .v { font-size: 14px; }
-  .badge .s { font-size: 10px; }
-  button { flex: 1 1 auto; min-height: 38px; padding: 4px 6px; font-size: 14px; }
-  #hint { display: none; }
-  #joy { width: 136px; height: 136px; left: 12px; bottom: 12px; }
-  #stop { width: 84px; height: 84px; right: 12px; bottom: 12px; font-size: 19px; }
-  #legend { font-size: 11px; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: #1a201c; color: var(--ink); overflow: hidden;
+  font: 15px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-user-select: none; user-select: none; }
+button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+#view { position: fixed; inset: 0; }
+#view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.glass { background: var(--glass); border: 1px solid var(--edge); box-shadow: 0 4px 18px rgba(0, 0, 0, .28);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2); }
+
+/* top bar: status, 2D/3D, menu */
+#top { position: absolute; left: max(var(--gut), env(safe-area-inset-left)); right: max(var(--gut), env(safe-area-inset-right));
+  top: max(var(--gut), env(safe-area-inset-top)); display: flex; align-items: center; gap: 8px; pointer-events: none; }
+#top > * { pointer-events: auto; }
+#pill { display: flex; align-items: center; gap: 9px; height: 42px; padding: 0 15px 0 13px; border-radius: 21px; min-width: 0; }
+#pill .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+#pill.ok .dot { background: var(--accent); box-shadow: 0 0 0 4px rgba(63, 209, 122, .18); }
+#pill.warn .dot { background: var(--warn); box-shadow: 0 0 0 4px rgba(255, 176, 32, .2); }
+#pill.bad .dot { background: var(--bad); box-shadow: 0 0 0 4px rgba(255, 77, 77, .22); }
+#pill b { font-weight: 700; white-space: nowrap; }
+#pill span { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.spacer { flex: 1; }
+.seg { display: flex; height: 42px; border-radius: 21px; padding: 4px; flex: none; }
+.seg button { border: 0; background: none; color: var(--muted); font-weight: 700; padding: 0 13px; border-radius: 17px; }
+.seg button.on { background: rgba(255, 255, 255, .93); color: #121614; }
+.icon { width: 42px; height: 42px; border-radius: 21px; display: grid; place-items: center; padding: 0; flex: none; }
+.icon svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
+#recenter { position: absolute; right: max(var(--gut), env(safe-area-inset-right)); top: calc(max(var(--gut), env(safe-area-inset-top)) + 52px); display: none; }
+#chips { position: absolute; left: max(var(--gut), env(safe-area-inset-left)); top: calc(max(var(--gut), env(safe-area-inset-top)) + 52px);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; max-width: calc(100% - 90px); }
+.chip { padding: 6px 12px; border-radius: 15px; font-size: 13px; font-weight: 600; display: none; }
+.chip.show { display: block; }
+.chip.warn { background: rgba(255, 176, 32, .95); color: #2a1900; border: 0; }
+.chip i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 7px; }
+#toast { position: absolute; left: 50%; top: calc(max(var(--gut), env(safe-area-inset-top)) + 56px); transform: translateX(-50%);
+  max-width: calc(100% - 32px); padding: 9px 16px; border-radius: 12px; font-weight: 600; text-align: center;
+  background: rgba(255, 77, 77, .95); color: #fff; display: none; box-shadow: 0 4px 18px rgba(0, 0, 0, .3); }
+
+/* bottom: Take over / joystick / STOP */
+#dock { position: absolute; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right));
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + 12px); height: 150px; pointer-events: none; }
+#dock > * { pointer-events: auto; }
+#take { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); height: 58px; padding: 0 30px; border-radius: 29px;
+  border: 0; background: var(--accent); color: var(--accent-ink); font-size: 17px; font-weight: 750; letter-spacing: .01em;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .35); white-space: nowrap; }
+#take:active { filter: brightness(.92); }
+#take:disabled { opacity: .7; }
+body.manual #take { left: auto; right: 0; bottom: 98px; transform: none; height: 44px; padding: 0 18px; font-size: 15px;
+  background: var(--glass2); color: var(--ink); border: 1px solid var(--edge); }
+#stop { position: absolute; right: 0; bottom: 0; width: 84px; height: 84px; border-radius: 50%; background: var(--bad); color: #fff;
+  border: 3px solid rgba(255, 255, 255, .92); font-size: 17px; font-weight: 800; letter-spacing: .05em; box-shadow: 0 6px 20px rgba(0, 0, 0, .4); }
+#stop:active { background: #b51d1d; }
+body:not(.manual) #stop { width: 64px; height: 64px; font-size: 13px; bottom: 11px; }
+#joy { position: absolute; left: 0; bottom: 0; width: 150px; height: 150px; border-radius: 50%; display: none; touch-action: none; }
+body.manual #joy { display: block; }
+#joy svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#knob { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle at 40% 35%, #fff, #d9dfdb); box-shadow: 0 3px 10px rgba(0, 0, 0, .45); }
+#joy.held #knob { background: radial-gradient(circle at 40% 35%, #9ff0c0, var(--accent)); }
+#attr { position: absolute; right: 6px; bottom: 2px; font-size: 10px; color: rgba(255, 255, 255, .8); text-shadow: 0 1px 2px #000;
+  pointer-events: none; padding-bottom: env(safe-area-inset-bottom); }
+
+/* menu drawer */
+#scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .25); display: none; }
+#scrim.open { display: block; }
+#drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(380px, 90vw); transform: translateX(105%); transition: transform .2s ease;
+  border-radius: 18px 0 0 18px; padding: calc(max(var(--gut), env(safe-area-inset-top)) + 4px) 16px 16px; overflow-y: auto;
+  background: var(--glass2); -webkit-user-select: text; user-select: text; }
+#drawer.open { transform: none; }
+#drawer header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+#drawer h2 { font-size: 18px; margin: 0; }
+#drawer h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 18px 0 6px; font-weight: 700; }
+.row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid rgba(255, 255, 255, .07); font-size: 14px; }
+.row > :first-child { color: var(--muted); }
+.row > :last-child { text-align: right; font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+.row .ok { color: var(--accent); } .row .warn { color: var(--warn); } .row .bad { color: var(--bad); }
+label.tg { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; font-size: 14px; cursor: pointer; }
+label.tg input { appearance: none; -webkit-appearance: none; width: 42px; height: 24px; border-radius: 12px; background: rgba(255, 255, 255, .2);
+  position: relative; margin: 0; cursor: pointer; transition: background .15s; flex: none; }
+label.tg input::after { content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left .15s; }
+label.tg input:checked { background: var(--accent); }
+label.tg input:checked::after { left: 21px; }
+.btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn { border: 1px solid var(--edge); background: rgba(255, 255, 255, .08); border-radius: 10px; padding: 8px 12px; font-size: 14px; font-weight: 600; }
+.btn:active { background: rgba(255, 255, 255, .18); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; width: 16px; height: 5px; border-radius: 3px; }
+#log { font: 11.5px/1.4 ui-monospace, Menlo, Consolas, monospace; max-height: 38vh; overflow-y: auto; background: rgba(0, 0, 0, .35);
+  border-radius: 10px; padding: 6px 0; }
+#log div { padding: 1px 9px; white-space: pre-wrap; word-break: break-word; }
+#log div.wall { color: #ffd27a; }
+.hint { font-size: 12px; color: var(--muted); margin-top: 14px; }
+body.touch .hint { display: none; }
+@media (max-width: 420px) {
+  :root { --gut: 10px; }
+  #pill { padding: 0 12px 0 11px; }
+  .seg button { padding: 0 10px; }
+  #joy { width: 140px; height: 140px; }
 }
 </style>
 </head>
 <body>
-<div id="bar">
-  <div class="badge bad" id="b-link"><span class="k">Link</span><span class="v">--</span><span class="s"></span></div>
-  <div class="badge" id="b-manual"><span class="k">Manual</span><span class="v">?</span></div>
-  <div class="badge" id="b-assist"><span class="k">Assist</span><span class="v">?</span><span class="s"></span></div>
-  <div class="badge" id="b-speed"><span class="k">Speed</span><span class="v">--</span><span class="s"></span></div>
-  <div class="badge" id="b-sim" style="display:none"><span class="k">Sim</span><span class="v">--</span><span class="s"></span></div>
-</div>
-<div id="btns">
-  <button id="c-manual">Manual</button>
-  <button id="c-assist">Assist</button>
-  <button id="c-status">Status</button>
-  <button id="c-follow" class="on">Follow</button>
-  <button id="c-3d">3D</button>
-  <button id="c-log">Log</button>
-</div>
 <div id="view">
   <canvas id="cv"></canvas>
-  <div id="legend"></div>
-  <div id="notice"></div>
-  <div id="log"></div>
-  <div id="joy"><div id="knob"></div></div>
-  <div id="hint">Keys: W A S D or arrows to drive, Space = stop. Drag to pan, wheel to zoom.</div>
-  <button id="stop">STOP</button>
+  <div id="top">
+    <div id="pill" class="glass bad"><i class="dot"></i><b id="pill-t">Connecting</b><span id="pill-s"></span></div>
+    <div class="spacer"></div>
+    <div class="seg glass" role="group" aria-label="View"><button id="v2">2D</button><button id="v3">3D</button></div>
+    <button id="menu" class="icon glass" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  </div>
+  <button id="recenter" class="icon glass" aria-label="Back to the mower"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/></svg></button>
+  <div id="chips">
+    <div id="c-assist" class="chip glass"><i></i><span></span></div>
+    <div id="c-sim" class="chip warn"></div>
+    <div id="c-rec" class="chip glass"></div>
+  </div>
+  <div id="toast"></div>
+  <div id="dock">
+    <div id="joy" class="glass"><svg viewBox="0 0 150 150"><path d="M75 14v122M14 75h122" stroke="rgba(255,255,255,.18)" stroke-width="2"/>
+      <path d="M75 75L60 18A58 58 0 0 1 90 18Z M75 75L60 132A58 58 0 0 0 90 132Z" fill="rgba(63,209,122,.13)"/></svg><div id="knob"></div></div>
+    <button id="take">Take over</button>
+    <button id="stop">STOP</button>
+  </div>
+  <div id="attr"></div>
+  <div id="scrim"></div>
+  <aside id="drawer" aria-label="Menu">
+    <header><h2>GreenTitan</h2><button id="close" class="icon" style="background:none;border:0" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
+    <h3>Status</h3>
+    <div class="row"><span>Link</span><span id="d-link">--</span></div>
+    <div class="row"><span>Position updates</span><span id="d-rate">--</span></div>
+    <div class="row"><span>Speed</span><span id="d-speed">--</span></div>
+    <div class="row"><span>Wall assist</span><span id="d-assist">--</span></div>
+    <div class="row" id="d-sim-row" style="display:none"><span>Sim speed</span><span id="d-sim">--</span></div>
+    <h3>Map</h3>
+    <label class="tg">Aerial imagery<input type="checkbox" id="o-imagery"></label>
+    <label class="tg">Sensor fields<input type="checkbox" id="o-fields"></label>
+    <label class="tg" id="o-truth-row" style="display:none">Sim truth (debug)<input type="checkbox" id="o-truth"></label>
+    <div class="legend" id="legend"></div>
+    <h3>Outline capture</h3>
+    <div class="btns">
+      <button class="btn" data-cmd="capture">Start</button><button class="btn" data-cmd="outline">New outline</button>
+      <button class="btn" data-cmd="point">Add point</button><button class="btn" data-cmd="finish">Finish</button>
+    </div>
+    <h3>Log</h3>
+    <div class="btns" style="margin-bottom:8px"><button class="btn" data-cmd="status">Status report</button></div>
+    <div id="log"></div>
+    <div class="hint">Keys: W A S D or arrows drive (after Take over), Space or Esc stops. 2D: drag pans, wheel zooms. 3D: drag orbits, right-drag pans, wheel zooms.</div>
+  </aside>
 </div>
 <script>
 "use strict";
 // ---- constants (src/definitions.h) ----
-const MAX_LIN = 0.3, MAX_REV = 0.1, MAX_ANG = 0.6;          // m/s, m/s, rad/s
-const DEAD = 0.12, CURVE = 1.7;                            // stick deadzone, response exponent
+let MAX_LIN = 0.45, MAX_REV = 0.15, MAX_ANG = 0.9;           // m/s, m/s, rad/s; web_ui sends its own (limits)
+const DEAD = 0.12, CURVE = 1.7, ANGLE_P = 1.6;               // stick deadzone, speed curve, angle shaping exponent
 const ANT_BEHIND = 0.18;                                    // GNSS_ANTENNA_BEHIND_AXLE: base_link is behind the axle
 const FRONT = 0.12, REAR = 0.415, HALF_W = 0.20;            // MOWER_* footprint around the axle
 const TOF = [{x: 0.11, y: 0.15, yaw: 20}, {x: 0.11, y: -0.15, yaw: -20}], TOF_FOV = 45, TOF_RANGE = 1.5;
 const TRAIL_S = 180;                                        // trail fades out over this many seconds
-const KINDS = [["wall", "#b23a2a"], ["fence", "#8a5a2b"], ["low edge", "#d08a00"], ["hedge", "#2e7d32"], ["post", "#6a3fb5"]];
+const EXTRAP_MAX = 0.25, SMOOTH_TAU = 0.07;                 // s: pose extrapolation limit, display smoothing
+const M_LAT = 111111.0;                                     // the firmware's flat-earth metres per degree
+// Map objects by height class only (esp/wall_map kinds: 0 wall, 1 fence, 2 low edge, 3 hedge, 4 post; unknown = tall)
+const CLS = {wall: {name: "wall", color: "#ff5a3c", thick: 0.10}, low: {name: "low edge", color: "#ffc531", thick: 0.05},
+             post: {name: "post", color: "#c48dff"}};
+const clsOf = kind => kind === 2 ? CLS.low : kind === 4 ? CLS.post : CLS.wall;
+const ASSIST_TEXT = {ALIGN: "Lining up with the wall", LOCKED: "Following the wall", CORNER: "Inner corner",
+                     PIVOT: "Turning at the corner", OUTER: "Rounding the end"};
+// Aerial imagery (Esri World Imagery, CORS enabled; the 3D ground texture needs it)
+const TILE_URL = (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+const TILE_ATTR = "Imagery © Esri, Maxar, Earthstar Geographics";
+const THREE_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
 
 const $ = id => document.getElementById(id);
+const DEG = Math.PI / 180;
+const now = () => performance.now() / 1000;
 const cv = $("cv"), ctx = cv.getContext("2d");
 let W = 0, H = 0, DPR = 1;
-let view = {x: 0, y: 0, s: 90, follow: true};               // centre (m, odom), px per m
-let st = null, logId = 0, worldRev = -1, world = [], online = false, lastOk = 0;
-let trail = [];                                             // [x, y, t] of the axle
-let logLines = [];
-let flash = {text: "", until: 0};                           // short page message (3D load failure)
+let view = {x: 0, y: 0, s: 60, follow: true};               // 2D centre (m, odom), px per m
+let st = null, lastMsg = 0, logId = 0, worldRev = -1, world = [];
+let mapObjs = [], outlines = [], logLines = [], trail = [];
+let dirty = true;                                           // redraw needed (new state, input, tile)
 
-// ---- server ----
+// per-viewer preferences (browser storage may be missing: defaults then)
+const prefs = {mode: "3d", imagery: true, fields: false, truth: false};
+try { Object.assign(prefs, JSON.parse(localStorage.getItem("gt.prefs") || "{}")); } catch (e) {}
+if (/^#(2d|3d)$/.test(location.hash)) prefs.mode = location.hash.slice(1);   // a link may pick the view
+const savePrefs = () => { try { localStorage.setItem("gt.prefs", JSON.stringify(prefs)); } catch (e) {} };
+
+// ---- server: state pushed over /events, commands posted ----
 async function post(path, body) {
   try {
     const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
@@ -126,111 +212,123 @@ async function post(path, body) {
 }
 const cmd = name => post("/cmd", {cmd: name});
 
-async function poll() {
-  try {
-    const r = await fetch("/state?since=" + logId, {cache: "no-store"});
-    st = await r.json();
-    online = true; lastOk = performance.now();
-    if (st.log_id < logId) logLines = [];                  // node restarted
-    for (const [i, s] of st.log) logLines.push(s);
-    logLines = logLines.slice(-30);
-    if (st.log.length || st.log_id < logId) renderLog();
-    logId = st.log_id;
-    if (st.world_rev !== worldRev) loadWorld(st.world_rev);
-    if (st.pose) addTrail(st.pose);
-    renderStatus();
-    v3.dirty = true;                                       // the 3D view renders only on new state or input
-  } catch (e) {
-    online = false; renderStatus();
-  }
-  setTimeout(poll, 150);
+let es = null;
+function connect() {
+  if (es) es.close();
+  es = new EventSource("/events?since=" + logId);
+  es.onmessage = e => { try { onState(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+}
+setInterval(() => {                                         // the node pushes at least 4x/s: silence = reconnect
+  if (now() - lastMsg > 3 && (!es || es.readyState !== 0)) connect();
+  renderStatus();
+}, 1000);
+
+const rate = {ts: [], hz: null};
+function onState(m) {
+  const first = !st;
+  st = m; lastMsg = now(); dirty = true;
+  if (m.limits) [MAX_LIN, MAX_REV, MAX_ANG] = m.limits;
+  if (m.map) mapObjs = m.map;
+  if (m.outlines) outlines = m.outlines;
+  if (m.log_id < logId) { logLines = []; logId = 0; }       // node restarted
+  let added = false;
+  for (const [i, s] of m.log || []) if (i > logId) { logLines.push(s); logId = i; added = true; }
+  if (added) { logLines = logLines.slice(-30); renderLog(); }
+  logId = Math.max(logId, m.log_id);
+  if (m.world_rev !== worldRev) loadWorld(m.world_rev);
+  if (m.pose && m.pose.n !== pose.n) newPose(m.pose, m.age_pose || 0);
+  if (m.datum && (!datum || m.datum[0] !== datum[0] || m.datum[1] !== datum[1])) setDatum(m.datum);
+  if (first || now() - tStatus > 0.2) renderStatus();
+  renderDock();
 }
 
 async function loadWorld(rev) {
   worldRev = rev;
-  if (!rev) { world = []; buildLegend(); return; }
+  if (!rev) { world = []; v3.worldKey = null; return; }
   try { world = (await (await fetch("/world", {cache: "no-store"})).json()).parts || []; } catch (e) { worldRev = -1; }
-  buildLegend();
+  dirty = true;
 }
 
+// ---- pose: the last EKF pose, extrapolated with its speed and smoothed to the display rate ----
+const pose = {n: null, p: null, t: 0, disp: null, tf: 0};
 function axleOf(p) { return [p.x + ANT_BEHIND * Math.cos(p.yaw), p.y + ANT_BEHIND * Math.sin(p.yaw)]; }
-
-function addTrail(p) {
-  const [x, y] = axleOf(p), t = performance.now() / 1000, last = trail[trail.length - 1];
+function newPose(p, age) {
+  rate.ts.push([now(), p.n]);                               // poses per second over the last 3 s
+  while (rate.ts.length > 2 && now() - rate.ts[0][0] > 3) rate.ts.shift();
+  const [t0, n0] = rate.ts[0], span = now() - t0;
+  rate.hz = span > 0.5 && p.n >= n0 ? (p.n - n0) / span : null;
+  pose.n = p.n; pose.p = p; pose.t = now() - Math.min(age, 0.5);
+  const [x, y] = axleOf(p), t = now(), last = trail[trail.length - 1];
   if (!last || Math.hypot(x - last[0], y - last[1]) > 0.02) trail.push([x, y, t]);
   while (trail.length && (t - trail[0][2] > TRAIL_S || trail.length > 5000)) trail.shift();
 }
-
-// ---- status ----
-function badge(id, cls, v, s) {
-  const b = $(id);
-  b.className = "badge " + (cls || "");
-  b.querySelector(".v").textContent = v;
-  const e = b.querySelector(".s"); if (e) e.textContent = s || "";
+const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+function poseTarget(t) {                                    // axle pose now: the last pose moved on with v, w
+  const p = pose.p;
+  let [x, y] = axleOf(p), yaw = p.yaw;
+  const dt = Math.min(EXTRAP_MAX, Math.max(0, t - pose.t)), v = p.v || 0, w = p.w || 0;
+  if (Math.abs(w) > 1e-3) { x += v / w * (Math.sin(yaw + w * dt) - Math.sin(yaw)); y -= v / w * (Math.cos(yaw + w * dt) - Math.cos(yaw)); }
+  else { x += v * dt * Math.cos(yaw); y += v * dt * Math.sin(yaw); }
+  return {x, y, yaw: yaw + w * dt};
 }
-const ageText = a => a == null ? "never" : a < 10 ? a.toFixed(1) + " s" : Math.round(a) + " s";
-const ageCls = a => a == null || a > 2 ? "bad" : a > 0.5 ? "warn" : "ok";
-
-function renderStatus() {
-  if (!online || performance.now() - lastOk > 1500) {
-    badge("b-link", "bad", "OFFLINE", "page server not reachable");
-    renderNotice();
-    return;
-  }
-  const esp = [st.age_imu, st.age_log].filter(a => a != null);
-  const ageEsp = esp.length ? Math.min(...esp) : null;
-  const worst = [ageEsp, st.age_pose].some(a => ageCls(a) === "bad") ? "bad" : [ageEsp, st.age_pose].some(a => ageCls(a) === "warn") ? "warn" : "ok";
-  badge("b-link", worst, worst === "ok" ? "OK" : worst === "warn" ? "SLOW" : "LOST", "ESP " + ageText(ageEsp) + " · pose " + ageText(st.age_pose));
-  badge("b-manual", st.manual ? "ok" : "", st.manual == null ? "?" : st.manual ? "ON" : "OFF");
-  const as = st.assist_state || "FREE";
-  const acls = st.assist === false ? "" : as === "LOCKED" ? "ok" : as === "FREE" ? "info" : "warn";
-  badge("b-assist", acls, st.assist === false ? "OFF" : as, st.assist === false ? "" : st.assist_why);
-  if (st.pose) badge("b-speed", "", st.pose.v.toFixed(2) + " m/s", (st.pose.w >= 0 ? "+" : "") + st.pose.w.toFixed(2) + " rad/s");
-  else badge("b-speed", "", "--", "no pose");
-  // Sim speed (HIL only): the firmware runs on wall time, so a slow sim makes every result wrong
-  $("b-sim").style.display = st.rtf == null ? "none" : "";
-  if (st.rtf != null) badge("b-sim", st.rtf >= 0.95 ? "ok" : st.rtf >= 0.85 ? "warn" : "bad", st.rtf.toFixed(2) + "x",
-    st.rtf >= 0.95 ? "real time" : "too slow: driving and walls not valid");
-  $("c-manual").className = st.manual ? "on" : "";
-  $("c-manual").textContent = st.manual ? "Manual ON" : "Manual";
-  $("c-assist").className = st.assist ? "on" : "";
-  $("c-assist").textContent = st.assist ? "Assist ON" : st.assist === false ? "Assist OFF" : "Assist";
-  renderNotice();
+function updateDisp() {                                     // returns true when the drawn mower moved
+  const t = now(), dtf = Math.min(0.1, t - pose.tf); pose.tf = t;
+  if (!pose.p) { const had = !!pose.disp; pose.disp = null; return had; }
+  const g = poseTarget(t), d = pose.disp;
+  if (!d || Math.hypot(g.x - d.x, g.y - d.y) > 0.75 || Math.abs(wrap(g.yaw - d.yaw)) > 1.0) { pose.disp = g; return true; }
+  const k = 1 - Math.exp(-dtf / SMOOTH_TAU);
+  const nx = d.x + (g.x - d.x) * k, ny = d.y + (g.y - d.y) * k, nyaw = d.yaw + wrap(g.yaw - d.yaw) * k;
+  const moved = Math.abs(nx - d.x) + Math.abs(ny - d.y) + Math.abs(nyaw - d.yaw) > 1e-5;
+  pose.disp = {x: nx, y: ny, yaw: nyaw};
+  return moved;
 }
 
-function renderNotice() {
-  const live = online && st && performance.now() - lastOk <= 1500;
-  const note = !live ? "" : st.notice === "manual is off" ? "Manual is off: press Manual first" : st.notice === "stick lost: stopped" ? "Stick signal lost: stopped" : "";
-  const fl = performance.now() < flash.until ? flash.text : "";
-  $("notice").textContent = fl || note; $("notice").style.display = fl || (note && drive.active) ? "block" : "none";
-}
-function flashNotice(text) { flash = {text, until: performance.now() + 5000}; renderNotice(); setTimeout(renderNotice, 5100); }
+// ---- geography: odom metres <-> lat/lon (the firmware's flat earth at the datum) <-> web mercator tiles ----
+let datum = null;                                           // [lat, lon, source]
+function setDatum(d) { datum = d; v3.groundKey = null; dirty = true; renderAttr(); }
+const lonOf = x => datum[1] + x / (M_LAT * Math.cos(datum[0] * DEG)), latOf = y => datum[0] + y / M_LAT;
+const xOfLon = lon => (lon - datum[1]) * M_LAT * Math.cos(datum[0] * DEG), yOfLat = lat => (lat - datum[0]) * M_LAT;
+const tileX = (lon, z) => (lon + 180) / 360 * 2 ** z;
+const tileY = (lat, z) => (1 - Math.log(Math.tan(lat * DEG) + 1 / Math.cos(lat * DEG)) / Math.PI) / 2 * 2 ** z;
+const lonOfTile = (x, z) => x / 2 ** z * 360 - 180;
+const latOfTile = (y, z) => Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 2 ** z))) / DEG;
 
-function renderLog() {
-  const el = $("log"), atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
-  el.innerHTML = "";
-  for (const s of logLines) {
-    const d = document.createElement("div");
-    d.textContent = s;
-    if (s.includes("[WALL]")) d.className = "wall";
-    el.appendChild(d);
-  }
-  if (atEnd) el.scrollTop = el.scrollHeight;
+const tiles = new Map();
+let tileMaxZ = 19, tilesOk = 0, tilesBad = 0;
+const probe = document.createElement("canvas"); probe.width = probe.height = 256;
+function isPlaceholder(img) {                               // Esri's grey "Map data not yet available" tile
+  try {
+    const c = probe.getContext("2d", {willReadFrequently: true}); c.drawImage(img, 0, 0);
+    const px = [[2, 2], [253, 2], [2, 253], [253, 253], [128, 20]].map(([x, y]) => c.getImageData(x, y, 1, 1).data);
+    return px.every(d => Math.abs(d[0] - d[1]) < 6 && Math.abs(d[1] - d[2]) < 6 && d[0] > 170 && d[0] < 235 && Math.abs(d[0] - px[0][0]) < 5);
+  } catch (e) { return false; }
 }
-
-function buildLegend() {
-  const items = KINDS.map(([n, c]) => `<span><i style="background:${c}"></i>${n}</span>`);
-  items.push(`<span><i style="background:#2f5fb3"></i>outline</span>`, `<span><i style="background:#e07b00;opacity:.6"></i>trail</span>`);
-  if (world.length) items.push(`<span><i style="background:#9aa09b"></i>true objects</span>`, `<span><i style="background:none;border:1px dashed #555"></i>true mower</span>`);
-  $("legend").innerHTML = items.join("");
+function tile(z, x, y) {
+  const k = z + "/" + x + "/" + y;
+  let t = tiles.get(k);
+  if (t) return t;
+  t = {img: new Image(), ok: false, bad: false, z};
+  t.img.crossOrigin = "anonymous";
+  t.img.onload = () => {
+    if (isPlaceholder(t.img)) { t.bad = true; if (z <= tileMaxZ) { tileMaxZ = z - 1; v3.groundKey = null; } }
+    else { t.ok = true; tilesOk++; renderAttr(); }
+    dirty = true;
+  };
+  t.img.onerror = () => { t.bad = true; tilesBad++; tiles.delete(k); setTimeout(() => dirty = true, 5000); };   // retried later
+  t.img.src = TILE_URL(z, x, y);
+  tiles.set(k, t);
+  if (tiles.size > 400) for (const [key, v] of tiles) { if (tiles.size <= 300) break; if (v.z !== z) tiles.delete(key); }
+  return t;
 }
+const imageryOn = () => prefs.imagery && datum;
+function renderAttr() { $("attr").textContent = imageryOn() && tilesOk ? TILE_ATTR : ""; }
 
-// ---- drawing ----
+// ---- 2D view: north up, odom frame ----
 function resize() {
   DPR = window.devicePixelRatio || 1;
-  const r = cv.getBoundingClientRect();
-  W = r.width; H = r.height;
+  W = window.innerWidth; H = window.innerHeight;
   cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  dirty = true;
 }
 const sx = x => W / 2 + (x - view.x) * view.s, sy = y => H / 2 - (y - view.y) * view.s;
 const wx = px => view.x + (px - W / 2) / view.s, wy = py => view.y - (py - H / 2) / view.s;
@@ -245,66 +343,96 @@ function pathPoly(p, close) {
   if (close) ctx.closePath();
 }
 
+function drawTiles() {                                      // true when any imagery was drawn
+  if (!imageryOn()) return false;
+  const lat0 = datum[0], mpp0 = 156543.034 * Math.cos(lat0 * DEG);   // m per tile pixel at zoom 0
+  const z = Math.max(1, Math.min(tileMaxZ, Math.ceil(Math.log2(mpp0 * view.s * DPR / 1.4))));
+  const x0 = Math.floor(tileX(lonOf(wx(0)), z)), x1 = Math.floor(tileX(lonOf(wx(W)), z));
+  const y0 = Math.floor(tileY(latOf(wy(0)), z)), y1 = Math.floor(tileY(latOf(wy(H)), z));
+  if ((x1 - x0 + 1) * (y1 - y0 + 1) > 80) return false;
+  let any = false;
+  ctx.imageSmoothingEnabled = true;
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+    const a = Math.floor(sx(xOfLon(lonOfTile(tx, z)))), b = Math.floor(sy(yOfLat(latOfTile(ty, z))));
+    const c = Math.ceil(sx(xOfLon(lonOfTile(tx + 1, z)))), d = Math.ceil(sy(yOfLat(latOfTile(ty + 1, z))));
+    const t = tile(z, tx, ty);
+    if (t.ok) { ctx.drawImage(t.img, a, b, c - a, d - b); any = true; continue; }
+    for (let k = 1; k <= 6 && z - k >= 1; k++) {            // not loaded yet: a loaded parent, cropped
+      const p = tiles.get((z - k) + "/" + (tx >> k) + "/" + (ty >> k));
+      if (!p || !p.ok) continue;
+      const n = 256 >> k;
+      ctx.drawImage(p.img, (tx - ((tx >> k) << k)) * n, (ty - ((ty >> k) << k)) * n, n, n, a, b, c - a, d - b);
+      any = true; break;
+    }
+  }
+  return any;
+}
+
 function drawGrid() {
   let step = 1;
   while (step * view.s < 28) step *= step === 1 ? 5 : 2;   // 1, 5, 10, 20 m
   const x0 = Math.floor(wx(0) / step) * step, x1 = wx(W), y0 = Math.floor(wy(H) / step) * step, y1 = wy(0);
   ctx.lineWidth = 1;
-  for (let x = x0; x <= x1; x += step) { ctx.strokeStyle = Math.abs(x) < 1e-6 ? "#9aa59a" : "#d9ddd4"; ctx.beginPath(); ctx.moveTo(sx(x), 0); ctx.lineTo(sx(x), H); ctx.stroke(); }
-  for (let y = y0; y <= y1; y += step) { ctx.strokeStyle = Math.abs(y) < 1e-6 ? "#9aa59a" : "#d9ddd4"; ctx.beginPath(); ctx.moveTo(0, sy(y)); ctx.lineTo(W, sy(y)); ctx.stroke(); }
+  for (let x = x0; x <= x1; x += step) { ctx.strokeStyle = Math.abs(x) < 1e-6 ? "#5b6a5f" : "#2f3832"; ctx.beginPath(); ctx.moveTo(sx(x), 0); ctx.lineTo(sx(x), H); ctx.stroke(); }
+  for (let y = y0; y <= y1; y += step) { ctx.strokeStyle = Math.abs(y) < 1e-6 ? "#5b6a5f" : "#2f3832"; ctx.beginPath(); ctx.moveTo(0, sy(y)); ctx.lineTo(W, sy(y)); ctx.stroke(); }
 }
 
 function drawScale() {
-  const want = Math.min(W * 0.3, 160) / view.s;
-  const nice = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50].reduce((a, b) => b <= want ? b : a, 0.1);
-  const len = nice * view.s, x = 12, y = $("legend").offsetHeight + 30;
-  ctx.fillStyle = "rgba(255,255,255,.85)"; ctx.fillRect(x - 6, y - 18, len + 12, 26);
-  ctx.strokeStyle = "#1d2320"; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(x, y - 5); ctx.lineTo(x, y); ctx.lineTo(x + len, y); ctx.lineTo(x + len, y - 5); ctx.stroke();
-  ctx.fillStyle = "#1d2320"; ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center";
-  ctx.fillText(nice < 1 ? Math.round(nice * 100) + " cm" : nice + " m", x + len / 2, y - 7);
+  const want = Math.min(W * 0.25, 120) / view.s;
+  const nice = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100].reduce((a, b) => b <= want ? b : a, 0.1);
+  const len = nice * view.s, x1 = W - 70, x0 = x1 - len, y = 90;   // top right, left of the recenter button
+  ctx.lineCap = "round";
+  for (const [c, w] of [["rgba(0,0,0,.55)", 5], ["#fff", 2]]) {
+    ctx.strokeStyle = c; ctx.lineWidth = w;
+    ctx.beginPath(); ctx.moveTo(x0, y - 5); ctx.lineTo(x0, y); ctx.lineTo(x1, y); ctx.lineTo(x1, y - 5); ctx.stroke();
+  }
+  ctx.lineCap = "butt";
+  label(nice < 1 ? Math.round(nice * 100) + " cm" : nice + " m", (x0 + x1) / 2, y - 12, "#fff");
 }
 
 function label(text, x, y, color) {
   ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.strokeText(text, x, y);
+  ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.7)"; ctx.strokeText(text, x, y);
   ctx.fillStyle = color; ctx.fillText(text, x, y); ctx.textBaseline = "alphabetic";
 }
 
-function drawWorld() {
-  ctx.fillStyle = "rgba(120,126,121,.35)"; ctx.strokeStyle = "#8d938e"; ctx.lineWidth = 1;
+function drawWorld() {                                      // sim truth: the real objects
+  ctx.fillStyle = "rgba(230,235,232,.28)"; ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
   for (const p of world) {
     if (p.p) pathPoly(p.p.map(([x, y]) => [sx(x), sy(y)]), true);
     else { ctx.beginPath(); ctx.arc(sx(p.c[0]), sy(p.c[1]), Math.max(1, p.r * view.s), 0, 2 * Math.PI); }
     ctx.fill(); ctx.stroke();
   }
+  ctx.setLineDash([]);
 }
 
 function drawMap() {
-  if (!st || !st.map) return;
-  const labels = view.s > 35;
-  for (const [kind, x0, y0, x1, y1, h, hits] of st.map) {
-    const [name, color] = KINDS[kind] || ["kind " + kind, "#555"];
-    ctx.globalAlpha = Math.min(1, 0.45 + hits / 40);
-    ctx.strokeStyle = color; ctx.fillStyle = color;
-    if (kind === 4) {
-      ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(sx(x0 / 100), sy(y0 / 100), Math.max(4, x1 / 100 * view.s), 0, 2 * Math.PI); ctx.stroke();
-      ctx.globalAlpha = 1;
-      if (labels) label(name, sx(x0 / 100), sy(y0 / 100) - 14, color);
+  const labels = view.s > 70;
+  for (const [kind, x0, y0, x1, y1, h, hits] of mapObjs) {
+    const c = clsOf(kind), a = Math.min(1, 0.55 + hits / 40);
+    if (c === CLS.post) {
+      const r = Math.max(5, x1 / 100 * view.s);
+      ctx.beginPath(); ctx.arc(sx(x0 / 100), sy(y0 / 100), r, 0, 2 * Math.PI);
+      ctx.globalAlpha = a; ctx.fillStyle = c.color; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = "rgba(0,0,0,.6)"; ctx.stroke(); ctx.globalAlpha = 1;
+      if (labels) label(c.name, sx(x0 / 100), sy(y0 / 100) - r - 9, c.color);
     } else {
-      ctx.lineWidth = 6; ctx.lineCap = "round";
-      ctx.beginPath(); ctx.moveTo(sx(x0 / 100), sy(y0 / 100)); ctx.lineTo(sx(x1 / 100), sy(y1 / 100)); ctx.stroke();
+      const w = Math.max(4, Math.min(12, c.thick * view.s));
+      ctx.lineCap = "round"; ctx.globalAlpha = a;
+      for (const [col, lw] of [["rgba(0,0,0,.55)", w + 4], [c.color, w]]) {
+        ctx.strokeStyle = col; ctx.lineWidth = lw;
+        ctx.beginPath(); ctx.moveTo(sx(x0 / 100), sy(y0 / 100)); ctx.lineTo(sx(x1 / 100), sy(y1 / 100)); ctx.stroke();
+      }
       ctx.lineCap = "butt"; ctx.globalAlpha = 1;
-      if (labels) label(`${name} ${h} cm`, (sx(x0 / 100) + sx(x1 / 100)) / 2, (sy(y0 / 100) + sy(y1 / 100)) / 2 - 12, color);
+      if (labels) label(`${c.name} ${h} cm`, (sx(x0 / 100) + sx(x1 / 100)) / 2, (sy(y0 / 100) + sy(y1 / 100)) / 2 - 13, c.color);
     }
   }
-  ctx.globalAlpha = 1;
 }
 
 function drawOutlines() {
-  if (!st) return;
-  ctx.strokeStyle = "#2f5fb3"; ctx.fillStyle = "#2f5fb3"; ctx.lineWidth = 2;
-  for (const o of st.outlines) {
+  ctx.strokeStyle = "#4fb2ff"; ctx.fillStyle = "#4fb2ff"; ctx.lineWidth = 2.5;
+  for (const o of outlines) {
     if (!o.length) continue;
     pathPoly(o.map(([x, y]) => [sx(x / 100), sy(y / 100)]), false); ctx.stroke();
     for (const [x, y, corner] of o) { ctx.beginPath(); ctx.arc(sx(x / 100), sy(y / 100), corner ? 6 : 3.5, 0, 2 * Math.PI); ctx.fill(); }
@@ -312,72 +440,82 @@ function drawOutlines() {
 }
 
 function drawTrail() {
-  const t = performance.now() / 1000;
-  ctx.strokeStyle = "#e07b00"; ctx.lineWidth = 3; ctx.lineCap = "round";
+  const t = now();
+  ctx.strokeStyle = "#d9ff6e"; ctx.lineWidth = Math.max(2, Math.min(8, 0.06 * view.s)); ctx.lineCap = "round";
   for (let i = 1; i < trail.length; i++) {
     const [ax, ay] = trail[i - 1], [bx, by, bt] = trail[i];
     if (Math.hypot(bx - ax, by - ay) > 1) continue;         // pose jump: no line across it
-    ctx.globalAlpha = Math.max(0, 0.65 * (1 - (t - bt) / TRAIL_S));
+    ctx.globalAlpha = Math.max(0, 0.7 * (1 - (t - bt) / TRAIL_S));
     ctx.beginPath(); ctx.moveTo(sx(ax), sy(ay)); ctx.lineTo(sx(bx), sy(by)); ctx.stroke();
   }
   ctx.globalAlpha = 1; ctx.lineCap = "butt";
 }
 
 const FOOT = [[FRONT, HALF_W], [-REAR, HALF_W], [-REAR, -HALF_W], [FRONT, -HALF_W]];
+const ARROW = [[-0.08, 0.09], [FRONT - 0.02, 0], [-0.08, -0.09], [-0.04, 0]];
 
-function drawMower(p) {
-  const [x, y] = axleOf(p), yaw = p.yaw;
-  for (const t of TOF) {                                   // field-of-view wedges
+function drawMower(p) {                                     // p: axle pose
+  const {x, y, yaw} = p;
+  if (prefs.fields) for (const t of TOF) {                  // ToF fields of view
     const pts = [[t.x, t.y]];
     for (let a = -TOF_FOV / 2; a <= TOF_FOV / 2 + 0.1; a += 4.5) {
-      const r = (t.yaw + a) * Math.PI / 180;
+      const r = (t.yaw + a) * DEG;
       pts.push([t.x + TOF_RANGE * Math.cos(r), t.y + TOF_RANGE * Math.sin(r)]);
     }
     pathPoly(bodyPoly(x, y, yaw, pts), true);
-    ctx.fillStyle = "rgba(47,95,179,.10)"; ctx.fill();
-    ctx.strokeStyle = "rgba(47,95,179,.35)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = "rgba(79,178,255,.14)"; ctx.fill();
+    ctx.strokeStyle = "rgba(79,178,255,.5)"; ctx.lineWidth = 1; ctx.stroke();
   }
-  pathPoly(bodyPoly(x, y, yaw, FOOT), true);
-  ctx.fillStyle = "rgba(224,123,0,.55)"; ctx.fill();
-  ctx.strokeStyle = "#8a4b00"; ctx.lineWidth = 2; ctx.stroke();
-  pathPoly(bodyPoly(x, y, yaw, [[0, HALF_W], [0, -HALF_W]]), false); ctx.stroke();      // drive axle
-  pathPoly(bodyPoly(x, y, yaw, [[-0.05, 0.08], [FRONT - 0.01, 0], [-0.05, -0.08]]), true); // heading arrow (front = drive wheels)
-  ctx.fillStyle = "#1d2320"; ctx.fill();
-  ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), 3, 0, 2 * Math.PI); ctx.fillStyle = "#fff"; ctx.fill(); ctx.stroke();  // antenna
+  const big = Math.max(1, 14 / ((FRONT + REAR) * view.s));  // zoomed out: keep the mower visible (>= 14 px long)
+  const sc = pts => pts.map(([u, v]) => [u * big, v * big]);
+  ctx.shadowColor = "rgba(0,0,0,.45)"; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2;
+  pathPoly(bodyPoly(x, y, yaw, sc(FOOT)), true);
+  ctx.fillStyle = "#f4f7f5"; ctx.fill(); ctx.shadowColor = "transparent";
+  ctx.strokeStyle = "#1c2420"; ctx.lineWidth = 1.5; ctx.stroke();
+  pathPoly(bodyPoly(x, y, yaw, sc(ARROW)), true);           // heading (front = drive wheels)
+  ctx.fillStyle = "#22a85a"; ctx.fill();
 }
 
 function drawTruth(p) {
   pathPoly(bodyPoly(p.x, p.y, p.yaw, FOOT), true);          // truth pose = axle midpoint
-  ctx.setLineDash([5, 4]); ctx.strokeStyle = "rgba(29,35,32,.55)"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
 }
 
-function frame() {
-  if (v3.on) { render3d(); requestAnimationFrame(frame); return; }
-  if (view.follow && st && st.pose) [view.x, view.y] = axleOf(st.pose);
+function draw2d() {
+  if (view.follow && pose.disp) [view.x, view.y] = [pose.disp.x, pose.disp.y];
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.fillStyle = "#f4f5f0"; ctx.fillRect(0, 0, W, H);
-  drawGrid();
-  drawWorld();
+  ctx.fillStyle = "#1a201c"; ctx.fillRect(0, 0, W, H);
+  if (!drawTiles()) drawGrid();
+  if (prefs.truth && world.length) drawWorld();
   drawMap();
   drawOutlines();
   drawTrail();
-  if (st && st.truth) drawTruth(st.truth);
-  if (st && st.pose) drawMower(st.pose);
-  else label("no pose yet (/odometry/filtered/global)", W / 2, H / 2, "#66706a");
+  if (prefs.truth && st && st.truth) drawTruth(st.truth);
+  if (pose.disp) drawMower(pose.disp);
+  else label(st ? "waiting for the mower position" : "connecting", W / 2, H / 2, "#d7ddd9");
   drawScale();
+}
+
+function frame() {
+  const moved = updateDisp();
+  if (moved && view.follow) dirty = true;
+  if (moved || dirty) {
+    if (v3.on) render3d(); else draw2d();
+    dirty = false;
+  }
   requestAnimationFrame(frame);
 }
 
-// ---- pan / zoom ----
+// ---- 2D pan / zoom ----
 const pointers = new Map();
-let pinch = null;
+let pinch = null, down = null;
 function zoomAt(px, py, f) {
   const x = wx(px), y = wy(py);
-  view.s = Math.min(600, Math.max(4, view.s * f));
+  view.s = Math.min(600, Math.max(2, view.s * f));
   if (!view.follow) { view.x = x - (px - W / 2) / view.s; view.y = y + (py - H / 2) / view.s; }
+  dirty = true;
 }
-function setFollow(on) { view.follow = on; $("c-follow").className = on ? "on" : ""; v3.dirty = true; }
-let down = null;                                            // where a one-finger drag started
+function setFollow(on) { view.follow = on; $("recenter").style.display = on ? "none" : "grid"; dirty = true; }
 cv.addEventListener("pointerdown", e => { cv.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.offsetX, e.offsetY]); pinch = null; down = [e.offsetX, e.offsetY]; });
 cv.addEventListener("pointermove", e => {
   if (!pointers.has(e.pointerId)) return;
@@ -393,22 +531,19 @@ cv.addEventListener("pointermove", e => {
     }
     pinch = {d, m};
   }
+  dirty = true;
 });
 const lift = e => { pointers.delete(e.pointerId); pinch = null; };
 cv.addEventListener("pointerup", lift); cv.addEventListener("pointercancel", lift);
 cv.addEventListener("wheel", e => { e.preventDefault(); zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * 0.0015)); }, {passive: false});
 
-// ---- 3D view: three.js from cdnjs, loaded the first time 3D is opened (the 2D view needs nothing external) ----
-// Odom frame, metres, z up. Meshes are built once and moved; map, world and outlines are rebuilt only when they change.
-// Renders only after new state or input (the page polls ~7x/s), to stay light on the phone.
-const THREE_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
+// ---- 3D view (default): three.js r128, odom frame, metres, z up ----
+// Meshes are built once and moved; map, world, outlines and the aerial ground are rebuilt only when they change.
 const BODY_Z0 = 0.05, BODY_Z1 = 0.29;                       // body box height (sim mower.yaml cover envelope)
 const WHEEL_R = 0.075, WHEEL_Y = 0.182, TOF_Z = 0.09;        // drive wheels, ToF mount height (est.)
-const THICK = [0.08, 0.03, 0.06, 0.30];                     // m, drawn thickness of wall, fence, low edge, hedge
-const HINT2 = $("hint").textContent;
-const HINT3 = "Keys: W A S D or arrows to drive, Space = stop. Drag to orbit, right-drag or two fingers to pan, wheel to zoom.";
-const v3 = {on: false, loading: false, ready: false, dirty: true, mapKey: null, world: null, outKey: null,
-            cam: {az: -Math.PI / 2, el: 0.85, d: 7, tx: 0, ty: 0}};
+const SKY = 0xb9cfdc, GROUND = 0x34482f;
+const v3 = {on: false, loading: false, ready: false, mapKey: null, worldKey: null, outKey: null, groundKey: null, trailN: -1,
+            cam: {az: -Math.PI / 2, el: 0.95, d: 8, tx: 0, ty: 0}, pending: []};
 
 function load3d() {
   if (window.THREE) return Promise.resolve();
@@ -423,98 +558,102 @@ function load3d() {
   });
 }
 
-async function set3d(on) {
-  const b = $("c-3d");
-  if (on && !v3.ready) {
+async function setMode(mode) {
+  if (mode === "3d" && !v3.ready) {
     if (v3.loading) return;
-    v3.loading = true; b.disabled = true; b.textContent = "3D …";
-    try { await load3d(); } catch (e) { flashNotice("3D view not available: three.js could not be loaded (no internet?)"); }
-    if (window.THREE) try { init3d(); } catch (e) { flashNotice("3D view not available: no WebGL in this browser"); }
-    v3.loading = false; b.disabled = false; b.textContent = "3D";
-    if (!v3.ready) return;
+    v3.loading = true; renderSeg("3d");
+    try { await load3d(); } catch (e) { toast("3D view needs internet (three.js): showing 2D"); }
+    if (window.THREE) try { init3d(); } catch (e) { toast("3D view not available in this browser: showing 2D"); }
+    v3.loading = false;
+    if (!v3.ready) { mode = "2d"; }
   }
-  if (on && !view.follow) [v3.cam.tx, v3.cam.ty] = [view.x, view.y];   // open where the 2D view looked
-  if (!on && !view.follow) [view.x, view.y] = [v3.cam.tx, v3.cam.ty];
+  const on = mode === "3d";
+  if (on && !view.follow) [v3.cam.tx, v3.cam.ty] = [view.x, view.y];   // open where the other view looked
+  if (!on && v3.on && !view.follow) [view.x, view.y] = [v3.cam.tx, v3.cam.ty];
   v3.on = on;
-  b.className = on ? "on" : "";
   cv.style.display = on ? "none" : "";
   if (v3.ready) v3.r.domElement.style.display = on ? "" : "none";
-  $("hint").textContent = on ? HINT3 : HINT2;
   if (on) resize3d(); else resize();
-  v3.dirty = true;
+  renderSeg(mode);
+  dirty = true;
 }
+function renderSeg(mode) { $("v2").className = mode === "2d" ? "on" : ""; $("v3").className = mode === "3d" ? "on" : ""; }
 
 function resize3d() {
-  const r = $("view").getBoundingClientRect();
-  v3.W = Math.max(1, r.width); v3.H = Math.max(1, r.height);
+  v3.W = Math.max(1, window.innerWidth); v3.H = Math.max(1, window.innerHeight);
   v3.r.setSize(v3.W, v3.H, false);
   v3.cam3.aspect = v3.W / v3.H; v3.cam3.updateProjectionMatrix();
-  v3.dirty = true;
+  dirty = true;
 }
 
 function init3d() {
   const T = THREE;
   const r = new T.WebGLRenderer({antialias: true});
-  r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
-  r.setClearColor(0xf4f5f0);
+  r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  r.setClearColor(SKY);
   const scene = new T.Scene();
-  const cam3 = new T.PerspectiveCamera(50, 1, 0.05, 300);
+  scene.fog = new T.Fog(SKY, 70, 260);
+  const cam3 = new T.PerspectiveCamera(50, 1, 0.05, 600);
   cam3.up.set(0, 0, 1);
-  scene.add(new T.HemisphereLight(0xffffff, 0x9aa59a, 0.8));
-  const sun = new T.DirectionalLight(0xffffff, 0.5); sun.position.set(-3, -5, 8); scene.add(sun);
-  const grid = new T.GridHelper(100, 100, 0x9aa59a, 0xd9ddd4);   // 1 m, in the xy plane
-  grid.rotation.x = Math.PI / 2; scene.add(grid);
+  scene.add(new T.HemisphereLight(0xffffff, 0x6d7d66, 0.85));
+  const sun = new T.DirectionalLight(0xffffff, 0.55); sun.position.set(-3, -5, 8); scene.add(sun);
+  // ground: a plain field everywhere, the aerial texture on top around the datum, a faint grid while there is no imagery
+  const field = new T.Mesh(new T.PlaneGeometry(2000, 2000), new T.MeshBasicMaterial({color: GROUND}));
+  field.position.z = -0.02; scene.add(field);
+  const grid = new T.GridHelper(100, 100, 0x6f8468, 0x4b5d46);
+  grid.rotation.x = Math.PI / 2; grid.position.z = -0.01; scene.add(grid);
+  const ground = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({color: 0xffffff}));
+  ground.visible = false; ground.position.z = -0.005; scene.add(ground);
 
-  const box = new T.BoxGeometry(1, 1, 1), cyl = new T.CylinderGeometry(1, 1, 1, 16);
+  const box = new T.BoxGeometry(1, 1, 1), cyl = new T.CylinderGeometry(1, 1, 1, 20);
   cyl.rotateX(Math.PI / 2);                                   // axis along z
-  const kindMat = KINDS.map(([n, c], i) => new T.MeshLambertMaterial(i === 1
-    ? {color: c, transparent: true, opacity: 0.45, depthWrite: false} : {color: c}));
-  const greyMat = new T.MeshLambertMaterial({color: 0x9aa09b, transparent: true, opacity: 0.45, depthWrite: false});
-  const greyEdge = new T.LineBasicMaterial({color: 0x8d938e});
-  const blueMat = new T.MeshBasicMaterial({color: 0x2f5fb3});
+  const clsMat = new Map(Object.values(CLS).map(c => [c, new T.MeshLambertMaterial({color: c.color})]));
+  const greyMat = new T.MeshLambertMaterial({color: 0xe8ece9, transparent: true, opacity: 0.35, depthWrite: false});
+  const greyEdge = new T.LineBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.7});
+  const blueMat = new T.MeshBasicMaterial({color: 0x4fb2ff});
   const group = () => { const g = new T.Group(); scene.add(g); return g; };
 
-  // mower: body box around the axle (front = drive wheels), wheels, heading arrow, antenna, ToF frusta
+  // mower: body around the axle (front = drive wheels), dark top, wheels, green heading arrow, ToF frusta
   const L = FRONT + REAR, bodyGeo = new T.BoxGeometry(L, 2 * HALF_W, BODY_Z1 - BODY_Z0);
   bodyGeo.translate((FRONT - REAR) / 2, 0, (BODY_Z0 + BODY_Z1) / 2);
   const bodyEdges = new T.EdgesGeometry(bodyGeo);
   const mower = group();
-  mower.add(new T.Mesh(bodyGeo, new T.MeshLambertMaterial({color: 0xe07b00, transparent: true, opacity: 0.8})));
-  mower.add(new T.LineSegments(bodyEdges, new T.LineBasicMaterial({color: 0x8a4b00})));
-  const wheelGeo = new T.CylinderGeometry(WHEEL_R, WHEEL_R, 0.04, 16), dark = new T.MeshLambertMaterial({color: 0x262b28});
-  for (const s of [1, -1]) { const w = new T.Mesh(wheelGeo, dark); w.position.set(0, s * WHEEL_Y, WHEEL_R); mower.add(w); }
-  const arrow = new T.Shape([[-0.05, 0.08], [FRONT - 0.01, 0], [-0.05, -0.08]].map(([x, y]) => new T.Vector2(x, y)));
-  const am = new T.Mesh(new T.ShapeGeometry(arrow), new T.MeshBasicMaterial({color: 0x1d2320, side: T.DoubleSide}));
-  am.position.z = BODY_Z1 + 0.003; mower.add(am);
-  const ant = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.02, 12), new T.MeshLambertMaterial({color: 0xffffff}));
-  ant.rotation.x = Math.PI / 2; ant.position.set(-ANT_BEHIND, 0, BODY_Z1 + 0.01); mower.add(ant);
-  const h = TOF_RANGE * Math.tan(TOF_FOV / 2 * Math.PI / 180), R = TOF_RANGE;
+  mower.add(new T.Mesh(bodyGeo, new T.MeshLambertMaterial({color: 0xf1f4f2})));
+  mower.add(new T.LineSegments(bodyEdges, new T.LineBasicMaterial({color: 0x56605a})));
+  const topGeo = new T.PlaneGeometry(L - 0.06, 2 * HALF_W - 0.06); topGeo.translate((FRONT - REAR) / 2, 0, BODY_Z1 + 0.002);
+  mower.add(new T.Mesh(topGeo, new T.MeshLambertMaterial({color: 0x2b322e})));
+  const wheelGeo = new T.CylinderGeometry(WHEEL_R, WHEEL_R, 0.045, 20), dark = new T.MeshLambertMaterial({color: 0x1b1f1d});
+  for (const s of [1, -1]) { const w = new T.Mesh(wheelGeo, dark); w.position.set(0, s * (HALF_W + 0.025), WHEEL_R); mower.add(w); }
+  const arrow = new T.Shape(ARROW.map(([x, y]) => new T.Vector2(x, y)));
+  const am = new T.Mesh(new T.ShapeGeometry(arrow), new T.MeshBasicMaterial({color: 0x3fd17a, side: T.DoubleSide}));
+  am.position.z = BODY_Z1 + 0.005; mower.add(am);
+  const h = TOF_RANGE * Math.tan(TOF_FOV / 2 * DEG), R = TOF_RANGE;
   const fc = [[R, h, h], [R, -h, h], [R, -h, -h], [R, h, -h]], tri = [];
   for (let i = 0; i < 4; i++) tri.push(0, 0, 0, ...fc[i], ...fc[(i + 1) % 4]);
   const fGeo = new T.BufferGeometry(); fGeo.setAttribute("position", new T.Float32BufferAttribute(tri, 3));
   const eGeo = new T.BufferGeometry(); eGeo.setAttribute("position", new T.Float32BufferAttribute(
     fc.flatMap((c, i) => [0, 0, 0, ...c, ...c, ...fc[(i + 1) % 4]]), 3));
-  const fMat = new T.MeshBasicMaterial({color: 0x2f5fb3, transparent: true, opacity: 0.10, side: T.DoubleSide, depthWrite: false});
-  const eMat = new T.LineBasicMaterial({color: 0x2f5fb3, transparent: true, opacity: 0.35});
+  const fMat = new T.MeshBasicMaterial({color: 0x4fb2ff, transparent: true, opacity: 0.12, side: T.DoubleSide, depthWrite: false});
+  const eMat = new T.LineBasicMaterial({color: 0x4fb2ff, transparent: true, opacity: 0.45});
+  const fields = new T.Group(); mower.add(fields);
   for (const t of TOF) {
-    const g = new T.Group(); g.position.set(t.x, t.y, TOF_Z); g.rotation.z = t.yaw * Math.PI / 180;
-    g.add(new T.Mesh(fGeo, fMat), new T.LineSegments(eGeo, eMat)); mower.add(g);
+    const g = new T.Group(); g.position.set(t.x, t.y, TOF_Z); g.rotation.z = t.yaw * DEG;
+    g.add(new T.Mesh(fGeo, fMat), new T.LineSegments(eGeo, eMat)); fields.add(g);
   }
   // true mower (sim): dashed outline of the same box
-  const truth = new T.LineSegments(bodyEdges, new T.LineDashedMaterial({color: 0x1d2320, dashSize: 0.04, gapSize: 0.03, transparent: true, opacity: 0.6}));
+  const truth = new T.LineSegments(bodyEdges, new T.LineDashedMaterial({color: 0xffffff, dashSize: 0.04, gapSize: 0.03, transparent: true, opacity: 0.8}));
   truth.computeLineDistances(); scene.add(truth);
-  // trail: a flat ribbon, fading to the background like the 2D trail
+  // trail: a flat ribbon on the ground
   const N = 5000, trailGeo = new T.BufferGeometry();
   trailGeo.setAttribute("position", new T.BufferAttribute(new Float32Array(N * 18), 3));
-  trailGeo.setAttribute("color", new T.BufferAttribute(new Float32Array(N * 18), 3));
-  const trailMesh = new T.Mesh(trailGeo, new T.MeshBasicMaterial({vertexColors: true, side: T.DoubleSide}));
+  const trailMesh = new T.Mesh(trailGeo, new T.MeshBasicMaterial({color: 0xd9ff6e, transparent: true, opacity: 0.6, side: T.DoubleSide, depthWrite: false}));
   trailMesh.frustumCulled = false; scene.add(trailMesh);
 
-  Object.assign(v3, {r, scene, cam3, box, cyl, kindMat, greyMat, greyEdge, blueMat, mower, truth, trailGeo,
+  Object.assign(v3, {r, scene, cam3, box, cyl, clsMat, greyMat, greyEdge, blueMat, mower, fields, truth, trailGeo, grid, ground,
     mapG: group(), worldG: group(), outG: group(), dot: new T.CircleGeometry(0.03, 12), bigDot: new T.CircleGeometry(0.05, 12)});
   for (const g of [box, cyl, v3.dot, v3.bigDot]) g.userData.shared = true;
   r.domElement.style.display = "none";
-  $("view").insertBefore(r.domElement, $("legend"));
+  $("view").insertBefore(r.domElement, $("top"));
   bind3dInput(r.domElement);
   v3.ready = true;
 }
@@ -523,32 +662,49 @@ function clearGroup(g) {                                    // frees the group's
   for (const c of [...g.children]) { g.remove(c); if (c.geometry && !c.geometry.userData.shared) c.geometry.dispose(); }
 }
 
-// a ground ribbon (half width hw) along segments [[ax, ay, bx, by, color]], into position/color arrays from index 0
-function ribbon(pos, col, segs, hw, z) {
-  let k = 0;
-  for (const [ax, ay, bx, by, c] of segs) {
-    const l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l * hw, ny = (bx - ax) / l * hw;
-    for (const [x, y] of [[ax + nx, ay + ny], [ax - nx, ay - ny], [bx + nx, by + ny], [bx + nx, by + ny], [ax - nx, ay - ny], [bx - nx, by - ny]]) {
-      pos[k] = x; pos[k + 1] = y; pos[k + 2] = z;
-      if (col) { col[k] = c[0]; col[k + 1] = c[1]; col[k + 2] = c[2]; }
-      k += 3;
+// aerial ground: 5 x 5 tiles at the deepest zoom with imagery, centred on the datum, drawn into one texture as they load
+function sync3dGround() {
+  const on = imageryOn(), key = on ? datum[0] + "," + datum[1] + "," + tileMaxZ : "off";
+  if (key !== v3.groundKey) {
+    v3.groundKey = key; v3.pending = [];
+    const g = v3.ground;
+    if (g.material.map) { g.material.map.dispose(); g.material.map = null; }
+    g.visible = false; v3.grid.visible = true;
+    if (on) {
+      const z = Math.min(tileMaxZ, 19), N = 5, cx = Math.floor(tileX(datum[1], z)) - 2, cy = Math.floor(tileY(datum[0], z)) - 2;
+      const x0 = xOfLon(lonOfTile(cx, z)), x1 = xOfLon(lonOfTile(cx + N, z));
+      const yN = yOfLat(latOfTile(cy, z)), yS = yOfLat(latOfTile(cy + N, z));
+      const can = document.createElement("canvas"); can.width = can.height = 256 * N;
+      const tex = new THREE.CanvasTexture(can);
+      tex.anisotropy = v3.r.capabilities.getMaxAnisotropy();
+      g.geometry.dispose(); g.geometry = new THREE.PlaneGeometry(x1 - x0, yN - yS);
+      g.position.set((x0 + x1) / 2, (yN + yS) / 2, -0.005);
+      g.material.map = tex; g.material.needsUpdate = true;
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) v3.pending.push({t: tile(z, cx + i, cy + j), i, j, can, tex});
     }
   }
-  return k / 3;
+  if (!v3.pending.length) return;
+  v3.pending = v3.pending.filter(p => {
+    if (p.t.bad) return false;
+    if (!p.t.ok) return true;
+    try { p.can.getContext("2d").drawImage(p.t.img, p.i * 256, p.j * 256); p.tex.needsUpdate = true; } catch (e) { return false; }
+    v3.ground.visible = true; v3.grid.visible = false;
+    return false;
+  });
+  if (v3.pending.length) dirty = true;                      // keep checking while tiles load
 }
 
 function sync3dMap() {
-  const map = (st && st.map) || [];
-  const key = map.map(m => m.slice(0, 6).join(",")).join(";");     // hits change all the time: not part of the key
+  const key = mapObjs.map(m => m.slice(0, 6).join(",")).join(";");   // hits change all the time: not part of the key
   if (key === v3.mapKey) return;
   v3.mapKey = key; clearGroup(v3.mapG);
-  for (const [kind, x0, y0, x1, y1, hc] of map) {
-    const h = Math.max(0.02, hc / 100), m = new THREE.Mesh(kind === 4 ? v3.cyl : v3.box, v3.kindMat[kind] || v3.kindMat[0]);
-    if (kind === 4) {
+  for (const [kind, x0, y0, x1, y1, hc] of mapObjs) {
+    const c = clsOf(kind), h = Math.max(0.02, hc / 100), m = new THREE.Mesh(c === CLS.post ? v3.cyl : v3.box, v3.clsMat.get(c));
+    if (c === CLS.post) {
       const r = Math.max(0.02, x1 / 100);
       m.scale.set(r, r, h); m.position.set(x0 / 100, y0 / 100, h / 2);
     } else {
-      const th = THICK[kind] || 0.08, l = Math.hypot(x1 - x0, y1 - y0) / 100;
+      const th = c.thick, l = Math.hypot(x1 - x0, y1 - y0) / 100;
       m.scale.set(l + th, th, h); m.position.set((x0 + x1) / 200, (y0 + y1) / 200, h / 2);
       m.rotation.z = Math.atan2(y1 - y0, x1 - x0);
     }
@@ -557,10 +713,12 @@ function sync3dMap() {
 }
 
 function sync3dWorld() {
-  if (world === v3.world) return;
-  v3.world = world; clearGroup(v3.worldG);
+  const key = prefs.truth ? world : null;
+  if (key === v3.worldKey) return;
+  v3.worldKey = key; clearGroup(v3.worldG);
+  if (!key) return;
   for (const p of world) {
-    const [z0, z1] = p.z || [0, {wall: 1.0, curb: 0.08}[p.k] || 0.5];   // old web_ui: no heights sent
+    const [z0, z1] = p.z || [0, 0.5];
     const zb = Math.max(0, z0), h = Math.max(0.01, z1 - zb);
     if (p.p) {
       const geo = new THREE.ExtrudeGeometry(new THREE.Shape(p.p.map(([x, y]) => new THREE.Vector2(x, y))), {depth: h, bevelEnabled: false});
@@ -573,16 +731,27 @@ function sync3dWorld() {
   }
 }
 
+// a ground ribbon (half width hw) along segments [[ax, ay, bx, by]], into a position array from index 0
+function ribbon(pos, segs, hw, z) {
+  let k = 0;
+  for (const [ax, ay, bx, by] of segs) {
+    const l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l * hw, ny = (bx - ax) / l * hw;
+    for (const [x, y] of [[ax + nx, ay + ny], [ax - nx, ay - ny], [bx + nx, by + ny], [bx + nx, by + ny], [ax - nx, ay - ny], [bx - nx, by - ny]]) {
+      pos[k] = x; pos[k + 1] = y; pos[k + 2] = z; k += 3;
+    }
+  }
+  return k / 3;
+}
+
 function sync3dOutlines() {
-  const outs = (st && st.outlines) || [];
-  const key = outs.map(o => o.length + (o.length ? ":" + o[o.length - 1].join(",") : "")).join(";");
+  const key = outlines.map(o => o.length + (o.length ? ":" + o[o.length - 1].join(",") : "")).join(";");
   if (key === v3.outKey) return;
   v3.outKey = key; clearGroup(v3.outG);
-  for (const o of outs) {
+  for (const o of outlines) {
     if (o.length > 1) {
       const segs = [];
       for (let i = 1; i < o.length; i++) segs.push([o[i - 1][0] / 100, o[i - 1][1] / 100, o[i][0] / 100, o[i][1] / 100]);
-      const pos = new Float32Array(segs.length * 18); ribbon(pos, null, segs, 0.01, 0.015);
+      const pos = new Float32Array(segs.length * 18); ribbon(pos, segs, 0.015, 0.015);
       const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
       v3.outG.add(new THREE.Mesh(g, v3.blueMat));
     }
@@ -593,48 +762,47 @@ function sync3dOutlines() {
   }
 }
 
-const BG = [0xf4 / 255, 0xf5 / 255, 0xf0 / 255], ORANGE = [0xe0 / 255, 0x7b / 255, 0];
 function sync3dTrail() {
-  const t = performance.now() / 1000, segs = [];
+  const last = trail[trail.length - 1], key = trail.length + (last ? last[2] : 0);
+  if (key === v3.trailN) return;
+  v3.trailN = key;
+  const segs = [];
   for (let i = 1; i < trail.length; i++) {
-    const [ax, ay] = trail[i - 1], [bx, by, bt] = trail[i];
-    if (Math.hypot(bx - ax, by - ay) > 1) continue;           // pose jump: no line across it
-    const a = Math.max(0, 0.65 * (1 - (t - bt) / TRAIL_S));
-    segs.push([ax, ay, bx, by, BG.map((b, j) => b + (ORANGE[j] - b) * a)]);
+    const [ax, ay] = trail[i - 1], [bx, by] = trail[i];
+    if (Math.hypot(bx - ax, by - ay) <= 1) segs.push([ax, ay, bx, by]);   // pose jump: no ribbon across it
   }
-  const g = v3.trailGeo, n = ribbon(g.attributes.position.array, g.attributes.color.array, segs.slice(-5000), 0.015, 0.01);
-  g.setDrawRange(0, n); g.attributes.position.needsUpdate = true; g.attributes.color.needsUpdate = true;
+  const g = v3.trailGeo, n = ribbon(g.attributes.position.array, segs.slice(-5000), 0.03, 0.01);
+  g.setDrawRange(0, n); g.attributes.position.needsUpdate = true;
 }
 
 function render3d() {
-  if (!v3.dirty || !v3.ready) return;
-  v3.dirty = false;
-  sync3dMap(); sync3dWorld(); sync3dOutlines(); sync3dTrail();
-  const p = st && st.pose;
-  v3.mower.visible = !!p;
-  if (p) { const [x, y] = axleOf(p); v3.mower.position.set(x, y, 0); v3.mower.rotation.z = p.yaw; }
-  const q = st && st.truth;
+  if (!v3.ready) return;
+  sync3dGround(); sync3dMap(); sync3dWorld(); sync3dOutlines(); sync3dTrail();
+  const p = pose.disp;
+  v3.mower.visible = !!p; v3.fields.visible = prefs.fields;
+  if (p) { v3.mower.position.set(p.x, p.y, 0); v3.mower.rotation.z = p.yaw; }
+  const q = prefs.truth && st && st.truth;
   v3.truth.visible = !!q;
   if (q) { v3.truth.position.set(q.x, q.y, 0); v3.truth.rotation.z = q.yaw; }   // truth = axle midpoint
   const c = v3.cam;
-  if (view.follow && p) [c.tx, c.ty] = axleOf(p);
+  if (view.follow && p) [c.tx, c.ty] = [p.x, p.y];
   const ce = Math.cos(c.el);
   v3.cam3.position.set(c.tx + c.d * ce * Math.cos(c.az), c.ty + c.d * ce * Math.sin(c.az), c.d * Math.sin(c.el));
   v3.cam3.lookAt(c.tx, c.ty, 0);
   v3.r.render(v3.scene, v3.cam3);
 }
 
-// orbit (drag), pan (right-drag, shift-drag, two fingers; stops Follow like a 2D pan), zoom (wheel, pinch)
+// orbit (drag), pan (right-drag, shift-drag, two fingers; stops following), zoom (wheel, pinch)
 function pan3d(dx, dy) {
   setFollow(false);
-  const c = v3.cam, k = c.d * 2 * Math.tan(25 * Math.PI / 180) / v3.H;
+  const c = v3.cam, k = c.d * 2 * Math.tan(25 * DEG) / v3.H;
   const rx = -Math.sin(c.az), ry = Math.cos(c.az), fx = -Math.cos(c.az), fy = -Math.sin(c.az), kf = k / Math.max(0.3, Math.sin(c.el));
   c.tx += -rx * dx * k + fx * dy * kf; c.ty += -ry * dx * k + fy * dy * kf;
 }
 function bind3dInput(el) {
   const ptr = new Map(), c = v3.cam;
   let two = null, btn = 0;
-  const zoom = f => { c.d = Math.min(120, Math.max(0.6, c.d * f)); };
+  const zoom = f => { c.d = Math.min(150, Math.max(0.8, c.d * f)); };
   el.addEventListener("contextmenu", e => e.preventDefault());
   el.addEventListener("pointerdown", e => { el.setPointerCapture(e.pointerId); ptr.set(e.pointerId, [e.offsetX, e.offsetY]); two = null; btn = e.button; });
   el.addEventListener("pointermove", e => {
@@ -643,7 +811,7 @@ function bind3dInput(el) {
     if (ptr.size === 1) {
       const dx = e.offsetX - prev[0], dy = e.offsetY - prev[1];
       if (btn === 2 || btn === 1 || e.shiftKey) pan3d(dx, dy);
-      else { c.az -= dx * 0.008; c.el = Math.min(1.55, Math.max(0.08, c.el + dy * 0.008)); }
+      else { c.az -= dx * 0.008; c.el = Math.min(1.55, Math.max(0.12, c.el + dy * 0.008)); }
     } else if (ptr.size === 2) {
       const [a, b] = [...ptr.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
       if (two) {
@@ -653,18 +821,30 @@ function bind3dInput(el) {
       }
       two = {d, m, move: two ? two.move : 0};
     }
-    v3.dirty = true;
+    dirty = true;
   });
-  const lift = e => { ptr.delete(e.pointerId); two = null; };
-  el.addEventListener("pointerup", lift); el.addEventListener("pointercancel", lift);
-  el.addEventListener("wheel", e => { e.preventDefault(); zoom(Math.exp(e.deltaY * 0.0015)); v3.dirty = true; }, {passive: false});
+  const up = e => { ptr.delete(e.pointerId); two = null; };
+  el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
+  el.addEventListener("wheel", e => { e.preventDefault(); zoom(Math.exp(e.deltaY * 0.0015)); dirty = true; }, {passive: false});
 }
 
-// ---- driving: joystick and keys feed one stick, sent at 10 Hz while held ----
+// ---- driving: joystick and keys feed one stick, sent at 20 Hz while held ----
+// Stick shaping by angle, not per axis: the angle from straight ahead (or straight back) is bent per quadrant,
+// a' = 90°·(a/90°)^ANGLE_P (15° -> 5°, 45° -> 30°, 90° -> 90° = turn on the spot), so a stick pushed roughly
+// forward drives nearly straight; the distance from the centre sets the speed (deadzone, then the CURVE).
+function shapeStick(x, y) {                                  // x right, y up (-1..1) -> [forward, left] (-1..1)
+  const m = Math.min(1, Math.hypot(x, y));
+  if (m < DEAD) return [0, 0];
+  const mag = Math.pow((m - DEAD) / (1 - DEAD), CURVE);
+  const a = Math.atan2(x, y), back = Math.abs(a) > Math.PI / 2;
+  const off = back ? Math.PI - Math.abs(a) : Math.abs(a);   // 0..90° from the forward or backward axis
+  const off2 = Math.PI / 2 * Math.pow(off / (Math.PI / 2), ANGLE_P);
+  const a2 = Math.sign(a) * (back ? Math.PI - off2 : off2);
+  return [mag * Math.cos(a2), -mag * Math.sin(a2)];
+}
 const drive = {joy: null, keys: new Set(), active: false};
-const shape = v => { const a = Math.abs(v); return a < DEAD ? 0 : Math.sign(v) * Math.pow((Math.min(a, 1) - DEAD) / (1 - DEAD), CURVE); };
 function stick() {                                          // [fwd -1..1, left -1..1] or null
-  if (drive.joy) return [shape(drive.joy[1]), shape(-drive.joy[0])];
+  if (drive.joy) return shapeStick(drive.joy[0], drive.joy[1]);
   const k = drive.keys;
   if (!k.size) return null;
   return [(k.has("f") ? 1 : 0) - (k.has("b") ? 1 : 0), (k.has("l") ? 1 : 0) - (k.has("r") ? 1 : 0)];
@@ -679,7 +859,7 @@ function sendStick() {
     post("/drive", {held: false});
   }
 }
-setInterval(sendStick, 100);
+setInterval(sendStick, 50);
 function release() { drive.joy = null; drive.keys.clear(); knob(0, 0); $("joy").classList.remove("held"); sendStick(); }
 
 const joy = $("joy");
@@ -687,7 +867,7 @@ function knob(x, y) { $("knob").style.transform = `translate(${x}px, ${y}px)`; }
 function joyMove(e) {
   const r = joy.getBoundingClientRect(), R = r.width / 2;
   let dx = e.clientX - r.left - R, dy = e.clientY - r.top - R;
-  const d = Math.hypot(dx, dy), lim = R - 20;
+  const d = Math.hypot(dx, dy), lim = R - 18;
   if (d > lim) { dx *= lim / d; dy *= lim / d; }
   knob(dx, dy);
   drive.joy = [dx / lim, -dy / lim];
@@ -702,7 +882,8 @@ window.addEventListener("keydown", e => {
   const k = KEYMAP[e.code];
   if (!k || e.ctrlKey || e.metaKey || e.altKey) return;
   e.preventDefault();
-  if (!drive.keys.has(k)) { drive.keys.add(k); sendStick(); }    // OS key repeat is ignored: the 10 Hz timer sends
+  if (st && st.manual === false) { if (!e.repeat) toast("Tap Take over to drive"); return; }
+  if (!drive.keys.has(k)) { drive.keys.add(k); sendStick(); }    // OS key repeat is ignored: the 20 Hz timer sends
 });
 window.addEventListener("keyup", e => { const k = KEYMAP[e.code]; if (k) { drive.keys.delete(k); sendStick(); } });
 window.addEventListener("blur", release);
@@ -710,21 +891,106 @@ document.addEventListener("visibilitychange", () => { if (document.hidden) relea
 
 function stopAll() { drive.joy = null; drive.keys.clear(); drive.active = false; knob(0, 0); joy.classList.remove("held"); cmd("stop"); }
 
-// ---- buttons ----
-$("stop").addEventListener("click", stopAll);
+// ---- status, dock, drawer ----
+const ageText = a => a == null ? "never" : a < 10 ? a.toFixed(1) + " s" : Math.round(a) + " s";
+const ageCls = a => a == null || a > 2 ? "bad" : a > 0.5 ? "warn" : "ok";
+const live = () => st && now() - lastMsg < 1.5;
+
+function setText(id, text, cls) { const e = $(id); e.textContent = text; e.className = cls || ""; }
+let tStatus = 0;
+function renderStatus() {
+  const pill = $("pill");
+  tStatus = now();
+  if (!live()) {
+    pill.className = "glass bad"; setText("pill-t", st ? "Offline" : "Connecting"); setText("pill-s", "");
+    setText("d-link", "page server not reachable", "bad");
+    $("c-assist").classList.remove("show"); $("c-sim").classList.remove("show");
+    return;
+  }
+  const esp = [st.age_imu, st.age_log].filter(a => a != null), ageEsp = esp.length ? Math.min(...esp) : null;
+  const ce = ageCls(ageEsp), cp = ageCls(st.age_pose), worst = [ce, cp].includes("bad") ? "bad" : [ce, cp].includes("warn") ? "warn" : "ok";
+  const v = st.pose ? st.pose.v : 0;
+  pill.className = "glass " + worst;
+  setText("pill-t", ce === "bad" ? "Mower not connected" : cp === "bad" ? "No position" : st.manual ? "Manual" : "Ready");
+  setText("pill-s", worst === "bad" ? "" : Math.abs(v) >= 0.02 ? Math.abs(v).toFixed(2) + " m/s" : worst === "warn" ? "weak link" : "");
+  setText("d-link", "mower " + ageText(ageEsp) + " · position " + ageText(st.age_pose), worst);
+  setText("d-rate", rate.hz == null || st.age_pose == null || st.age_pose > 2 ? "--" : rate.hz.toFixed(1) + " /s");
+  setText("d-speed", st.pose ? `${st.pose.v.toFixed(2)} m/s · ${(st.pose.w >= 0 ? "+" : "") + st.pose.w.toFixed(2)} rad/s` : "--");
+  const as = st.assist_state || "FREE";
+  setText("d-assist", st.assist === false ? "off" : st.assist == null ? "?" : as + (st.assist_why ? " · " + st.assist_why : ""));
+  const showAssist = st.manual && st.assist !== false && as !== "FREE";
+  $("c-assist").classList.toggle("show", !!showAssist);
+  if (showAssist) $("c-assist").querySelector("span").textContent = ASSIST_TEXT[as] || as[0] + as.slice(1).toLowerCase();
+  // sim speed (HIL only): the firmware runs on wall time, so a slow sim makes driving and the wall map invalid
+  $("d-sim-row").style.display = st.rtf == null ? "none" : "";
+  if (st.rtf != null) setText("d-sim", st.rtf.toFixed(2) + "x" + (st.rtf >= 0.95 ? " (real time)" : " (too slow)"), st.rtf >= 0.95 ? "ok" : st.rtf >= 0.85 ? "warn" : "bad");
+  $("c-sim").textContent = st.rtf != null ? `Sim at ${st.rtf.toFixed(2)}x: driving and walls not valid` : "";
+  $("c-sim").classList.toggle("show", st.rtf != null && st.rtf < 0.95);
+  $("c-rec").textContent = "Recording outline";
+  $("c-rec").classList.toggle("show", !!st.recording);
+  $("o-truth-row").style.display = st.world_rev ? "" : "none";
+  if (st.notice === "stick lost: stopped" && drive.active) toast("Stick signal lost: stopped");
+}
+
+const take = {pending: 0};
+function renderDock() {
+  const manual = !!(st && st.manual);
+  if (take.pending && (manual === (take.pending > 0) || now() - Math.abs(take.pending) > 4)) {
+    if (manual !== (take.pending > 0)) toast("No answer from the mower");
+    take.pending = 0;
+  }
+  document.body.classList.toggle("manual", manual);
+  const b = $("take");
+  b.textContent = take.pending > 0 ? "Taking over…" : take.pending < 0 ? "Handing back…" : manual ? "Done" : "Take over";
+  b.disabled = !!take.pending;
+  if (!manual && drive.joy) release();
+}
+$("take").addEventListener("click", () => {
+  const manual = !!(st && st.manual);
+  take.pending = manual ? -now() : now();
+  if (manual) release();
+  cmd(manual ? "handback" : "takeover");
+  renderDock();
+});
+
+let toastTimer = 0;
+function toast(text) {
+  const t = $("toast"); t.textContent = text; t.style.display = "block";
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.style.display = "none", 3500);
+}
+
+function renderLog() {
+  if (!$("drawer").classList.contains("open")) return;
+  const el = $("log"), atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+  el.replaceChildren(...logLines.map(s => { const d = document.createElement("div"); d.textContent = s; if (s.includes("[WALL]")) d.className = "wall"; return d; }));
+  if (atEnd) el.scrollTop = el.scrollHeight;
+}
+
+function openDrawer(open) {
+  $("drawer").classList.toggle("open", open); $("scrim").classList.toggle("open", open);
+  if (open) { renderLog(); const el = $("log"); el.scrollTop = el.scrollHeight; }
+}
+$("menu").onclick = () => openDrawer(true);
+$("close").onclick = $("scrim").onclick = () => openDrawer(false);
+for (const b of document.querySelectorAll("[data-cmd]")) b.onclick = () => cmd(b.dataset.cmd);
+$("legend").innerHTML = [[CLS.wall.color, "wall"], [CLS.low.color, "low edge"], [CLS.post.color, "post"], ["#4fb2ff", "outline"], ["#d9ff6e", "trail"]]
+  .map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join("");
+for (const k of ["imagery", "fields", "truth"]) {
+  const el = $("o-" + k); el.checked = !!prefs[k];
+  el.onchange = () => { prefs[k] = el.checked; savePrefs(); renderAttr(); dirty = true; };
+}
+
 $("stop").addEventListener("pointerdown", e => { e.preventDefault(); stopAll(); });   // no wait for click on touch
-$("c-manual").onclick = () => cmd("manual");
-$("c-assist").onclick = () => cmd("assist");
-$("c-status").onclick = () => { cmd("status"); $("log").classList.add("open"); $("c-log").className = "on"; };
-$("c-follow").onclick = () => setFollow(!view.follow);
-$("c-3d").onclick = () => set3d(!v3.on);
-$("c-log").onclick = () => { const open = $("log").classList.toggle("open"); $("c-log").className = open ? "on" : ""; renderLog(); };
+$("stop").addEventListener("click", stopAll);
+$("recenter").onclick = () => setFollow(true);
+$("v2").onclick = () => { prefs.mode = "2d"; savePrefs(); setMode("2d"); };
+$("v3").onclick = () => { prefs.mode = "3d"; savePrefs(); setMode("3d"); };
 for (const b of document.querySelectorAll("button")) b.addEventListener("click", () => b.blur());   // Space = stop, not "press again"
 
-window.addEventListener("resize", () => { if (v3.on) resize3d(); else resize(); });
-if (window.innerWidth > 800) { $("log").classList.add("open"); $("c-log").className = "on"; }
+window.addEventListener("resize", () => { if (v3.on) resize3d(); resize(); });
 if (matchMedia("(pointer: coarse)").matches) document.body.classList.add("touch");
-resize(); buildLegend(); poll(); requestAnimationFrame(frame);
+resize(); renderSeg(prefs.mode); renderDock(); connect(); requestAnimationFrame(frame);
+setMode(prefs.mode === "2d" ? "2d" : "3d");
 </script>
 </body>
 </html>
