@@ -378,8 +378,11 @@ class Run:
         if self.boot:
             if p.dist >= 0.3:
                 self.boot = 0.0
-                self.pose.ey = self.rng.normal(0, self.pose.ys)
                 self.fw.send('H 1')
+            elif p.dist >= 0.05:   # the GPS yaw relocks the guess as it starts to drive, ~1 s before the confirm (HIL)
+                if self.boot > 0.0:
+                    self.boot = -1.0
+                    self.pose.ey = self.rng.normal(0, self.pose.ys)
             else:   # standing: the gyro bias / EKF guess drifts by degrees
                 self.pose.ey += self.boot * 0.5 * math.sqrt(self.DT) * self.rng.normal()
         self.hist.append((self.t, p.x, p.y, p.yaw, p.v, p.w))

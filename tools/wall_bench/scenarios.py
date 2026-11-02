@@ -244,6 +244,10 @@ add('gap_narrow', 'edges', along(*GAP_W, 'left', 0.3, FOLLOW + WT), follow_to(la
     ('lock', 'reached'), 'a 0.35 m gap in the wall (the mower does not fit): follow on past it')
 add('gap_wide', 'edges', along(*GAP_M, 'left', 0.3, FOLLOW + WT), follow_to(lambda r: r.plant.x > 1.5, tmax=30),
     ('lock',), 'a 1.5 m gap: any safe outcome (stop at the end, round it, cross it)')
+# HIL drive test gap_wall 2026-11-02: from 0.9 m before the gap wall, 0.47 m off its face, right after boot; the guess
+# (30-150 deg off in HIL) relocks as it drives off, and ALIGN took a 38-41 deg line from the points of before
+add('hil_gap_wall', 'edges', (-6.9, 2.05, 0.0), follow_to(lambda r: r.plant.x > -2.5, tmax=25, lin=0.25), ('lock', 'reached'),
+    'the HIL gap_wall drive: boot heading guess 60 deg off, straight along the gap wall at 0.25 m/s', boot_heading=60.0)
 add('post_head_on', 'edges', (7.5, 4.5, 180), head_on(12), (), 'straight at the lone 0.1 m post '
     '(in the blind strip of the old 20 deg outward mount, seen by the crossed one)')
 def guard_only(tmax, lin=0.3):   # the assist off: only the guard keeps the body off what the sensors see

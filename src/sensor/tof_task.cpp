@@ -37,8 +37,15 @@ void tof_forget_point(int index) {
   if (memory && index >= 0 && index < TOF_MEMORY_POINTS) memory[index].t_ms = 0;
 }
 
+// Set by a clear: the next tick hands the wall assist the empty memory before any new frame, so its lines go
+// invalid and its candidates start over. A fit of the first frame or two after the clear kept the candidate time
+// of the lines before and was taken at once: ALIGN at the heading confirm onto a line fitted across a wall's end
+// (HIL gap_wall 2026-11-02: 38 and 41 deg, never LOCKED; step_corner 46 deg)
+static bool memory_cleared = false;
+
 static void memory_clear() {
   for (int i = 0; memory && i < TOF_MEMORY_POINTS; i++) memory[i].t_ms = 0;
+  memory_cleared = true;
 }
 
 // Zone centre directions in the robot frame. tof_frame_t zone k = row * 8 + col, row 0 = top,
@@ -267,8 +274,20 @@ static void pose_callback(dds_callback_context_t* context) {
 static void pose_refresh() {
   fused_pose_data_t d;
   if (!fused_pose_now(&d)) return;
+  uint32_t now = millis();
+  // A heading jump the gyro did not turn (the boot guess relocked by the GPS yaw, about a second before the heading
+  // is confirmed) leaves the points so far rotated about the mower: fitted with the new ones they gave a slanted
+  // wall that ALIGN took at the confirm (HIL gap_wall 2026-11-02: 38 and 41 deg off the wall beside, never LOCKED)
+  if (pose.valid && now - pose.ms < MOTION_POSE_TIMEOUT_MS) {
+    float turn = fabsf(remainderf(d.yaw - (pose.yaw + pose.omega * (now - pose.ms) * 1e-3f), 2.0f * (float)M_PI));
+    if (turn > TOF_YAW_JUMP) {
+      memory_clear();
+      tof_map_pose_jump();
+      SerialDebug.printf("[TOF] Heading jumped %.0f deg, point memory cleared, map kept apart\r\n", turn * 180.0f / M_PI);
+    }
+  }
   double x = d.x + GNSS_ANTENNA_BEHIND_AXLE * cos(d.yaw), y = d.y + GNSS_ANTENNA_BEHIND_AXLE * sin(d.yaw);
-  pose = { x, y, d.yaw, d.vx, d.omega, millis(), true };
+  pose = { x, y, d.yaw, d.vx, d.omega, now, true };
 }
 
 static void imu_callback(dds_callback_context_t* context) {
@@ -345,15 +364,17 @@ void tof_task(void* parameter) {
                 SerialDebug.printf("[TOF] Heading confirmed: point memory cleared\r\n");
               }
               pose_refresh();
-              bool new_frame = false;
+              bool new_frame = false, cleared = memory_cleared;
+              memory_cleared = false;
               tof_frame_t f;
               for (int s = 0; s < 2; s++) {
                 if (!next_frame(s, &f)) continue;
                 latest[s] = f;
                 latest_valid[s] = true;
-                add_frame(s, f);
+                if (!cleared) add_frame(s, f);
                 new_frame = true;
               }
+              new_frame |= cleared;
               if (new_frame && pose.valid) memory_prune(millis());
               wall_assist_update(pose, new_frame);
               static uint32_t map_ms = 0;

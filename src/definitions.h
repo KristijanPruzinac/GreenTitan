@@ -124,6 +124,7 @@ typedef struct {
 #define TOF_MEMORY_AGE_MS 10000
 #define TOF_MEMORY_RADIUS 2.5f     // m from the axle
 #define TOF_POSE_JUMP 0.20f        // m, a pose jump this big (RTK fix change) clears the memory
+#define TOF_YAW_JUMP 0.26f         // rad, a heading jump this big beyond the gyro turn (the boot guess relocked) clears it too
 // Wall lines beside the mower: fitted over memory points from TOF_WALL_BEHIND behind the axle to
 // TOF_WALL_AHEAD ahead, up to TOF_WALL_MAX_DIST out (RANSAC + least squares on the inliers)
 #define TOF_WALL_BEHIND 0.5f
