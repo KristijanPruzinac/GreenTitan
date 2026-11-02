@@ -48,7 +48,9 @@ def at_station(st, along, lat=0.0, rel_yaw_deg=0.0):
 
 DOCKED = 0.02                       # m past the contact point: spawned with the contacts closed
 SETTLE = {'wait': 12}               # gyro calibration and the first poses (keep still)
-HOME = [{'cmd': 'home'}, {'wait_state': 'CHARGING', 'timeout': 240}]
+# The sim GNSS starts in float (fix after ~20 s): Set station / Home wait for it in the firmware
+# (up to 60 s), so their timeouts carry that minute on top of the drive
+HOME =[{'cmd': 'home'}, {'wait_state': 'CHARGING', 'timeout': 240}]
 CYCLE = [{'cmd': 'undock'}, {'wait_state': 'IDLE', 'timeout': 90}] + HOME
 
 # Positions in world metres (the world YAML's frame), yaw in radians. The first ~1 m of every drive is free
@@ -182,7 +184,7 @@ SCENARIOS = {
     # drive to ~4 m off at an angle and dock from there.
     'set_station': {
         'world': 'dock_bumps', 'station': STATION, 'spawn': at_station(STATION, DOCKED),
-        'steps': [SETTLE, {'cmd': 'set_station'}, {'wait_state': 'CHARGING', 'timeout': 180}] + CYCLE[:2] +
+        'steps': [SETTLE, {'cmd': 'set_station'}, {'wait_state': 'CHARGING', 'timeout': 240}] + CYCLE[:2] +
                  [{'manual': True}, (0, 0.5, 4.7), (0.3, 0, 11.0), {'manual': False}] + HOME,
         'checks': {'station_set': True, 'docks_min': 2, 'no_dock_msgs': True, 'docked_end': True,
                    'station_err': (2.0, 1.0)},

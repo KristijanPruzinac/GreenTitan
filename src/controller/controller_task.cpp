@@ -265,6 +265,25 @@ static bool rtk_fixed() {
     return GPS_CARR_SOLN == 2 && (millis() - GPS_CARR_SOLN_MS) < DOCK_RTK_MAX_AGE_MS;
 }
 
+// Set station / Home pressed before the RTK fix (a receiver starts in float after boot) or before
+// the gyro calibration: the request waits quietly, up to DOCK_RTK_WAIT_MS, and runs when both are
+// there. 0 = nothing waiting, else the console key ('S', 'H').
+static char     wait_cmd = 0;
+static uint32_t wait_ms = 0;
+
+// True: go on now. False: the request is parked (or timed out, then the caller's failure is printed
+// by the tick).
+static bool ready_or_wait(char cmd) {
+    if (rtk_fixed() && imu_ready()) { wait_cmd = 0; return true; }
+    if (wait_cmd != cmd) {
+        wait_cmd = cmd;
+        wait_ms = millis();
+        SerialDebug.printf("[DOCK] Waiting for %s (up to %d s)\r\n", rtk_fixed() ? "the gyro calibration" : "RTK fix",
+                           DOCK_RTK_WAIT_MS / 1000);
+    }
+    return false;
+}
+
 static void log_station() {
     if (!DOCK_STATION.set) {
         SerialDebug.printf("[DOCK] Station not set\r\n");
@@ -480,22 +499,12 @@ static void start_set_station() {
         SerialDebug.printf("[DOCK] Set station rejected: no contact voltage (dock the mower by hand first)\r\n");
         return;
     }
-    if (!rtk_fixed()) {
-        SerialDebug.printf("[DOCK] Set station rejected: no RTK fix: the station needs open sky\r\n");
-        return;
-    }
-    if (!imu_ready()) {
-        SerialDebug.printf("[DOCK] Set station rejected: gyro not calibrated yet (keep still)\r\n");
-        return;
-    }
+    if (robot_state == ROBOT_STATE_MANUAL) exit_manual_mode();
+    if (!ready_or_wait('S')) return;   // runs from the tick once RTK fixed and the gyro are there
     fused_pose_data_t p;
     if (!fused_pose_now(&p)) {
         SerialDebug.printf("[DOCK] Set station rejected: no pose\r\n");
         return;
-    }
-    if (robot_state == ROBOT_STATE_MANUAL) {
-        stop_motors();
-        MANUAL_MODE_ACTIVE = false;
     }
     // The line is drawn along the parked heading (it may be off by degrees; that only bends the
     // line, not the result). Unconfirmed at boot: steer on the gyro from it, so an EKF relock
@@ -892,17 +901,52 @@ static void handle_go_home() {
         SerialDebug.printf("[DOCK] Cannot go home from state %s\r\n", state_name(robot_state));
         return;
     }
-    if (robot_state == ROBOT_STATE_MANUAL) {
-        stop_motors();
-        MANUAL_MODE_ACTIVE = false;
+    if (!DOCK_STATION.set) {
+        SerialDebug.printf("[DOCK] No station set: dock by hand, then set station (console S)\r\n");
+        return;
     }
+    if (robot_state == ROBOT_STATE_MANUAL) exit_manual_mode();
+    if (!ready_or_wait('H')) return;   // runs from the tick once RTK fixed and the gyro are there
     go_home(false, false);
+}
+
+// A parked Set station / Home: run it when RTK fixed and the gyro are there, give up after
+// DOCK_RTK_WAIT_MS with the one message the page shows
+static void wait_tick() {
+    if (!wait_cmd) return;
+    char cmd = wait_cmd;
+    if (rtk_fixed() && imu_ready()) {
+        wait_cmd = 0;
+        if (cmd == 'S') start_set_station();
+        else handle_go_home();
+        return;
+    }
+    if (millis() - wait_ms < DOCK_RTK_WAIT_MS) return;
+    wait_cmd = 0;
+    bool rtk = rtk_fixed();
+    if (cmd == 'S') {
+        if (!rtk) SerialDebug.printf("[DOCK] Set station rejected: no RTK fix: the station needs open sky\r\n");
+        else SerialDebug.printf("[DOCK] Set station rejected: gyro not calibrated yet (keep still)\r\n");
+    } else {
+        if (!rtk) SerialDebug.printf("[DOCK] Cannot go home: no RTK fix (the mower needs open sky)\r\n");
+        else SerialDebug.printf("[DOCK] Cannot go home: gyro not calibrated yet (keep still)\r\n");
+    }
 }
 
 // -------------------------------------------------------- DDS CALLBACKS ---------------------------------------------------------------
 
 static void controller_signal_callback(dds_callback_context_t* context) {
     controller_signal_t* signal = (controller_signal_t*)context->message_data.data;
+
+    switch (signal->signal) {   // another command drops a Set station / Home waiting for the RTK fix
+        case SIGNAL_START_MOWING: case SIGNAL_MANUAL_ON: case SIGNAL_STOP_MOWING:
+        case SIGNAL_UNDOCK: case SIGNAL_START_DATUM_CAPTURE:
+            if (wait_cmd) SerialDebug.printf("[DOCK] No longer waiting for RTK fix\r\n");
+            wait_cmd = 0;
+            break;
+        default:
+            break;
+    }
 
     switch (signal->signal) {
         case SIGNAL_MOTION_DONE:
@@ -1051,6 +1095,7 @@ void controller_task(void* parameter) {
             // ------- THREAD LOOP CODE START -------
 
             dock_tick();
+            wait_tick();
 
             // ------- THREAD LOOP CODE END -------
 

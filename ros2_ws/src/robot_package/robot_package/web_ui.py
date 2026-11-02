@@ -813,6 +813,8 @@ class WebUi(Node):
             d['msg'] = "Couldn't set the station: " + m.group(1).strip()
         elif 'No station set' in line:
             d['msg'] = 'No station set yet: dock the mower by hand, then "Set station here"'
+        elif 'Cannot go home: no RTK fix' in line:
+            d['msg'] = "Couldn't go home: no RTK fix. The mower needs open sky"
 
     def ensure_assist(self, now):
         """Within ASSIST_WINDOW after manual started: assist off -> 'f' once; not known -> ask once ('i')."""

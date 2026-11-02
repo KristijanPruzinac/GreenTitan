@@ -78,6 +78,7 @@ typedef struct {
 #define DOCK_MEAS_MIN_TRACK 0.8f       // m of approach track for a dock to count as a measurement
 #define DOCK_MIN_CHORD 0.6f            // m, per-sample heading estimates use chords at least this long
 #define DOCK_RTK_MAX_AGE_MS 1000       // RTK fixed must have been reported within this
+#define DOCK_RTK_WAIT_MS 60000        // Set station / Home before the RTK fix (boot: float first) waits this long, quietly
 #define DOCK_EST_WEIGHT 0.2f           // weight of one accepted dock measurement in the running estimate
 #define DOCK_GATE_SIGMAS 3.0f          // gate: within this many sigma of the recent measurements ...
 #define DOCK_GATE_MIN_POS 0.03f        // m ... but never tighter than this
