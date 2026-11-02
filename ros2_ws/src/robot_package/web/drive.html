@@ -3,18 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#eef0ea">
+<meta name="theme-color" content="#f7fafa">
 <title>GreenTitan</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%231f8a3b'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230f9d8f'/%3E%3C/svg%3E">
 <!-- Mower page served by robot_package/web_ui.py (docs/ARCHITECTURE.md §10). One file. The state is pushed by the node
      (/events, server-sent events); the 3D view (default) loads three.js from cdnjs. Light look: a plain white floor with a
-     1 m grid, shaped in 3D by the terrain the mower measured, no sky. Offline the page falls back to the 2D view. -->
+     1 m grid, shaped in 3D by the terrain the mower measured, no sky. Offline the page falls back to the 2D view.
+     One theme: every colour is a token below (the script reads them too); white, ink, one teal accent, slate map. -->
 <style>
 :root {
-  --bg: #eef0ea; --floor: #f4f5f0; --line: #d3d8cf;
-  --glass: rgba(255, 255, 255, .88); --glass2: rgba(255, 255, 255, .98); --edge: rgba(29, 35, 32, .16);
-  --ink: #1d2320; --muted: #66706a; --accent: #1f8a3b; --accent-ink: #ffffff;
-  --warn: #c27c00; --bad: #c62828; --wall: #56616b; --low: #d08a00; --post: #6a3fb5; --outline: #2f5fb3; --trail: #e07b00;
+  /* surfaces and text */
+  --floor: #f7fafa; --grid: #dde7e6; --axis: #a9bfbd; --panel: #ffffff; --line: #e3ecea; --line-strong: #c9d8d6;
+  --glass: rgba(255, 255, 255, .86); --glass2: rgba(255, 255, 255, .97); --edge: rgba(18, 48, 46, .12);
+  --ink: #12302e; --muted: #5d7472;
+  /* accent (teal) and states */
+  --accent: #0f9d8f; --accent-dark: #0a6f66; --accent-soft: #dff3f0; --accent-ink: #ffffff;
+  --warn: #c7871a; --warn-soft: #fbf1dc; --warn-ink: #6b4708; --bad: #d0453f; --bad-dark: #9e2b27;
+  /* map: walls slate, low edges and posts in the same cool family; outline and sensors blue-teal */
+  --wall: #4d6573; --wall-top: #8aa1ad; --low: #6f9c99; --low-top: #a7c7c3; --post: #2f5661; --post-top: #5f8590;
+  --outline: #2a86a8; --sensor: #2a86a8; --sensor-cone: #0f9d8f; --shadow: #0d2826;
+  /* the real mower's materials */
+  --part-frame: #b9c0c6; --part-brace: #6c7378; --part-wheel: #161818; --part-caster: #55595c; --part-body: #eef3f3; --part-edge: #56605a;
   --gut: 12px;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -23,7 +32,7 @@ html, body { margin: 0; height: 100%; background: var(--floor); color: var(--ink
 button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
 #view { position: fixed; inset: 0; }
 #view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-.glass { background: var(--glass); border: 1px solid var(--edge); box-shadow: 0 3px 12px rgba(29, 35, 32, .14);
+.glass { background: var(--glass); border: 1px solid var(--edge); box-shadow: 0 4px 16px color-mix(in srgb, var(--shadow) 12%, transparent);
   -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2); }
 
 /* top bar: status, 2D/3D, menu */
@@ -32,15 +41,15 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 #top > * { pointer-events: auto; }
 #pill { display: flex; align-items: center; gap: 9px; height: 42px; padding: 0 15px 0 13px; border-radius: 21px; min-width: 0; }
 #pill .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
-#pill.ok .dot { background: var(--accent); box-shadow: 0 0 0 4px rgba(31, 138, 59, .16); }
-#pill.warn .dot { background: var(--warn); box-shadow: 0 0 0 4px rgba(194, 124, 0, .18); }
-#pill.bad .dot { background: var(--bad); box-shadow: 0 0 0 4px rgba(198, 40, 40, .16); }
+#pill.ok .dot { background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+#pill.warn .dot { background: var(--warn); box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 20%, transparent); }
+#pill.bad .dot { background: var(--bad); box-shadow: 0 0 0 4px color-mix(in srgb, var(--bad) 18%, transparent); }
 #pill b { font-weight: 700; white-space: nowrap; }
 #pill span { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .spacer { flex: 1; }
 .seg { display: flex; height: 42px; border-radius: 21px; padding: 4px; flex: none; }
 .seg button { border: 0; background: none; color: var(--muted); font-weight: 700; padding: 0 13px; border-radius: 17px; }
-.seg button.on { background: var(--ink); color: #fff; }
+.seg button.on { background: var(--accent); color: var(--accent-ink); }
 .icon { width: 42px; height: 42px; border-radius: 21px; display: grid; place-items: center; padding: 0; flex: none; }
 .icon svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
 #recenter { position: absolute; right: max(var(--gut), env(safe-area-inset-right)); top: calc(max(var(--gut), env(safe-area-inset-top)) + 52px); display: none; }
@@ -48,11 +57,11 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
   display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; max-width: calc(100% - 90px); }
 .chip { padding: 6px 12px; border-radius: 15px; font-size: 13px; font-weight: 600; display: none; }
 .chip.show { display: block; }
-.chip.warn { background: #fdf1db; color: #6b4300; border: 1px solid #ecc77d; }
-.chip i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 7px; }
+.chip.warn { background: var(--warn-soft); color: var(--warn-ink); border: 1px solid var(--warn); }
+.chip i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 7px; box-shadow: 0 0 0 3px var(--accent-soft); }
 #toast { position: absolute; left: 50%; top: calc(max(var(--gut), env(safe-area-inset-top)) + 56px); transform: translateX(-50%);
   max-width: calc(100% - 32px); padding: 9px 16px; border-radius: 12px; font-weight: 600; text-align: center;
-  background: var(--bad); color: #fff; display: none; box-shadow: 0 3px 12px rgba(29, 35, 32, .25); }
+  background: var(--bad); color: var(--accent-ink); display: none; box-shadow: 0 4px 16px color-mix(in srgb, var(--shadow) 22%, transparent); }
 
 /* bottom: Take over / joystick / STOP */
 #dock { position: absolute; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right));
@@ -60,25 +69,29 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 #dock > * { pointer-events: auto; }
 #take { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); height: 58px; padding: 0 30px; border-radius: 29px;
   border: 0; background: var(--accent); color: var(--accent-ink); font-size: 17px; font-weight: 750; letter-spacing: .01em;
-  box-shadow: 0 4px 14px rgba(29, 35, 32, .28); white-space: nowrap; }
-#take:active { filter: brightness(.92); }
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent-dark) 35%, transparent); white-space: nowrap; }
+#take:active { background: var(--accent-dark); }
 #take:disabled { opacity: .7; }
 body.manual #take { left: auto; right: 0; bottom: 98px; transform: none; height: 44px; padding: 0 18px; font-size: 15px;
   background: var(--glass2); color: var(--ink); border: 1px solid var(--edge); }
-#stop { position: absolute; right: 0; bottom: 0; width: 84px; height: 84px; border-radius: 50%; background: var(--bad); color: #fff;
-  border: 3px solid #fff; font-size: 17px; font-weight: 800; letter-spacing: .05em; box-shadow: 0 3px 12px rgba(29, 35, 32, .35); }
-#stop:active { background: #8e1515; }
+#stop { position: absolute; right: 0; bottom: 0; width: 84px; height: 84px; border-radius: 50%; background: var(--bad); color: var(--accent-ink);
+  border: 3px solid var(--panel); font-size: 17px; font-weight: 800; letter-spacing: .05em;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--bad-dark) 35%, transparent); }
+#stop:active { background: var(--bad-dark); }
 body:not(.manual) #stop { width: 64px; height: 64px; font-size: 13px; bottom: 11px; }
 #joy { position: absolute; left: 0; bottom: 0; width: 150px; height: 150px; border-radius: 50%; display: none; touch-action: none; }
-#joy.glass { border: 2px solid rgba(29, 35, 32, .3); }
+#joy.glass { border: 1.5px solid var(--line-strong); }
+#joy .cross { stroke: var(--line-strong); }
+#joy .cone { fill: var(--accent); fill-opacity: .12; }
 body.manual #joy { display: block; }
 #joy svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 #knob { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; pointer-events: none;
-  background: radial-gradient(circle at 40% 35%, #56665c, #2a352f); box-shadow: 0 2px 6px rgba(0, 0, 0, .35); }
-#joy.held #knob { background: radial-gradient(circle at 40% 35%, #4cbf6c, var(--accent)); }
+  background: radial-gradient(circle at 40% 35%, var(--panel), var(--line)); border: 1px solid var(--line-strong);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--shadow) 25%, transparent); }
+#joy.held #knob { background: radial-gradient(circle at 40% 35%, var(--accent-soft), var(--accent)); border-color: var(--accent-dark); }
 
 /* menu drawer */
-#scrim { position: absolute; inset: 0; background: rgba(29, 35, 32, .18); display: none; }
+#scrim { position: absolute; inset: 0; background: color-mix(in srgb, var(--shadow) 16%, transparent); display: none; }
 #scrim.open { display: block; }
 #drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(380px, 90vw); transform: translateX(105%); transition: transform .2s ease;
   border-radius: 18px 0 0 18px; padding: calc(max(var(--gut), env(safe-area-inset-top)) + 4px) 16px 16px; overflow-y: auto;
@@ -87,26 +100,27 @@ body.manual #joy { display: block; }
 #drawer header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
 #drawer h2 { font-size: 18px; margin: 0; }
 #drawer h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 18px 0 6px; font-weight: 700; }
-.row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid #e3e6df; font-size: 14px; }
+.row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
 .row > :first-child { color: var(--muted); }
 .row > :last-child { text-align: right; font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 .row .ok { color: var(--accent); } .row .warn { color: var(--warn); } .row .bad { color: var(--bad); }
 label.tg { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; font-size: 14px; cursor: pointer; }
-label.tg input { appearance: none; -webkit-appearance: none; width: 42px; height: 24px; border-radius: 12px; background: #cfd4cc;
+label.tg input { appearance: none; -webkit-appearance: none; width: 42px; height: 24px; border-radius: 12px; background: var(--line-strong);
   position: relative; margin: 0; cursor: pointer; transition: background .15s; flex: none; }
-label.tg input::after { content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left .15s; }
+label.tg input::after { content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--panel); transition: left .15s; }
 label.tg input:checked { background: var(--accent); }
 label.tg input:checked::after { left: 21px; }
 .btns { display: flex; flex-wrap: wrap; gap: 6px; }
-.btn { border: 1px solid #b9c0b5; background: #f7f8f5; border-radius: 10px; padding: 8px 12px; font-size: 14px; font-weight: 600; }
-.btn:active { background: #e3e6df; }
+.btn { border: 1px solid var(--line-strong); background: var(--panel); color: var(--accent-dark); border-radius: 10px; padding: 8px 12px; font-size: 14px; font-weight: 600; }
+.btn:active { background: var(--accent-soft); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
-.legend i { display: inline-block; width: 16px; height: 5px; border-radius: 3px; }
-#log { font: 11.5px/1.4 ui-monospace, Menlo, Consolas, monospace; max-height: 38vh; overflow-y: auto; background: #f3f4f1;
+.legend i { display: inline-block; width: 16px; height: 6px; border-radius: 3px; }
+.legend i.post { width: 9px; height: 9px; border-radius: 50%; }
+#log { font: 11.5px/1.4 ui-monospace, Menlo, Consolas, monospace; max-height: 38vh; overflow-y: auto; background: var(--floor);
   border: 1px solid var(--line); border-radius: 10px; padding: 6px 0; }
 #log div { padding: 1px 9px; white-space: pre-wrap; word-break: break-word; }
-#log div.wall { background: #fff1cf; color: #6b4300; font-weight: 600; }
+#log div.wall { background: var(--accent-soft); color: var(--accent-dark); font-weight: 600; }
 .hint { font-size: 12px; color: var(--muted); margin-top: 14px; }
 body.touch .hint { display: none; }
 @media (max-width: 420px) {
@@ -134,8 +148,8 @@ body.touch .hint { display: none; }
   </div>
   <div id="toast"></div>
   <div id="dock">
-    <div id="joy" class="glass"><svg viewBox="0 0 150 150"><path d="M75 14v122M14 75h122" stroke="rgba(29,35,32,.18)" stroke-width="2"/>
-      <path d="M75 75L60 18A58 58 0 0 1 90 18Z M75 75L60 132A58 58 0 0 0 90 132Z" fill="rgba(31,138,59,.12)"/></svg><div id="knob"></div></div>
+    <div id="joy" class="glass"><svg viewBox="0 0 150 150"><path class="cross" d="M75 14v122M14 75h122" stroke-width="1.5"/>
+      <path class="cone" d="M75 75L60 18A58 58 0 0 1 90 18Z M75 75L60 132A58 58 0 0 0 90 132Z"/></svg><div id="knob"></div></div>
     <button id="take">Take over</button>
     <button id="stop">STOP</button>
   </div>
@@ -178,14 +192,25 @@ const FRONT = 0.12, REAR = 0.415, HALF_W = 0.20;            // MOWER_* footprint
 let SENSORS = [-1, 1].map(s => ({name: s > 0 ? "ToF left" : "ToF right", shape: "rect", x: 0.11, y: 0.15 * s, z: 0.09,
   yaw: 20 * s, pitch: 0, roll: 0, fov_h: 45, fov_v: 45, zones_h: 8, zones_v: 8, range: 1.5}));
 let MESH = null;                                            // web/mower_v3.json: the real Mower V3 parts (mm, robot frame)
-const TRAIL_S = 180;                                        // trail fades out over this many seconds
 const EXTRAP_MAX = 0.25, SMOOTH_TAU = 0.07;                 // s: pose extrapolation limit, display smoothing
-// Map objects by height class only (esp/wall_map kinds: 0 wall, 1 fence, 2 low edge, 3 hedge, 4 post; unknown = tall)
-const CLS = {wall: {name: "wall", color: "#56616b", thick: 0.10}, low: {name: "low edge", color: "#d08a00", thick: 0.05},
-             post: {name: "post", color: "#6a3fb5"}};
-const COL = {floor: "#f4f5f0", grid: "#d9ddd4", axis: "#9aa59a", ink: "#1d2320", muted: "#66706a",
-             outline: "#2f5fb3", trail: "#e07b00", accent: "#1f8a3b"};   // the light look (CSS :root has the same)
-const clsOf = kind => kind === 2 ? CLS.low : kind === 4 ? CLS.post : CLS.wall;
+// Colours: the CSS tokens on :root, read once (one theme for the panels, the 2D and the 3D view)
+const COL = (() => {
+  const cs = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null, o = {};
+  for (const k of ["floor", "grid", "axis", "panel", "ink", "muted", "accent", "accent-dark", "warn", "bad", "wall", "wall-top", "low",
+                   "low-top", "post", "post-top", "outline", "sensor", "sensor-cone", "shadow", "part-frame", "part-brace",
+                   "part-wheel", "part-caster", "part-body", "part-edge"])
+    o[k] = (cs && cs.getPropertyValue("--" + k).trim()) || "#808080";
+  return o;
+})();
+function rgba(hex, a) {                                     // a token (#rrggbb) with alpha, for the canvas
+  const v = parseInt(hex.slice(1), 16);
+  return `rgba(${v >> 16 & 255},${v >> 8 & 255},${v & 255},${a})`;
+}
+// Map classes by height only (esp/wall_map kinds: 0 wall, 1 fence, 2 low edge, 3 hedge, 4 post; unknown = tall).
+// web_ui sends them as wall complexes (walls): k = wall | low | post.
+const CLS = {wall: {name: "wall", color: COL.wall, top: COL["wall-top"]}, low: {name: "low edge", color: COL.low, top: COL["low-top"]},
+             post: {name: "post", color: COL.post, top: COL["post-top"]}};
+const FILLET = 0.04, FADE = 0.2;                            // m: outer corner radius of a joint, fade towards an unseen side
 const ASSIST_TEXT = {ALIGN: "Lining up with the wall", LOCKED: "Following the wall", CORNER: "Inner corner",
                      PIVOT: "Turning at the corner", OUTER: "Rounding the end"};
 const THREE_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
@@ -197,7 +222,7 @@ const cv = $("cv"), ctx = cv.getContext("2d");
 let W = 0, H = 0, DPR = 1;
 let view = {x: 0, y: 0, s: 60, follow: true};               // 2D centre (m, odom), px per m
 let st = null, lastMsg = 0, logId = 0, worldRev = -1, world = [];
-let mapObjs = [], outlines = [], logLines = [], trail = [];
+let walls = [], wallsRev = 0, outlines = [], logLines = [];
 let dirty = true;                                           // redraw needed (new state, input, terrain)
 
 // per-viewer preferences (browser storage may be missing: defaults then)
@@ -231,7 +256,7 @@ function onState(m) {
   const first = !st;
   st = m; lastMsg = now(); dirty = true;
   if (m.limits) [MAX_LIN, MAX_REV, MAX_ANG] = m.limits;
-  if (m.map) mapObjs = m.map;
+  if (m.walls) { walls = m.walls; wallsRev++; }
   if (m.outlines) outlines = m.outlines;
   if (m.log_id < logId) { logLines = []; logId = 0; }       // node restarted
   let added = false;
@@ -261,9 +286,6 @@ function newPose(p, age) {
   const [t0, n0] = rate.ts[0], span = now() - t0;
   rate.hz = span > 0.5 && p.n >= n0 ? (p.n - n0) / span : null;
   pose.n = p.n; pose.p = p; pose.t = now() - Math.min(age, 0.5);
-  const [x, y] = axleOf(p), t = now(), last = trail[trail.length - 1];
-  if (!last || Math.hypot(x - last[0], y - last[1]) > 0.02) trail.push([x, y, t]);
-  while (trail.length && (t - trail[0][2] > TRAIL_S || trail.length > 5000)) trail.shift();
 }
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 function poseTarget(t) {                                    // axle pose now: the last pose moved on with v, w
@@ -418,7 +440,7 @@ function buildTopView() {
   c.width = Math.ceil(x1 - x0) + 2 * pad; c.height = Math.ceil(y1 - y0) + 2 * pad;
   const g = c.getContext("2d"), tris = [];
   for (const p of MESH.parts) {
-    const kind = p.kind === "caster" && /Wheel\/Wheel/.test(p.name) ? "tyre" : p.kind, col = (PART_MAT[kind] || PART_MAT.frame)[0];
+    const kind = p.kind === "caster" && /Wheel\/Wheel/.test(p.name) ? "tyre" : p.kind, col = parseInt((PART_MAT[kind] || PART_MAT.frame)[0].slice(1), 16);
     const rgb = [col >> 16 & 255, col >> 8 & 255, col & 255], P = p.pos, I = p.idx;
     for (let t = 0; t < I.length; t += 3) {
       const a = I[t] * 3, b = I[t + 1] * 3, d = I[t + 2] * 3;
@@ -444,7 +466,7 @@ function drawScale() {
   const nice = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100].reduce((a, b) => b <= want ? b : a, 0.1);
   const len = nice * view.s, x1 = W - 70, x0 = x1 - len, y = 90;   // top right, left of the recenter button
   ctx.lineCap = "round";
-  for (const [c, w] of [["rgba(255,255,255,.9)", 5], [COL.ink, 2]]) {
+  for (const [c, w] of [[rgba(COL.panel, 0.9), 5], [COL.ink, 2]]) {
     ctx.strokeStyle = c; ctx.lineWidth = w;
     ctx.beginPath(); ctx.moveTo(x0, y - 5); ctx.lineTo(x0, y); ctx.lineTo(x1, y); ctx.lineTo(x1, y - 5); ctx.stroke();
   }
@@ -454,12 +476,12 @@ function drawScale() {
 
 function label(text, x, y, color) {
   ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.strokeText(text, x, y);
+  ctx.lineWidth = 3; ctx.strokeStyle = rgba(COL.panel, 0.9); ctx.strokeText(text, x, y);
   ctx.fillStyle = color; ctx.fillText(text, x, y); ctx.textBaseline = "alphabetic";
 }
 
 function drawWorld() {                                      // sim truth: the real objects
-  ctx.fillStyle = "rgba(120,126,121,.30)"; ctx.strokeStyle = "#8d938e"; ctx.lineWidth = 1;
+  ctx.fillStyle = rgba(COL.muted, 0.22); ctx.strokeStyle = COL.muted; ctx.lineWidth = 1;
   ctx.setLineDash([4, 3]);
   for (const p of world) {
     if (p.p) pathPoly(p.p.map(([x, y]) => [sx(x), sy(y)]), true);
@@ -469,27 +491,154 @@ function drawWorld() {                                      // sim truth: the re
   ctx.setLineDash([]);
 }
 
-function drawMap() {
-  const labels = view.s > 70;
-  for (const [kind, x0, y0, x1, y1, h, hits] of mapObjs) {
-    const c = clsOf(kind), a = Math.min(1, 0.55 + hits / 40);
-    if (c === CLS.post) {
-      const r = Math.max(5, x1 / 100 * view.s);
-      ctx.beginPath(); ctx.arc(sx(x0 / 100), sy(y0 / 100), r, 0, 2 * Math.PI);
-      ctx.globalAlpha = a; ctx.fillStyle = c.color; ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke(); ctx.globalAlpha = 1;
-      if (labels) label(c.name, sx(x0 / 100), sy(y0 / 100) - r - 9, c.color);
-    } else {
-      const w = Math.max(4, Math.min(12, c.thick * view.s));
-      ctx.lineCap = "round"; ctx.globalAlpha = a;
-      for (const [col, lw] of [["rgba(255,255,255,.85)", w + 4], [c.color, w]]) {
-        ctx.strokeStyle = col; ctx.lineWidth = lw;
-        ctx.beginPath(); ctx.moveTo(sx(x0 / 100), sy(y0 / 100)); ctx.lineTo(sx(x1 / 100), sy(y1 / 100)); ctx.stroke();
+// ---- wall complexes (web_ui Complexes): one outline per chain, filleted joints, a fade towards an unseen side ----
+// A chain: points p (m), per segment s = [right offset, left offset, fade side (1 left, -1 right, 0 none)], closed c.
+// Seen from both sides a segment is solid (offsets = half its measured thickness); seen from one side it is a thin
+// solid face (offset on the unseen side only) and the fade runs on from there over FADE. Convex joints get a fillet
+// (FILLET, smaller on thin faces), concave ones are mitred, so a corner reads as one piece.
+const WG = {
+  dirs(P, closed) {                                         // unit direction and left normal per segment
+    const n = closed ? P.length : P.length - 1, d = [], nl = [];
+    for (let k = 0; k < n; k++) {
+      const a = P[k], b = P[(k + 1) % P.length], l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1e-9;
+      d.push([(b[0] - a[0]) / l, (b[1] - a[1]) / l]); nl.push([-(b[1] - a[1]) / l, (b[0] - a[0]) / l]);
+    }
+    return {d, nl, n};
+  },
+  lineX(p, d, q, e) {
+    const den = d[0] * e[1] - d[1] * e[0];
+    if (Math.abs(den) < 1e-9) return null;
+    const t = ((q[0] - p[0]) * e[1] - (q[1] - p[1]) * e[0]) / den;
+    return [p[0] + t * d[0], p[1] + t * d[1]];
+  },
+  // one side (+1 left, -1 right) of a chain at e beyond its solid offsets, start to end (closed: a loop).
+  // The point count depends only on the turns, so lines at two values of e pair up point by point (3D fade strip).
+  side(ch, side, e) {
+    const P = ch.p, S = ch.s, closed = !!ch.c, {d, nl, n} = WG.dirs(P, closed), out = [];
+    const off = k => (side > 0 ? S[k][1] : S[k][0]) + e, T = k => S[k][0] + S[k][1];
+    const at = (V, k, o) => [V[0] + side * nl[k][0] * o, V[1] + side * nl[k][1] * o];
+    const joint = (V, k0, k1) => {
+      const ang = Math.atan2(d[k0][0] * d[k1][1] - d[k0][1] * d[k1][0], d[k0][0] * d[k1][0] + d[k0][1] * d[k1][1]);
+      const o0 = off(k0), o1 = off(k1), A = at(V, k0, o0), B = at(V, k1, o1);
+      if (Math.abs(ang) < 2 * DEG) { out.push([(A[0] + B[0]) / 2, (A[1] + B[1]) / 2]); return; }
+      if (side * ang > 0) {                                 // inside of the turn: mitre
+        const X = WG.lineX(A, d[k0], B, d[k1]);
+        out.push(X && Math.hypot(X[0] - V[0], X[1] - V[1]) < 3 * Math.max(o0, o1) + 0.05 ? X : [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2]);
+        return;
       }
-      ctx.lineCap = "butt"; ctx.globalAlpha = 1;
-      if (labels) label(`${c.name} ${h} cm`, (sx(x0 / 100) + sx(x1 / 100)) / 2, (sy(y0 / 100) + sy(y1 / 100)) / 2 - 13, c.color);
+      let rb = Math.min(FILLET, 1.2 * Math.min(T(k0), T(k1)));   // outside: fillet, centre the same for every e
+      if (Math.abs(ang) > 100 * DEG) rb *= 0.5;
+      const r = rb + e, C = WG.lineX(at(V, k0, o0 - r), d[k0], at(V, k1, o1 - r), d[k1]) || V;
+      const steps = Math.max(2, Math.ceil(Math.abs(ang) / (12 * DEG))), a0 = Math.atan2(side * nl[k0][1], side * nl[k0][0]);
+      for (let i = 0; i <= steps; i++) { const a = a0 + ang * i / steps; out.push([C[0] + r * Math.cos(a), C[1] + r * Math.sin(a)]); }
+    };
+    if (closed) for (let v = 0; v < n; v++) joint(P[v], (v - 1 + n) % n, v);
+    else {
+      out.push(at(P[0], 0, off(0)));
+      for (let v = 1; v < n; v++) joint(P[v], v - 1, v);
+      out.push(at(P[n], n - 1, off(n - 1)));
+    }
+    return out;
+  },
+  cap(Q, d, nl, b, a, out) {                                // square end with rounded corners, left (b) to right (a)
+    const rc = Math.min(0.03, 0.45 * (a + b));
+    if (rc < 0.003) { out.push([Q[0] + nl[0] * b, Q[1] + nl[1] * b], [Q[0] - nl[0] * a, Q[1] - nl[1] * a]); return; }
+    const arc = (cx, cy, f0, f1) => {
+      for (let i = 0; i <= 3; i++) {
+        const f = (f0 + (f1 - f0) * i / 3) * Math.PI / 2;
+        out.push([cx + rc * (nl[0] * Math.cos(f) + d[0] * Math.sin(f)), cy + rc * (nl[1] * Math.cos(f) + d[1] * Math.sin(f))]);
+      }
+    };
+    arc(Q[0] + nl[0] * (b - rc) - d[0] * rc, Q[1] + nl[1] * (b - rc) - d[1] * rc, 0, 1);
+    arc(Q[0] - nl[0] * (a - rc) - d[0] * rc, Q[1] - nl[1] * (a - rc) - d[1] * rc, 1, 2);
+  },
+  // the solid outline: [loop] for an open chain (sides joined by rounded end caps), [outer, inner] for a closed one
+  solid(ch) {
+    const L = WG.side(ch, 1, 0), R = WG.side(ch, -1, 0);
+    if (ch.c) return Math.abs(WG.area(L)) >= Math.abs(WG.area(R)) ? [L, R] : [R, L];
+    const {d, nl, n} = WG.dirs(ch.p, false), S = ch.s, P = ch.p, out = L.slice(1, -1);
+    WG.cap(P[n], d[n - 1], nl[n - 1], S[n - 1][1], S[n - 1][0], out);
+    for (let i = R.length - 2; i >= 1; i--) out.push(R[i]);
+    WG.cap(P[0], [-d[0][0], -d[0][1]], [-nl[0][0], -nl[0][1]], S[0][0], S[0][1], out);
+    return [out];
+  },
+  area(P) { let a = 0; for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; },
+  // runs of segments fading on one side, each a chain of its own: [{ch, side, closed}]
+  fadeRuns(ch) {
+    const S = ch.s, n = S.length, runs = [];
+    let P = ch.p, Sx = S;
+    if (ch.c) {
+      if (S.every(s => s[2] === S[0][2])) return S[0][2] ? [{ch: {p: P, s: S, c: 1}, side: S[0][2]}] : [];
+      let r = 0;
+      while (S[r][2] === S[(r - 1 + n) % n][2]) r++;
+      P = [...P.slice(r), ...P.slice(0, r), P[r]]; Sx = [...S.slice(r), ...S.slice(0, r)];
+    }
+    for (let k = 0; k < n;) {
+      const f = Sx[k][2];
+      let j = k;
+      while (j + 1 < n && Sx[j + 1][2] === f) j++;
+      if (f) runs.push({ch: {p: P.slice(k, j + 2), s: Sx.slice(k, j + 1), c: 0}, side: f});
+      k = j + 1;
+    }
+    return runs;
+  },
+  // 2D: thin walls drawn at least minPx thick and the fade at least 8 px wide (zoomed out)
+  widen(ch, pxPerM, minPx) {
+    const m = minPx / pxPerM;
+    return {p: ch.p, c: ch.c, s: ch.s.map(([a, b, f]) => {
+      const t = a + b;
+      if (t >= m) return [a, b, f];
+      return t > 1e-6 ? [a * m / t, b * m / t, f] : [m / 2, m / 2, f];
+    })};
+  },
+};
+
+// 2D: per complex a soft shadow (offset away from the sun, by its height), the fades, then the solid outline
+function tracePoly(loops) {
+  ctx.beginPath();
+  for (const L of loops) { L.forEach(([x, y], i) => i ? ctx.lineTo(sx(x), sy(y)) : ctx.moveTo(sx(x), sy(y))); ctx.closePath(); }
+}
+function drawWalls() {
+  const labels = view.s > 70, fadeM = Math.max(FADE, 8 / view.s);
+  const sh = h => [Math.min(12, 0.19 * h * view.s) * DPR, -Math.min(12, 0.31 * h * view.s) * DPR, (3 + 6 * Math.min(1.5, h)) * DPR];
+  for (const pass of ["shadow", "body"]) for (const w of walls) {
+    const c = CLS[w.k] || CLS.wall, h = w.h || 0.5;
+    if (w.k === "post") {
+      const r = Math.max(4, w.r * view.s), path = () => { ctx.beginPath(); ctx.arc(sx(w.c[0]), sy(w.c[1]), r, 0, 2 * Math.PI); };
+      if (pass === "shadow") { shadowFill(...sh(h), 0.24, path); continue; }
+      path(); ctx.fillStyle = c.color; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = c.top; ctx.stroke();
+      if (labels) label(c.name, sx(w.c[0]), sy(w.c[1]) - r - 9, c.color);
+      continue;
+    }
+    for (const ch0 of w.ch) {
+      const ch = WG.widen(ch0, view.s, 3);
+      if (pass === "shadow") { shadowFill(...sh(h), 0.2, () => tracePoly(WG.solid(ch))); continue; }
+      for (const run of WG.fadeRuns(ch)) {                  // unseen side: the wall fades out (stepped bands)
+        const nb = Math.max(3, Math.min(12, Math.round(fadeM * view.s / 4)));
+        for (let k = 0; k < nb; k++) {
+          const a = WG.side(run.ch, run.side, fadeM * k / nb), b = WG.side(run.ch, run.side, fadeM * (k + 1) / nb);
+          tracePoly(run.ch.c ? [a, b] : [a.concat(b.reverse())]);
+          ctx.fillStyle = rgba(c.color, 0.5 * Math.pow(1 - (k + 0.5) / nb, 1.6)); ctx.fill("evenodd");
+        }
+      }
+      tracePoly(WG.solid(ch));
+      ctx.fillStyle = c.color; ctx.fill("evenodd");
+    }
+    if (labels && pass === "body" && w.ch.length) {         // at the middle of the longest segment
+      let best = null;
+      for (const ch of w.ch) for (let k = 0; k + 1 < ch.p.length + (ch.c ? 1 : 0); k++) {
+        const a = ch.p[k], b = ch.p[(k + 1) % ch.p.length], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (!best || l > best[0]) best = [l, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      }
+      if (best) label(`${c.name} ${Math.round(h * 100)} cm`, sx(best[1]), sy(best[2]) - 14, c.color);
     }
   }
+}
+function shadowFill(ox, oy, blur, a, path) {                // only the shadow of the path: the shape itself is drawn far off
+  const far = 10000;                                        // CSS px; shadow offsets are in device px
+  ctx.save(); ctx.translate(-far, 0); path();
+  ctx.shadowColor = rgba(COL.shadow, a); ctx.shadowBlur = blur; ctx.shadowOffsetX = far * DPR + ox; ctx.shadowOffsetY = oy;
+  ctx.fillStyle = COL.shadow; ctx.fill("evenodd"); ctx.restore();
 }
 
 function drawOutlines() {
@@ -499,18 +648,6 @@ function drawOutlines() {
     pathPoly(o.map(([x, y]) => [sx(x / 100), sy(y / 100)]), false); ctx.stroke();
     for (const [x, y, corner] of o) { ctx.beginPath(); ctx.arc(sx(x / 100), sy(y / 100), corner ? 6 : 3.5, 0, 2 * Math.PI); ctx.fill(); }
   }
-}
-
-function drawTrail() {
-  const t = now();
-  ctx.strokeStyle = COL.trail; ctx.lineWidth = Math.max(2, Math.min(8, 0.06 * view.s)); ctx.lineCap = "round";
-  for (let i = 1; i < trail.length; i++) {
-    const [ax, ay] = trail[i - 1], [bx, by, bt] = trail[i];
-    if (Math.hypot(bx - ax, by - ay) > 1) continue;         // pose jump: no line across it
-    ctx.globalAlpha = Math.max(0, 0.65 * (1 - (t - bt) / TRAIL_S));
-    ctx.beginPath(); ctx.moveTo(sx(ax), sy(ay)); ctx.lineTo(sx(bx), sy(by)); ctx.stroke();
-  }
-  ctx.globalAlpha = 1; ctx.lineCap = "butt";
 }
 
 const FOOT = [[FRONT, HALF_W], [-REAR, HALF_W], [-REAR, -HALF_W], [FRONT, -HALF_W]];
@@ -525,33 +662,34 @@ function drawMower(p) {                                     // p: axle pose
       pts.push([t.x + t.range * Math.cos(r), t.y + t.range * Math.sin(r)]);
     }
     pathPoly(bodyPoly(x, y, yaw, pts), true);
-    ctx.fillStyle = t.shape === "cone" ? "rgba(31,138,138,.10)" : "rgba(47,95,179,.10)"; ctx.fill();
-    ctx.strokeStyle = t.shape === "cone" ? "rgba(31,138,138,.4)" : "rgba(47,95,179,.35)"; ctx.lineWidth = 1; ctx.stroke();
+    const sc = t.shape === "cone" ? COL["sensor-cone"] : COL.sensor;
+    ctx.fillStyle = rgba(sc, 0.10); ctx.fill(); ctx.strokeStyle = rgba(sc, 0.4); ctx.lineWidth = 1; ctx.stroke();
   }
   const big = Math.max(1, 14 / ((FRONT + REAR) * view.s));  // zoomed out: keep the mower visible (>= 14 px long)
   const sc = pts => pts.map(([u, v]) => [u * big, v * big]);
   buildTopView();
   const real = topView && (FRONT + REAR) * view.s >= TOP_MIN;
-  ctx.shadowColor = "rgba(29,35,32,.35)"; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2;
+  ctx.shadowColor = rgba(COL.shadow, 0.3); ctx.shadowBlur = 8 * DPR;   // soft, away from the sun as the walls'
+  ctx.shadowOffsetX = 2 * DPR; ctx.shadowOffsetY = -3 * DPR;
   pathPoly(bodyPoly(x, y, yaw, sc(FOOT)), true);
   if (real) {                                               // a soft grey plate under the open frame keeps it readable
-    ctx.fillStyle = "rgba(29,35,32,.16)"; ctx.fill(); ctx.shadowColor = "transparent";
-    ctx.strokeStyle = "rgba(29,35,32,.4)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = rgba(COL.ink, 0.12); ctx.fill(); ctx.shadowColor = "transparent";
+    ctx.strokeStyle = rgba(COL.ink, 0.3); ctx.lineWidth = 1; ctx.stroke();
     ctx.save(); ctx.translate(sx(x), sy(y)); ctx.rotate(-yaw); ctx.scale(view.s / 1000, view.s / 1000);
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
     ctx.drawImage(topView.c, -topView.ox, -topView.oy); ctx.restore();
   } else {
-    ctx.fillStyle = "#c9cec7"; ctx.fill(); ctx.shadowColor = "transparent";
+    ctx.fillStyle = COL["part-frame"]; ctx.fill(); ctx.shadowColor = "transparent";
     ctx.strokeStyle = COL.ink; ctx.lineWidth = 1.5; ctx.stroke();
   }
   pathPoly(bodyPoly(x, y, yaw, sc(ARROW)), true);           // heading (front = drive wheels)
   ctx.fillStyle = COL.accent; ctx.fill();
-  if (real) { ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 1.5; ctx.stroke(); }
+  if (real) { ctx.strokeStyle = rgba(COL.panel, 0.9); ctx.lineWidth = 1.5; ctx.stroke(); }
 }
 
 function drawTruth(p) {
   pathPoly(bodyPoly(p.x, p.y, p.yaw, FOOT), true);          // truth pose = axle midpoint
-  ctx.setLineDash([5, 4]); ctx.strokeStyle = "rgba(29,35,32,.55)"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = rgba(COL.ink, 0.55); ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
 }
 
 function draw2d() {
@@ -559,9 +697,8 @@ function draw2d() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   drawFloor();
   if (prefs.truth && world.length) drawWorld();
-  drawMap();
+  drawWalls();
   drawOutlines();
-  drawTrail();
   if (prefs.truth && st && st.truth) drawTruth(st.truth);
   if (pose.disp) drawMower(pose.disp);
   else label(st ? "waiting for the mower position" : "connecting", W / 2, H / 2, COL.muted);
@@ -611,12 +748,12 @@ cv.addEventListener("pointerup", lift); cv.addEventListener("pointercancel", lif
 cv.addEventListener("wheel", e => { e.preventDefault(); zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * 0.0015)); }, {passive: false});
 
 // ---- 3D view (default): three.js r128, odom frame, metres, z up ----
-// Meshes are built once and moved; map, world, outlines and the terrain are rebuilt only when they change. Everything on
+// Meshes are built once and moved; walls, world, outlines and the terrain are rebuilt only when they change. Everything on
 // the ground sits on the terrain field (heightAt); the mower stands on it, tilted by the accelerometer (st.tilt).
 const BODY_Z0 = 0.05, BODY_Z1 = 0.29;                       // body box height (sim mower.yaml cover envelope)
 const WHEEL_R = 0.075;                                      // drive wheel radius (box mower until the mesh loads)
 const GRID_M = 50;                                          // 3D grid: 1 m lines out to +-50 m (draped over the terrain)
-const v3 = {on: false, loading: false, ready: false, mapKey: null, worldKey: null, outKey: null, groundKey: -1, trailN: -1,
+const v3 = {on: false, loading: false, ready: false, mapKey: null, worldKey: null, outKey: null, groundKey: -1,
             cam: {az: -Math.PI / 2, el: 0.95, d: 8, tx: 0, ty: 0}, tilt: [0, 0]};
 
 function load3d() {
@@ -669,9 +806,9 @@ function init3d() {
   const cam3 = new T.PerspectiveCamera(50, 1, 0.05, 600);
   cam3.up.set(0, 0, 1);
   const HEMI = 0.8, SUN = 0.5;
-  const hemi = new T.HemisphereLight(0xffffff, 0x9aa59a, HEMI);
+  const hemi = new T.HemisphereLight(COL.panel, COL.axis, HEMI);
   hemi.position.set(0, 0, 1); scene.add(hemi);                // sky up the z axis (the default is y: a grey floor)
-  const sun = new T.DirectionalLight(0xffffff, SUN); sun.position.set(-3, -5, 8); scene.add(sun);
+  const sun = new T.DirectionalLight(COL.panel, SUN); sun.position.set(-3, -5, 8); scene.add(sun);   // shadows fall to +x +y (SHADOW_DIR)
   // ground: a plain light floor everywhere, the measured terrain (sync3dGround) where the mower drove, one material.
   // Its colour is set so that flat ground comes out at the floor colour (= the background: no horizon line); slopes
   // shade softly by the sun. Pushed back in depth, so the grid lines on it always win.
@@ -686,11 +823,21 @@ function init3d() {
   const grid = new T.LineSegments(new T.BufferGeometry(), new T.LineBasicMaterial({vertexColors: true}));
   grid.frustumCulled = false; scene.add(grid); v3.grid = grid;
 
-  const box = new T.BoxGeometry(1, 1, 1), cyl = new T.CylinderGeometry(1, 1, 1, 20);
+  const cyl = new T.CylinderGeometry(1, 1, 1, 20);
   cyl.rotateX(Math.PI / 2);                                   // axis along z
-  const clsMat = new Map(Object.values(CLS).map(c => [c, new T.MeshLambertMaterial({color: c.color})]));
-  const greyMat = new T.MeshLambertMaterial({color: 0x9aa09b, transparent: true, opacity: 0.45, depthWrite: false});
-  const greyEdge = new T.LineBasicMaterial({color: 0x8d938e});
+  // map classes: sides in the class colour, tops lighter (ExtrudeGeometry groups: 0 caps, 1 sides); the fade towards an
+  // unseen side is the top colour through an alpha ramp (u = 0 at the solid face, 1 at FADE)
+  const ramp = document.createElement("canvas"); ramp.width = 64; ramp.height = 2;
+  { const g = ramp.getContext("2d"), lg = g.createLinearGradient(0, 0, 64, 0);
+    for (let i = 0; i <= 8; i++) lg.addColorStop(i / 8, rgba(COL.panel, 0.85 * Math.pow(1 - i / 8, 1.6)));
+    g.fillStyle = lg; g.fillRect(0, 0, 64, 2); }
+  const rampTex = new T.CanvasTexture(ramp); rampTex.wrapS = rampTex.wrapT = T.ClampToEdgeWrapping;
+  const clsMat = new Map(Object.values(CLS).map(c => [c, {
+    top: new T.MeshLambertMaterial({color: c.top}), side: new T.MeshLambertMaterial({color: c.color}),
+    fade: new T.MeshLambertMaterial({color: c.top, map: rampTex, transparent: true, depthWrite: false, side: T.DoubleSide})}]));
+  const shadowMat = new T.MeshBasicMaterial({transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1});
+  const greyMat = new T.MeshLambertMaterial({color: COL.muted, transparent: true, opacity: 0.35, depthWrite: false});
+  const greyEdge = new T.LineBasicMaterial({color: COL.muted});
   const blueMat = new T.MeshBasicMaterial({color: COL.outline});
   const group = () => { const g = new T.Group(); scene.add(g); return g; };
 
@@ -703,15 +850,15 @@ function init3d() {
   {                                                         // a soft contact shadow sets the light mower off the floor
     const c = document.createElement("canvas"); c.width = c.height = 64;
     const g = c.getContext("2d"), rg = g.createRadialGradient(32, 32, 4, 32, 32, 32);
-    rg.addColorStop(0, "rgba(29,35,32,.34)"); rg.addColorStop(0.6, "rgba(29,35,32,.18)"); rg.addColorStop(1, "rgba(29,35,32,0)");
+    rg.addColorStop(0, rgba(COL.shadow, 0.3)); rg.addColorStop(0.6, rgba(COL.shadow, 0.15)); rg.addColorStop(1, rgba(COL.shadow, 0));
     g.fillStyle = rg; g.fillRect(0, 0, 64, 64);
     const sh = new T.Mesh(new T.PlaneGeometry(L + 0.24, 2 * HALF_W + 0.24),
                           new T.MeshBasicMaterial({map: new T.CanvasTexture(c), transparent: true, depthWrite: false}));
-    sh.position.set((FRONT - REAR) / 2, 0, 0.006); mower.add(sh);
+    sh.position.set((FRONT - REAR) / 2, 0, 0.006); sh.renderOrder = 1; mower.add(sh);
   }
-  boxBody.add(new T.Mesh(bodyGeo, new T.MeshLambertMaterial({color: 0xf1f4f2})));
-  boxBody.add(new T.LineSegments(bodyEdges, new T.LineBasicMaterial({color: 0x56605a})));
-  const wheelGeo = new T.CylinderGeometry(WHEEL_R, WHEEL_R, 0.045, 20), dark = new T.MeshLambertMaterial({color: 0x1b1f1d});
+  boxBody.add(new T.Mesh(bodyGeo, new T.MeshLambertMaterial({color: COL["part-body"]})));
+  boxBody.add(new T.LineSegments(bodyEdges, new T.LineBasicMaterial({color: COL["part-edge"]})));
+  const wheelGeo = new T.CylinderGeometry(WHEEL_R, WHEEL_R, 0.045, 20), dark = new T.MeshLambertMaterial({color: COL["part-wheel"]});
   for (const s of [1, -1]) { const w = new T.Mesh(wheelGeo, dark); w.position.set(0, s * (HALF_W + 0.025), WHEEL_R); boxBody.add(w); }
   const arrow = new T.Shape(ARROW.map(([x, y]) => new T.Vector2(x, y)));
   const am = new T.Mesh(new T.ShapeGeometry(arrow), new T.MeshBasicMaterial({color: COL.accent, side: T.DoubleSide, transparent: true, opacity: 0.9}));
@@ -720,16 +867,11 @@ function init3d() {
   // true mower (sim): dashed outline of the same box
   const truth = new T.LineSegments(bodyEdges, new T.LineDashedMaterial({color: COL.ink, dashSize: 0.04, gapSize: 0.03, transparent: true, opacity: 0.6}));
   truth.computeLineDistances(); scene.add(truth);
-  // trail: a flat ribbon on the ground
-  const N = 5000, trailGeo = new T.BufferGeometry();
-  trailGeo.setAttribute("position", new T.BufferAttribute(new Float32Array(N * 18), 3));
-  const trailMesh = new T.Mesh(trailGeo, new T.MeshBasicMaterial({color: COL.trail, transparent: true, opacity: 0.55, side: T.DoubleSide, depthWrite: false}));
-  trailMesh.frustumCulled = false; scene.add(trailMesh);
 
-  Object.assign(v3, {r, scene, cam3, box, cyl, clsMat, greyMat, greyEdge, blueMat, mower, boxBody, model, arrow3: am, fields, rays,
-    truth, trailGeo, ground,
+  Object.assign(v3, {r, scene, cam3, cyl, clsMat, shadowMat, greyMat, greyEdge, blueMat, mower, boxBody, model, arrow3: am,
+    fields, rays, truth, ground,
     mapG: group(), worldG: group(), outG: group(), dot: new T.CircleGeometry(0.03, 12), bigDot: new T.CircleGeometry(0.05, 12)});
-  for (const g of [box, cyl, v3.dot, v3.bigDot]) g.userData.shared = true;
+  for (const g of [cyl, v3.dot, v3.bigDot]) g.userData.shared = true;
   r.domElement.style.display = "none";
   $("view").insertBefore(r.domElement, $("top"));
   bind3dInput(r.domElement);
@@ -738,7 +880,8 @@ function init3d() {
 }
 
 // ---- the real mower and its sensors' line of sight ----
-const PART_MAT = {frame: [0xb9c0c6, 70], brace: [0x6c7378, 40], wheel: [0x161818, 8], caster: [0x55595c, 30], tyre: [0x161818, 8]};
+const PART_MAT = {frame: [COL["part-frame"], 70], brace: [COL["part-brace"], 40], wheel: [COL["part-wheel"], 8],
+                  caster: [COL["part-caster"], 30], tyre: [COL["part-wheel"], 8]};
 function build3dModel() {
   if (!v3.ready || !MESH || v3.model.children.length) return;
   for (const p of MESH.parts) {
@@ -767,7 +910,7 @@ function build3dSensors() {
     const g = new T.Group();
     g.position.set(s.x, s.y, s.z); g.rotation.set((s.roll || 0) * DEG, -(s.pitch || 0) * DEG, s.yaw * DEG, "ZYX");
     g.updateMatrix();
-    const R = s.range, color = s.shape === "cone" ? 0x1f8a8a : 0x2f5fb3;
+    const R = s.range, color = s.shape === "cone" ? COL["sensor-cone"] : COL.sensor;
     const fMat = new T.MeshBasicMaterial({color, transparent: true, opacity: 0.10, side: T.DoubleSide, depthWrite: false});
     const eMat = new T.LineBasicMaterial({color, transparent: true, opacity: 0.4});
     const dirs = [];
@@ -794,7 +937,7 @@ function build3dSensors() {
     }
     v3.fields.add(g);
     // rays in the mower frame (range is radial), cast against the model where the mower stands now
-    const o = new T.Vector3(s.x, s.y, s.z), pos = [], col = [], free = [0.18, 0.37, 0.70], hit = [0.78, 0.30, 0.05];
+    const o = new T.Vector3(s.x, s.y, s.z), pos = [], col = [], free = new T.Color(COL.sensor).toArray(), hit = new T.Color(COL.warn).toArray();
     let blocked = 0;
     for (const d0 of dirs) {
       const d = new T.Vector3(...d0).normalize().applyEuler(g.rotation);
@@ -868,7 +1011,7 @@ function sync3dGround() {
     pos[3 * k] = (f.i0 + i + 0.5) * f.cell; pos[3 * k + 1] = (f.j0 + j + 0.5) * f.cell; pos[3 * k + 2] = f.h[k];
   }
   g.attributes.position.needsUpdate = true; g.computeVertexNormals(); g.computeBoundingSphere();
-  v3.mapKey = v3.outKey = v3.trailN = null;                 // they sit on the ground: lift them again
+  v3.mapKey = v3.outKey = null;                             // they sit on the ground: lift them again
 }
 
 // The 1 m grid (axes darker): flat lines at the floor height outside the field, pieces of one cell over it, just above
@@ -896,23 +1039,96 @@ function sync3dGrid(f, fx0, fy0, fx1, fy1) {
   v3.grid.geometry.dispose(); v3.grid.geometry = g;
 }
 
+// Wall complexes in 3D: each chain's solid outline (WG.solid: filleted joints, rounded ends) extruded to its height
+// (lighter top), the fade towards an unseen side as a translucent top strip and end walls through an alpha ramp,
+// posts as cylinders, and one baked soft shadow texture draped on the ground under all of them.
+const SHADOW_DIR = [0.19, 0.31];                            // m of shadow offset per m of height (sun at -3, -5, 8, softened)
 function sync3dMap() {
-  const key = mapObjs.map(m => m.slice(0, 6).join(",")).join(";");   // hits change all the time: not part of the key
-  if (key === v3.mapKey) return;
-  v3.mapKey = key; clearGroup(v3.mapG);
-  for (const [kind, x0, y0, x1, y1, hc] of mapObjs) {
-    const c = clsOf(kind), h = Math.max(0.02, hc / 100), m = new THREE.Mesh(c === CLS.post ? v3.cyl : v3.box, v3.clsMat.get(c));
-    if (c === CLS.post) {
-      const r = Math.max(0.02, x1 / 100);
-      m.scale.set(r, r, h); m.position.set(x0 / 100, y0 / 100, heightAt(x0 / 100, y0 / 100) + h / 2);
-    } else {
-      const th = c.thick, l = Math.hypot(x1 - x0, y1 - y0) / 100;
-      const cx = (x0 + x1) / 200, cy = (y0 + y1) / 200;
-      m.scale.set(l + th, th, h); m.position.set(cx, cy, heightAt(cx, cy) + h / 2);
-      m.rotation.z = Math.atan2(y1 - y0, x1 - x0);
+  if (v3.mapKey === wallsRev) return;
+  v3.mapKey = wallsRev; clearGroup(v3.mapG);
+  const T = THREE;
+  for (const w of walls) {
+    const mats = v3.clsMat.get(CLS[w.k] || CLS.wall), h = Math.max(0.02, w.h || 0.5);
+    if (w.k === "post") {
+      const r = Math.max(0.02, w.r), m = new T.Mesh(v3.cyl, [mats.side, mats.top, mats.top]);
+      m.scale.set(r, r, h); m.position.set(w.c[0], w.c[1], heightAt(w.c[0], w.c[1]) + h / 2); v3.mapG.add(m);
+      continue;
     }
-    v3.mapG.add(m);
+    for (const ch of w.ch) {
+      const loops = WG.solid(ch), pts = loops.flat();
+      let zmin = Infinity, zs = 0;
+      for (const [x, y] of pts) { const z = heightAt(x, y); zmin = Math.min(zmin, z); zs += z; }
+      const z0 = zmin - 0.01, top = zs / pts.length + h;   // into the ground a little: no gap on a slope
+      const shape = new T.Shape(loops[0].map(([x, y]) => new T.Vector2(x, y)));
+      if (loops[1]) shape.holes.push(new T.Path(loops[1].map(([x, y]) => new T.Vector2(x, y))));
+      const m = new T.Mesh(new T.ExtrudeGeometry(shape, {depth: top - z0, bevelEnabled: false, curveSegments: 1}), [mats.top, mats.side]);
+      m.position.z = z0; v3.mapG.add(m);
+      for (const run of WG.fadeRuns(ch)) v3.mapG.add(fadeMesh(run, z0, top, mats.fade));
+    }
   }
+  sync3dShadows();
+}
+
+function fadeMesh(run, z0, top, mat) {                      // u = 0 at the solid face .. 1 at FADE (the ramp's alpha)
+  const a = WG.side(run.ch, run.side, 0), b = WG.side(run.ch, run.side, FADE), n = Math.min(a.length, b.length);
+  const pos = [], uv = [], v = (p, z, u) => { pos.push(p[0], p[1], z); uv.push(u, 0.5); };
+  const closed = !!run.ch.c;
+  for (let i = 0; i + 1 < n + (closed ? 1 : 0); i++) {      // the top, fading away from the face
+    const j = (i + 1) % n;
+    v(a[i], top, 0); v(b[i], top, 1); v(a[j], top, 0); v(a[j], top, 0); v(b[i], top, 1); v(b[j], top, 1);
+  }
+  if (!closed) for (const i of [0, n - 1]) {                // the ends: the cut through the faded part
+    v(a[i], z0, 0); v(b[i], z0, 1); v(a[i], top, 0); v(a[i], top, 0); v(b[i], z0, 1); v(b[i], top, 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat); m.renderOrder = 3;
+  return m;
+}
+
+// Baked soft shadows: every wall, fade and post drawn into one canvas as a blurred contact shadow plus a softer one
+// cast away from the sun by its height; draped over the ground (terrain) as one textured grid. No shadow maps.
+function sync3dShadows() {
+  if (v3.shadow) { v3.scene.remove(v3.shadow); v3.shadow.geometry.dispose(); v3.shadow.material.map.dispose(); v3.shadow.material.dispose(); v3.shadow = null; }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const grow = (x, y, r) => { x0 = Math.min(x0, x - r); y0 = Math.min(y0, y - r); x1 = Math.max(x1, x + r); y1 = Math.max(y1, y + r); };
+  for (const w of walls) {
+    const r = 0.9 + 0.4 * Math.min(1.5, w.h || 0.5);
+    if (w.k === "post") grow(w.c[0], w.c[1], w.r + r); else for (const ch of w.ch) for (const p of ch.p) grow(p[0], p[1], r);
+  }
+  if (!(x1 > x0)) return;
+  const res = Math.max(0.025, Math.max(x1 - x0, y1 - y0) / 1024);
+  const c = document.createElement("canvas"); c.width = Math.ceil((x1 - x0) / res); c.height = Math.ceil((y1 - y0) / res);
+  const g = c.getContext("2d"), FAR = 20000;
+  const X = x => (x - x0) / res + -FAR, Y = y => (y1 - y) / res;
+  const trace = loops => { g.beginPath(); for (const L of loops) { L.forEach(([x, y], i) => i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))); g.closePath(); } };
+  const cast = (path, h, a) => {                            // the path is drawn far off: only its shadows land on the canvas
+    for (const [alpha, blur, ox, oy] of [[0.26, 0.035, 0, 0], [0.15, 0.06 + 0.12 * h, SHADOW_DIR[0] * h, SHADOW_DIR[1] * h]]) {
+      path(); g.shadowColor = rgba(COL.shadow, alpha * a); g.shadowBlur = blur / res;
+      g.shadowOffsetX = FAR + ox / res; g.shadowOffsetY = -oy / res; g.fillStyle = COL.shadow; g.fill("evenodd");
+    }
+  };
+  for (const w of walls) {
+    const h = Math.min(1.5, Math.max(0.02, w.h || 0.5));
+    if (w.k === "post") { cast(() => { g.beginPath(); g.arc(X(w.c[0]), Y(w.c[1]), w.r / res, 0, 2 * Math.PI); }, h, 1); continue; }
+    for (const ch of w.ch) {
+      cast(() => trace(WG.solid(ch)), h, 1);
+      for (const run of WG.fadeRuns(ch)) {                  // the unseen part casts a weaker shadow
+        const a = WG.side(run.ch, run.side, 0), b = WG.side(run.ch, run.side, FADE / 2);
+        cast(() => trace(run.ch.c ? [a, b] : [a.concat(b.slice().reverse())]), h, 0.45);
+      }
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  const nx = Math.min(160, Math.ceil((x1 - x0) / 0.25)), ny = Math.min(160, Math.ceil((y1 - y0) / 0.25));
+  const geo = new THREE.PlaneGeometry(x1 - x0, y1 - y0, nx, ny), P = geo.attributes.position.array;
+  for (let i = 0; i < P.length; i += 3) {
+    P[i] += (x0 + x1) / 2; P[i + 1] += (y0 + y1) / 2; P[i + 2] = heightAt(P[i], P[i + 1]) + 0.012;
+  }
+  geo.computeBoundingSphere();
+  const mat = v3.shadowMat.clone(); mat.map = tex;
+  v3.shadow = new THREE.Mesh(geo, mat); v3.shadow.renderOrder = 1; v3.scene.add(v3.shadow);
 }
 
 function sync3dWorld() {
@@ -969,22 +1185,9 @@ function sync3dOutlines() {
   }
 }
 
-function sync3dTrail() {
-  const last = trail[trail.length - 1], key = trail.length + (last ? last[2] : 0);
-  if (key === v3.trailN) return;
-  v3.trailN = key;
-  const segs = [];
-  for (let i = 1; i < trail.length; i++) {
-    const [ax, ay] = trail[i - 1], [bx, by] = trail[i];
-    if (Math.hypot(bx - ax, by - ay) <= 1) segs.push([ax, ay, bx, by]);   // pose jump: no ribbon across it
-  }
-  const g = v3.trailGeo, n = ribbon(g.attributes.position.array, segs.slice(-5000), 0.03, 0.01);
-  g.setDrawRange(0, n); g.attributes.position.needsUpdate = true;
-}
-
 function render3d() {
   if (!v3.ready) return;
-  sync3dGround(); sync3dMap(); sync3dWorld(); sync3dOutlines(); sync3dTrail();
+  sync3dGround(); sync3dMap(); sync3dWorld(); sync3dOutlines();
   const p = pose.disp;
   v3.mower.visible = !!p; v3.fields.visible = prefs.fields; v3.rays.visible = prefs.rays;
   if (p) {                                                  // on the terrain, tilted as the accelerometer says
@@ -1186,8 +1389,9 @@ function openDrawer(open) {
 $("menu").onclick = () => openDrawer(true);
 $("close").onclick = $("scrim").onclick = () => openDrawer(false);
 for (const b of document.querySelectorAll("[data-cmd]")) b.onclick = () => cmd(b.dataset.cmd);
-$("legend").innerHTML = [[CLS.wall.color, "wall"], [CLS.low.color, "low edge"], [CLS.post.color, "post"], [COL.outline, "outline"], [COL.trail, "trail"]]
-  .map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join("");
+$("legend").innerHTML = [["var(--wall)", "wall"], ["var(--low)", "low edge"], ["var(--post)", "post", "post"],
+  ["linear-gradient(90deg, var(--wall), transparent)", "side not seen yet"], ["var(--outline)", "outline"]]
+  .map(([c, n, k]) => `<span><i class="${k || ""}" style="background:${c}"></i>${n}</span>`).join("");
 for (const k of ["fields", "rays", "truth"]) {
   const el = $("o-" + k); el.checked = !!prefs[k];
   el.onchange = () => { prefs[k] = el.checked; savePrefs(); dirty = true; };

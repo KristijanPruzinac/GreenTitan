@@ -20,7 +20,9 @@ true mower (/sim/greentitan/ground_truth), moved into the odom frame through the
 
 esp/wall_map v1 (Int16MultiArray): [1, n, then per object kind, x0, y0, x1, y1, height, hits],
 cm in odom; kind 0 wall, 1 fence, 2 low edge, 3 hedge, 4 post (x0, y0 centre, x1 radius). The page
-shows height classes only: wall (0, 1, 3), low edge (2), post (4).
+shows height classes only: wall (0, 1, 3), low edge (2), post (4), and gets them as wall complexes
+(Complexes: doubled lines merged, corners joined, the side the mower saw them from); the raw map
+still goes out as `map` (tools).
 
 Terrain (display only, never fed back): the firmware's "GPS: ... alt=" log line (5 Hz, hMSL) gives the
 antenna height, imu/data's accelerometer (low-passed) the tilt; with the EKF pose they place the mower
@@ -68,6 +70,8 @@ RE_GPS = re.compile(r'GPS: lat=-?[\d.]+ lon=-?[\d.]+ alt=(-?[\d.]+) acc=([\d.]+)
 
 CELL = 0.25                                  # m, terrain cell
 CELL_SAMPLES = 40                            # newest ground heights kept per cell
+WALLS_PERIOD = 0.5                           # s: wall complexes rebuilt at most this often (the map comes <= 1 Hz)
+AXLE_AHEAD = 0.18                            # m, axle ahead of base_link (GNSS_ANTENNA_BEHIND_AXLE)
 TERRAIN_PUSH = 1.0                           # s between terrain pushes (changed cells only)
 TERRAIN_ACC = 0.05                           # m: fixes with a worse horizontal accuracy are not used (no RTK fix)
 TILT_TAU = 0.4                               # s, accelerometer low-pass for the tilt
@@ -147,6 +151,442 @@ class Terrain:
     def since(self, rev):
         """Cells changed after rev, as [[i, j, mm], ...]."""
         return [[k[0], k[1], v[0]] for k, v in self.value.items() if v[1] > rev]
+
+
+# ---------------------------------------------------------------------- wall complexes (display only)
+# The firmware map has one line per wall face fit; a face can come twice (two fits a few cm apart) and the two faces
+# of a thin wall come as two lines. The page shows walls as complexes instead: near-parallel lines that overlap
+# along their length and lie close across are one wall piece (a band) whose thickness spans them; band ends that
+# meet join into chains (corners). Each band knows which side the sensors saw it from: the side where the mower
+# body was (cells it covered, with nothing mapped in between). Seen from both sides it is solid at its measured
+# thickness; seen from one side it is a face that fades out towards the unseen side (the page draws that).
+# Ids are carried over from the last build (lines, bands, complexes) and links made last time get looser limits,
+# so the picture does not flicker as the lines update. Nothing goes back to the firmware.
+CX_CELL = 0.10                               # m, cells the mower body covered
+CX_ANGLE, CX_ANGLE_H = math.radians(15), math.radians(20)   # merge: direction difference (H: kept merged)
+CX_ACROSS, CX_ACROSS_H = 0.25, 0.32          # m, merge: distance across over the overlap
+CX_JOIN, CX_JOIN_H = 0.15, 0.22              # m, join: band ends (or their corner point) this close
+CX_SCAN = 1.2                                # m: the mower within this of a face, in line of sight, saw that side
+CX_SKIN = 0.025                              # m, the solid face of a band seen from one side
+CX_MIN_SOLID = 0.04                          # m, thinnest solid wall drawn (a fence seen from both sides)
+
+
+def _cls(kind):
+    return 'low' if kind == 2 else 'post' if kind == 4 else 'wall'
+
+
+def _cross(ax, ay, bx, by):
+    return ax * by - ay * bx
+
+
+def _ray_seg(px, py, dx, dy, ax, ay, bx, by):
+    """Distance along the ray p + r d (d unit) to the segment a-b, or None."""
+    ex, ey = bx - ax, by - ay
+    den = _cross(dx, dy, ex, ey)
+    if abs(den) < 1e-9:
+        return None
+    qx, qy = ax - px, ay - py
+    r, u = _cross(qx, qy, ex, ey) / den, _cross(qx, qy, dx, dy) / den
+    return r if r > 1e-6 and -1e-6 <= u <= 1 + 1e-6 else None
+
+
+def _line_x(p, d, q, e):
+    """Intersection of the lines p + s d and q + t e, or None when near-parallel."""
+    den = _cross(d[0], d[1], e[0], e[1])
+    if abs(den) < 1e-6:
+        return None
+    s = _cross(q[0] - p[0], q[1] - p[1], e[0], e[1]) / den
+    return (p[0] + s * d[0], p[1] + s * d[1])
+
+
+class Visited:
+    """Cells the mower body covered (axle and body centre, 3 x 3 cells each): where it was, so what it saw from."""
+
+    def __init__(self):
+        self.centres, self.cells, self.rev = set(), set(), 0
+
+    def add(self, x, y):
+        c = (math.floor(x / CX_CELL), math.floor(y / CX_CELL))
+        if c in self.centres:
+            return
+        self.centres.add(c)
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                self.cells.add((c[0] + di, c[1] + dj))
+        self.rev += 1
+
+    def has(self, x, y):
+        return (math.floor(x / CX_CELL), math.floor(y / CX_CELL)) in self.cells
+
+
+class Complexes:
+    """esp/wall_map lines -> wall complexes for the page (see the block comment above)."""
+
+    def __init__(self):
+        self.lines = []          # last build's lines (with ids)
+        self.bands = {}          # band id -> {'lines': set of line ids, 'seen': [unit normals], 'guess': normal}
+        self.cx = {}             # complex id -> set of band ids
+        self.pairs = set()       # frozenset(line ids) merged directly last time
+        self.joins = set()       # frozenset(band ids) joined last time
+        self.next_id = 1
+
+    def new_id(self):
+        self.next_id += 1
+        return self.next_id - 1
+
+    # ---------------------------------------------------------------- lines
+    def read(self, raw):
+        out = []
+        for kind, x0, y0, x1, y1, h, hits in raw:
+            c = _cls(kind)
+            ln = {'cls': c, 'h': max(0.02, h / 100.0), 'hits': max(1, hits)}
+            if c == 'post':
+                ln.update(c=(x0 / 100.0, y0 / 100.0), r=max(0.02, x1 / 100.0))
+            else:
+                a, b = (x0 / 100.0, y0 / 100.0), (x1 / 100.0, y1 / 100.0)
+                L = math.hypot(b[0] - a[0], b[1] - a[1])
+                if L < 0.02:
+                    continue
+                ln.update(a=a, b=b, len=L, u=((b[0] - a[0]) / L, (b[1] - a[1]) / L),
+                          ang=math.atan2(b[1] - a[1], b[0] - a[0]))
+            out.append(ln)
+        return out
+
+    @staticmethod
+    def angdiff(p, q):
+        d = abs(p['ang'] - q['ang']) % math.pi
+        return min(d, math.pi - d)
+
+    def match_lines(self, lines):
+        """Give each line the id of the last build's line it continues (same class, same place), else a new one."""
+        cands = []
+        for i, ln in enumerate(lines):
+            for p in self.lines:
+                if p['cls'] != ln['cls']:
+                    continue
+                if ln['cls'] == 'post':
+                    d = math.hypot(ln['c'][0] - p['c'][0], ln['c'][1] - p['c'][1])
+                    if d < 0.15:
+                        cands.append((d, i, p['id']))
+                    continue
+                da = self.angdiff(ln, p)
+                if da > math.radians(12):
+                    continue
+                mx, my = (ln['a'][0] + ln['b'][0]) / 2, (ln['a'][1] + ln['b'][1]) / 2
+                d = abs(_cross(p['u'][0], p['u'][1], mx - p['a'][0], my - p['a'][1]))
+                s = [(q[0] - p['a'][0]) * p['u'][0] + (q[1] - p['a'][1]) * p['u'][1] for q in (ln['a'], ln['b'])]
+                if d < 0.12 and min(max(s), p['len']) - max(min(s), 0.0) > -0.05:
+                    cands.append((d + 0.3 * da, i, p['id']))
+        cands.sort()
+        used_i, used_id = set(), set()
+        for _, i, pid in cands:
+            if i not in used_i and pid not in used_id:
+                lines[i]['id'] = pid
+                used_i.add(i)
+                used_id.add(pid)
+        for ln in lines:
+            if 'id' not in ln:
+                ln['id'] = self.new_id()
+
+    def parallel(self, A, B, loose):
+        """Same wall piece: near-parallel, overlapping along A, close across over the overlap."""
+        if self.angdiff(A, B) > (CX_ANGLE_H if loose else CX_ANGLE):
+            return False
+        ux, uy = A['u']
+        sb = [((q[0] - A['a'][0]) * ux + (q[1] - A['a'][1]) * uy, _cross(ux, uy, q[0] - A['a'][0], q[1] - A['a'][1]))
+              for q in (B['a'], B['b'])]
+        sb.sort()
+        (s0, t0), (s1, t1) = sb
+        lo, hi = max(0.0, s0), min(A['len'], s1)
+        need = 0.0 if loose else min(0.10, 0.5 * min(A['len'], B['len']))
+        if hi - lo < need or hi - lo <= 0.0:
+            return False
+        across = CX_ACROSS_H if loose else CX_ACROSS
+        for s in (lo, hi):  # B's distance across A at both ends of the overlap
+            t = t0 + (t1 - t0) * ((s - s0) / (s1 - s0) if s1 - s0 > 1e-6 else 0.0)
+            if abs(t) > across:
+                return False
+        return True
+
+    # ---------------------------------------------------------------- bands
+    @staticmethod
+    def band_shape(members):
+        w = [m['len'] * m['hits'] for m in members]
+        sw = sum(w)
+        th = 0.5 * math.atan2(sum(wi * math.sin(2 * m['ang']) for wi, m in zip(w, members)),
+                              sum(wi * math.cos(2 * m['ang']) for wi, m in zip(w, members)))
+        u, n = (math.cos(th), math.sin(th)), (-math.sin(th), math.cos(th))
+        cx = sum(wi * (m['a'][0] + m['b'][0]) / 2 for wi, m in zip(w, members)) / sw
+        cy = sum(wi * (m['a'][1] + m['b'][1]) / 2 for wi, m in zip(w, members)) / sw
+        S, T, tm = [], [], 0.0
+        for wi, m in zip(w, members):
+            ts = []
+            for q in (m['a'], m['b']):
+                S.append((q[0] - cx) * u[0] + (q[1] - cy) * u[1])
+                ts.append((q[0] - cx) * n[0] + (q[1] - cy) * n[1])
+            T += ts
+            tm += wi * (ts[0] + ts[1]) / 2
+        hits = sum(m['hits'] for m in members)
+        return {'c': (cx, cy), 'u': u, 'n': n, 's0': min(S), 's1': max(S), 't0': min(T), 't1': max(T), 'tm': tm / sw,
+                'h': sum(m['h'] * m['hits'] for m in members) / hits, 'cls': members[0]['cls'],
+                'lines': {m['id'] for m in members}, 'members': members}
+
+    def coverage(self, b, sign, occ, visited):
+        """Share of the band's length where the mower was on this side (sign +1: +n), in line of sight."""
+        L = b['s1'] - b['s0']
+        nb = max(1, int(round((L - 0.1) / 0.1)))
+        t = b['t1'] if sign > 0 else b['t0']
+        dx, dy = sign * b['n'][0], sign * b['n'][1]
+        cov = 0
+        for k in range(nb):
+            s = b['s0'] + 0.05 + (k + 0.5) * max(0.0, L - 0.1) / nb if L > 0.1 else (b['s0'] + b['s1']) / 2
+            px = b['c'][0] + s * b['u'][0] + t * b['n'][0]
+            py = b['c'][1] + s * b['u'][1] + t * b['n'][1]
+            lim = CX_SCAN
+            for (ax, ay), (bx, by) in occ:
+                r = _ray_seg(px, py, dx, dy, ax, ay, bx, by)
+                if r is not None and r < lim:
+                    lim = r
+            r = 0.08
+            while r <= lim:
+                if visited.has(px + r * dx, py + r * dy):
+                    cov += 1
+                    break
+                r += 0.05
+        return cov / nb, cov * max(L, 0.1) / nb
+
+    # ---------------------------------------------------------------- build
+    def build(self, raw, visited, mower):
+        lines = self.read(raw)
+        self.match_lines(lines)
+        segs = [ln for ln in lines if ln['cls'] != 'post']
+        posts = [ln for ln in lines if ln['cls'] == 'post']
+        # 1. bands: union of near-parallel overlapping lines
+        parent = list(range(len(segs)))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+        pairs = set()
+        for i in range(len(segs)):
+            for j in range(i + 1, len(segs)):
+                A, B = segs[i], segs[j]
+                if A['cls'] != B['cls']:
+                    continue
+                key = frozenset((A['id'], B['id']))
+                loose = key in self.pairs
+                if self.parallel(A, B, loose) or self.parallel(B, A, loose):
+                    pairs.add(key)
+                    parent[find(i)] = find(j)
+        self.pairs = pairs
+        groups = collections.defaultdict(list)
+        for i, s in enumerate(segs):
+            groups[find(i)].append(s)
+        bands = [self.band_shape(g) for g in groups.values()]
+        # band ids: the last build's band with the most shared lines (one each)
+        cands = sorted(((-len(b['lines'] & ob['lines']), bi, oid) for bi, b in enumerate(bands)
+                        for oid, ob in self.bands.items() if b['lines'] & ob['lines']))
+        taken = set()
+        for _, bi, oid in cands:
+            if 'id' not in bands[bi] and oid not in taken:
+                bands[bi]['id'] = oid
+                taken.add(oid)
+        old = self.bands
+        self.bands = {}
+        for b in bands:
+            if 'id' not in b:
+                b['id'] = self.new_id()
+            mem = old.get(b['id'], {})
+            b['seen'], b['guess'] = list(mem.get('seen', [])), mem.get('guess')
+            self.bands[b['id']] = {'lines': b['lines'], 'seen': b['seen'], 'guess': b['guess']}
+        # 2. seen sides: where the mower was, in line of sight (other lines block); sticky (kept as world normals)
+        for b in bands:
+            pad = CX_SCAN + 0.3
+            xs = [b['c'][0] + s * b['u'][0] for s in (b['s0'], b['s1'])]
+            ys = [b['c'][1] + s * b['u'][1] for s in (b['s0'], b['s1'])]
+            occ = [(o['a'], o['b']) for o in segs if o['id'] not in b['lines']
+                   and max(o['a'][0], o['b'][0]) > min(xs) - pad and min(o['a'][0], o['b'][0]) < max(xs) + pad
+                   and max(o['a'][1], o['b'][1]) > min(ys) - pad and min(o['a'][1], o['b'][1]) < max(ys) + pad]
+            for sign in (1, -1):
+                nrm = (sign * b['n'][0], sign * b['n'][1])
+                if any(nrm[0] * v[0] + nrm[1] * v[1] > 0.5 for v in b['seen']):
+                    continue
+                share, length = self.coverage(b, sign, occ, visited)
+                if share >= 0.3 or length >= 0.6:
+                    b['seen'].append(nrm)
+            plus = any(b['n'][0] * v[0] + b['n'][1] * v[1] > 0.5 for v in b['seen'])
+            minus = any(b['n'][0] * v[0] + b['n'][1] * v[1] < -0.5 for v in b['seen'])
+            if not plus and not minus:  # no track there (node started later): the side the mower is on now, kept
+                if b['guess'] is None:
+                    side = 1
+                    if mower:
+                        t = (mower[0] - b['c'][0]) * b['n'][0] + (mower[1] - b['c'][1]) * b['n'][1]
+                        side = 1 if t >= b['tm'] else -1
+                    b['guess'] = (side * b['n'][0], side * b['n'][1])
+                    self.bands[b['id']]['guess'] = b['guess']
+                plus = b['n'][0] * b['guess'][0] + b['n'][1] * b['guess'][1] > 0
+                minus = not plus
+            b['two'] = plus and minus
+            b['side'] = 0 if b['two'] else (1 if plus else -1)
+            b['tref'] = (b['t0'] + b['t1']) / 2 if b['two'] else b['tm']   # solid: the middle; one side: the face
+            b['half'] = max(b['t1'] - b['t0'], CX_MIN_SOLID) / 2
+            b['end'] = [(b['c'][0] + s * b['u'][0] + b['tref'] * b['n'][0],
+                         b['c'][1] + s * b['u'][1] + b['tref'] * b['n'][1]) for s in (b['s0'], b['s1'])]
+        # 3. joins: band ends that meet (or whose corner point both ends are near), one partner per end
+        def compat(A, B):
+            return A['cls'] == B['cls'] and abs(A['h'] - B['h']) <= max(0.12, 0.35 * max(A['h'], B['h']))
+        cand = []
+        for i, A in enumerate(bands):
+            for j in range(i + 1, len(bands)):
+                B = bands[j]
+                if not compat(A, B):
+                    continue
+                J = CX_JOIN_H if frozenset((A['id'], B['id'])) in self.joins else CX_JOIN
+                ang = abs(_cross(A['u'][0], A['u'][1], B['u'][0], B['u'][1]))
+                X = _line_x(A['end'][0], A['u'], B['end'][0], B['u']) if ang > math.sin(math.radians(25)) else None
+                for ea in (0, 1):
+                    for eb in (0, 1):
+                        pa, pb = A['end'][ea], B['end'][eb]
+                        d = math.hypot(pa[0] - pb[0], pa[1] - pb[1])
+                        if d > J and X:
+                            d = max(math.hypot(pa[0] - X[0], pa[1] - X[1]), math.hypot(pb[0] - X[0], pb[1] - X[1]))
+                        if d <= J:
+                            cand.append((d, i, ea, j, eb))
+        cand.sort()
+        link = {}   # (band index, end) -> (band index, end)
+        joined, joins = set(), set()
+        for _, i, ea, j, eb in cand:
+            if (i, ea) in link or (j, eb) in link or (i, j) in joined:
+                continue
+            link[(i, ea)], link[(j, eb)] = (j, eb), (i, ea)
+            joined.add((i, j))
+            joins.add(frozenset((bands[i]['id'], bands[j]['id'])))
+        self.joins = joins
+        # T joins: a free end on another band's body; the end runs into it
+        tee, ext = [], {}
+        for i, A in enumerate(bands):
+            for ea in (0, 1):
+                if (i, ea) in link:
+                    continue
+                pa = A['end'][ea]
+                for j, B in enumerate(bands):
+                    if j == i or not compat(A, B) or abs(_cross(A['u'][0], A['u'][1], B['u'][0], B['u'][1])) < 0.5:
+                        continue
+                    s = (pa[0] - B['c'][0]) * B['u'][0] + (pa[1] - B['c'][1]) * B['u'][1]
+                    t = (pa[0] - B['c'][0]) * B['n'][0] + (pa[1] - B['c'][1]) * B['n'][1]
+                    if B['s0'] + 0.03 < s < B['s1'] - 0.03 and abs(t - B['tref']) <= CX_JOIN + B['half']:
+                        X = _line_x(pa, A['u'], B['end'][0], B['u'])
+                        if X and math.hypot(X[0] - pa[0], X[1] - pa[1]) <= 0.3:
+                            ext[(i, ea)] = X
+                        tee.append((i, j))
+                        break
+        # 4. complexes: connected bands; ids from the last build's complex with the most shared bands
+        par = list(range(len(bands)))
+
+        def fnd(i):
+            while par[i] != i:
+                par[i] = par[par[i]]
+                i = par[i]
+            return i
+        for (i, _), (j, _) in link.items():
+            par[fnd(i)] = fnd(j)
+        for i, j in tee:
+            par[fnd(i)] = fnd(j)
+        comp = collections.defaultdict(list)
+        for i in range(len(bands)):
+            comp[fnd(i)].append(i)
+        comps = list(comp.values())
+        ids = [None] * len(comps)
+        cands = sorted(((-len({bands[i]['id'] for i in c} & ob), ci, oid) for ci, c in enumerate(comps)
+                        for oid, ob in self.cx.items() if {bands[i]['id'] for i in c} & ob))
+        taken = set()
+        for _, ci, oid in cands:
+            if ids[ci] is None and oid not in taken:
+                ids[ci] = oid
+                taken.add(oid)
+        cx, out = {}, []
+        for ci, c in enumerate(comps):
+            cid = ids[ci] if ids[ci] is not None else self.new_id()
+            cx[cid] = {bands[i]['id'] for i in c}
+            out.append(self.complex_out(cid, [bands[i] for i in c], c, bands, link, ext))
+        for p in posts:   # posts stay posts (their line id is stable)
+            out.append({'id': 'p%d' % p['id'], 'k': 'post', 'c': [round(p['c'][0], 3), round(p['c'][1], 3)],
+                        'r': round(p['r'], 3), 'h': round(p['h'], 2)})
+        self.cx = cx
+        self.lines = lines
+        out.sort(key=lambda o: str(o['id']))
+        return out
+
+    def complex_out(self, cid, members, idx, bands, link, ext):
+        """One complex: its chains (polylines through the joined band ends) with per-segment offsets and fade side."""
+        seen, chains = set(), []
+        starts = [i for i in idx if (i, 0) not in link or (i, 1) not in link]
+        for i in starts + [i for i in idx if i not in starts]:
+            if i in seen:
+                continue
+            closed = i not in starts
+            # walk from the free end (open chain) or from any band (cycle)
+            e = 0 if (i, 0) not in link or closed else 1
+            seq, cur, ent = [], i, e
+            while cur not in seen:
+                seen.add(cur)
+                seq.append((cur, ent == 0))                     # enters at end ent; forward if it enters at s0
+                nxt = link.get((cur, 1 - ent))
+                if nxt is None:
+                    break
+                cur, ent = nxt
+            chains.append(self.chain_out(seq, closed and len(seq) > 2, bands, ext))
+        L = sum(b['s1'] - b['s0'] for b in members)
+        h = sum(b['h'] * (b['s1'] - b['s0']) for b in members) / max(L, 1e-6)
+        return {'id': cid, 'k': members[0]['cls'], 'h': round(h, 2), 'two': any(b['two'] for b in members), 'ch': chains}
+
+    @staticmethod
+    def chain_out(seq, closed, bands, ext):
+        segs = []
+        for i, fwd in seq:
+            b = bands[i]
+            p0, p1 = (b['end'][0], b['end'][1]) if fwd else (b['end'][1], b['end'][0])
+            d = b['u'] if fwd else (-b['u'][0], -b['u'][1])
+            if b['two']:
+                a = l = b['half']
+                f = 0
+            else:
+                left_seen = (b['side'] > 0) == fwd             # +n is the left side when forward
+                a, l, f = (CX_SKIN, 0.0, -1) if left_seen else (0.0, CX_SKIN, 1)
+            segs.append({'p0': p0, 'p1': p1, 'd': d, 'off': (a, l, f), 'i': i, 'fwd': fwd})
+        if not closed:
+            i, fwd = seq[0]
+            segs[0]['p0'] = ext.get((i, 0 if fwd else 1), segs[0]['p0'])
+            i, fwd = seq[-1]
+            segs[-1]['p1'] = ext.get((i, 1 if fwd else 0), segs[-1]['p1'])
+
+        def joint(A, B):
+            ang = abs(_cross(A['d'][0], A['d'][1], B['d'][0], B['d'][1]))
+            if ang > math.sin(math.radians(8)):
+                X = _line_x(A['p1'], A['d'], B['p0'], B['d'])
+                if X and math.hypot(X[0] - A['p1'][0], X[1] - A['p1'][1]) <= 0.4 \
+                        and math.hypot(X[0] - B['p0'][0], X[1] - B['p0'][1]) <= 0.4:
+                    return X
+            return ((A['p1'][0] + B['p0'][0]) / 2, (A['p1'][1] + B['p0'][1]) / 2)
+        n = len(segs)
+        if closed:
+            pts = [joint(segs[k - 1], segs[k]) for k in range(n)]           # pts[k]: start of segment k
+            ends = [(pts[k], pts[(k + 1) % n]) for k in range(n)]
+        else:
+            pts = [segs[0]['p0']] + [joint(segs[k], segs[k + 1]) for k in range(n - 1)] + [segs[-1]['p1']]
+            ends = [(pts[k], pts[k + 1]) for k in range(n)]
+        for k, (p, q) in enumerate(ends):   # a joint past the far end flips a short piece: use the plain ends there
+            d = segs[k]['d']
+            if (q[0] - p[0]) * d[0] + (q[1] - p[1]) * d[1] < 0.02:
+                if closed:
+                    pts[k], pts[(k + 1) % n] = segs[k]['p0'], segs[k]['p1']
+                else:
+                    pts[k], pts[k + 1] = segs[k]['p0'], segs[k]['p1']
+        r3 = lambda v: round(v, 3)  # noqa: E731
+        return {'p': [[r3(x), r3(y)] for x, y in pts], 's': [[r3(s['off'][0]), r3(s['off'][1]), s['off'][2]] for s in segs],
+                'c': 1 if closed else 0}
 
 
 def _page_path():
@@ -234,6 +674,10 @@ class WebUi(Node):
         self.sim_t = collections.deque(maxlen=150)  # (sim stamp, monotonic) of the last ~3 s of truth
         self.wall_map = []
         self.t_map = None
+        self.visited = Visited()                     # cells the mower body covered (seen side of the walls)
+        self.complexes = Complexes()
+        self.walls, self.walls_rev = [], 0           # wall complexes for the page (Complexes.build)
+        self.walls_key = None                        # (map rev, visited rev) of the last build
         self.manual = None   # None = not known yet (no log line seen)
         self.assist = None
         self.assist_state = 'FREE'
@@ -264,6 +708,7 @@ class WebUi(Node):
             self.create_subscription(Odometry, '/sim/greentitan/ground_truth', self.on_truth, qos_profile_sensor_data)
         self.create_timer(1.0 / STICK_HZ, self.tick)
         self.create_timer(TERRAIN_PUSH, self.on_terrain_tick)
+        self.create_timer(WALLS_PERIOD, self.on_walls_tick)
 
     # ------------------------------------------------------------------ ROS in
     def on_log(self, msg):
@@ -363,6 +808,7 @@ class WebUi(Node):
         # esp/datum has full precision, a log line 7 decimals (~1 cm); the latest one counts
         if self.datum and (abs(lat - self.datum[0]) > 1e-6 or abs(lon - self.datum[1]) > 1e-6):
             self.terrain.reset()  # a new odom origin (not the log line's rounding): the old cells are elsewhere now
+            self.visited = Visited()
         self.datum = (lat, lon)
         if self.world and (lat, lon) != self.world.datum:
             self.world.datum = (lat, lon)
@@ -375,6 +821,9 @@ class WebUi(Node):
             self.pose_n += 1
             self.pose = {'x': p.x, 'y': p.y, 'yaw': _yaw(m.pose.pose.orientation),
                          'v': m.twist.twist.linear.x, 'w': m.twist.twist.angular.z, 'n': self.pose_n}
+            c, s = math.cos(self.pose['yaw']), math.sin(self.pose['yaw'])
+            for back in (-AXLE_AHEAD, 0.15 - AXLE_AHEAD):   # the axle and the body centre (base_link is behind the axle)
+                self.visited.add(p.x - back * c, p.y - back * s)
             self.bump()
 
     def on_imu(self, m):
@@ -422,6 +871,25 @@ class WebUi(Node):
             self.wall_map, self.t_map = objs, time.monotonic()
             self.map_rev += 1
             self.bump()
+
+    def on_walls_tick(self):
+        """Rebuild the wall complexes when the map or the covered cells changed (outside the lock: ~10-50 ms)."""
+        with self.lock:
+            key = (self.map_rev, self.visited.rev)
+            if key == self.walls_key:
+                return
+            self.walls_key = key
+            raw, visited = list(self.wall_map), self.visited
+            mower = (self.pose['x'], self.pose['y']) if self.pose else None
+        try:
+            walls = self.complexes.build(raw, visited, mower)
+        except Exception as e:  # never take the page down over a display feature
+            self.get_logger().error(f'wall complexes: {e!r}')
+            return
+        with self.lock:
+            if walls != self.walls:
+                self.walls, self.walls_rev = walls, self.walls_rev + 1
+                self.bump()
 
     # ------------------------------------------------------------------ console out
     def send(self, keys):
@@ -509,12 +977,14 @@ class WebUi(Node):
     def state(self, since):
         with self.lock:
             s = self.live(time.monotonic())
-            s.update(outlines=self.outlines, map=self.wall_map, log=[[i, t] for i, t in self.log if i > since])
+            s.update(outlines=self.outlines, map=self.wall_map, walls=self.walls,
+                     log=[[i, t] for i, t in self.log if i > since])
             return s
 
     def stream(self, write, since):
         """Push messages to one /events client until it goes away (write raises)."""
         sent_seq, sent_map, sent_out, sent_log, t_last = -1, -1, -1, since, 0.0
+        sent_walls = -1
         sent_ter = (0, 0)  # (epoch, rev) of the terrain this client has
         while True:
             with self.cond:
@@ -523,6 +993,8 @@ class WebUi(Node):
                 msg = self.live(time.monotonic())
                 if self.map_rev != sent_map:
                     msg['map'], sent_map = self.wall_map, self.map_rev
+                if self.walls_rev != sent_walls:
+                    msg['walls'], sent_walls = self.walls, self.walls_rev
                 if self.out_rev != sent_out:
                     msg['outlines'], sent_out = self.outlines, self.out_rev
                 ter = self.terrain
