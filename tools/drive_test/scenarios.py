@@ -36,9 +36,19 @@ def wobbly(lin, dur, amp=0.12, seed=1, hold=0.5, lin_var=0.0):
 # Docking: the station pose (x, y, yaw deg; the axle at contact, facing into the station). 30 deg, so a mower
 # spawned docked boots with a 30 deg heading error (the EKF starts at 0): the error at the stop.
 STATION = (0.0, 0.0, 30.0)
-# Moved 8 cm to its left and turned 4 deg (dock_nudge): the board still has STATION stored
+# Moved 8 cm to its left and turned 4 deg (dock_nudge: the stored estimate is moved back to STATION)
 STATION_NUDGED = (STATION[0] - 0.08 * math.sin(math.radians(STATION[2])),
                   STATION[1] + 0.08 * math.cos(math.radians(STATION[2])), STATION[2] + 4.0)
+
+
+def _nudge_back():
+    """STATION in STATION_NUDGED's frame: cm along, cm left, deg (console Y moves the stored estimate by it)."""
+    c, s = math.cos(math.radians(STATION_NUDGED[2])), math.sin(math.radians(STATION_NUDGED[2]))
+    dx, dy = STATION[0] - STATION_NUDGED[0], STATION[1] - STATION_NUDGED[1]
+    return (100 * (c * dx + s * dy), 100 * (-s * dx + c * dy), STATION[2] - STATION_NUDGED[2])
+
+
+NUDGE_BACK = _nudge_back()
 
 
 def at_station(st, along, lat=0.0, rel_yaw_deg=0.0):
@@ -222,20 +232,27 @@ SCENARIOS = {
         'checks': {'docks_min': 1, 'no_dock_msgs': True, 'docked_end': True},
     },
     # 20 undock/dock cycles with the sim's normal RTK noise: no message for the user, the estimate stays put.
+    # Limits from the estimator replay (one measurement ~3 deg sd in yaw, the mower's yaw in the funnel play,
+    # ~1 cm in position): after 20 docks p95 0.8 cm / 1.3 deg.
     'dock_repeat': {
         'world': 'dock', 'station': STATION, 'spawn': at_station(STATION, DOCKED),
         'steps': [SETTLE] + CYCLE * 20,
-        'checks': {'docks_min': 20, 'no_dock_msgs': True, 'docked_end': True, 'station_err': (1.0, 0.5)},
+        'checks': {'docks_min': 20, 'no_dock_msgs': True, 'docked_end': True, 'station_err': (1.0, 1.5)},
     },
-    # The station was moved 8 cm / 4 deg since the board stored it: the funnel (with retries) still brings the
-    # mower in. Retried docks are no measurements, but every undock from the live contacts is: 3 of them agree,
-    # the new pose is adopted silently (after dock 3), and the last docks need at most 2 approaches. Starts 3 m out
-    # on the old axis.
+    # The station was moved 8 cm / 4 deg since the board stored it. Self-contained: spawned docked in the moved
+    # station, it forgets the stored one and learns it on the way out, then the console moves the stored
+    # estimate back to the old pose (Y, the inverse of the nudge in the station frame). The funnel (with
+    # retries) still brings the mower in; retried docks are no measurements, but every undock from the live
+    # contacts is: 2 agreeing ones after a retried dock are adopted (their mean), or a failed approach series
+    # tries once more on the held-back mean. The last dock needs at most 2 approaches. Station limits: what
+    # docking needs (first try below ~3 deg: HIL 2.0 cm / 3.8 deg needed 2 approaches) and the replay after
+    # 5 docks (p90 2.5 deg, p95 1.1 cm).
     'dock_nudge': {
-        'world': 'dock', 'station': STATION_NUDGED, 'spawn': at_station(STATION, -3.0),
-        'steps': [SETTLE, (0.25, 0, 2.5), {'manual': False}] + HOME + CYCLE * 4,
+        'world': 'dock', 'station': STATION_NUDGED, 'spawn': at_station(STATION_NUDGED, DOCKED),
+        'steps': [SETTLE, {'cmd': 'forget_station'}, {'wait': 1}] + CYCLE[:2] +
+                 [{'cmd': 'move_station:%.1f,%.1f,%.1f' % NUDGE_BACK}, {'wait': 1}] + HOME + CYCLE * 4,
         'checks': {'docks_min': 5, 'no_dock_msgs': True, 'docked_end': True, 'adopted_within': 4, 'last_approaches_max': 2,
-                   'station_err': (1.0, 0.5)},
+                   'station_err': (1.5, 3.0)},
     },
 }
 

@@ -76,6 +76,7 @@ volatile bool     MANUAL_MOTORS_STOPPED = true;
 volatile bool     HEADING_CONFIRMED     = false;
 volatile uint32_t HEADING_EPOCH         = 0;
 volatile bool     TOF_MAP_HOLD          = false;
+volatile float    DOCK_SHIFT[3]         = { 0.0f, 0.0f, 0.0f };
 volatile uint8_t  GPS_CARR_SOLN         = 0;
 volatile uint32_t GPS_CARR_SOLN_MS      = 0;
 
@@ -1279,6 +1280,7 @@ void setup() {
     SerialDebug.println("  U       undock (reverse out) and stay");
     SerialDebug.println("  S       set station again (docked by hand, contacts live; the first departure does it itself)");
     SerialDebug.println("  X       forget the station");
+    SerialDebug.println("  Y<a>,<l>,<deg>  move the stored station (cm along, cm left, deg; tests)");
     SerialDebug.println("  B       power, contacts, station");
     SerialDebug.println("==================================");
     SerialDebug.println("");
@@ -1530,6 +1532,21 @@ void loop() {
                 else if (c == 'X') {  // Forget the station (the next departure from a hand dock measures it)
                     controller_signal_t signal = { SIGNAL_FORGET_STATION };
                     DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'Y') {  // "Y<along cm>,<lat cm>,<yaw deg>\n": move the stored station (tests)
+                    char buf[32]; int len = 0;
+                    while (SerialDebug.available() && len < (int)sizeof(buf) - 1) {
+                        char ch = SerialDebug.read();
+                        if (ch == '\n' || ch == '\r') break;
+                        buf[len++] = ch;
+                    }
+                    buf[len] = '\0';
+                    float al, la, yw;
+                    if (sscanf(buf, "%f,%f,%f", &al, &la, &yw) == 3) {
+                        DOCK_SHIFT[0] = al * 0.01f; DOCK_SHIFT[1] = la * 0.01f; DOCK_SHIFT[2] = yw * (float)DEG_TO_RAD;
+                        controller_signal_t signal = { SIGNAL_SHIFT_STATION };
+                        DDS_PUBLISH("/controller/signal", signal);
+                    } else SerialDebug.println("[DEBUG] Usage: Y<along cm>,<lat cm>,<yaw deg>  e.g. Y0.6,-8.0,-4");
                 }
                 else if (c == 'B') {  // Power and station status
                     controller_print_dock_status();

@@ -82,13 +82,15 @@ typedef struct {
 #define DOCK_RTK_MAX_AGE_MS 1000       // RTK fixed must have been reported within this
 #define DOCK_RTK_WAIT_MS 60000        // Set station / Home before the RTK fix (boot: float first) waits this long, quietly
 #define DOCK_FIX_WAIT_MS 600000       // the approach without RTK fix waits stopped this long, quietly (float episodes by a shed or hedge last minutes)
-#define DOCK_EST_WEIGHT 0.2f           // weight of one accepted dock measurement in the running estimate
+#define DOCK_EST_WEIGHT 0.2f           // floor of the position weight of one accepted measurement (running mean until then)
+#define DOCK_EST_WEIGHT_YAW 0.1f       // ... and of the yaw: one measurement is the mower's yaw in the funnel play, ~3 deg sd (HIL)
 #define DOCK_GATE_SIGMAS 3.0f          // gate: within this many sigma of the recent measurements ...
-#define DOCK_GATE_MIN_POS 0.03f        // m ... but never tighter than this
-#define DOCK_GATE_MIN_YAW_DEG 1.5f
-#define DOCK_MOVE_COUNT 2              // this many gated measurements in a row that agree = the station was moved (1 after a dock that needed retries or failed)
-#define DOCK_MOVE_AGREE_POS 0.02f      // m
-#define DOCK_MOVE_AGREE_YAW_DEG 1.0f
+#define DOCK_GATE_MIN_POS 0.04f        // m ... but never tighter than this (position ~1 cm sd per axis)
+#define DOCK_GATE_MIN_YAW_DEG 8.0f     // above the in-dock play (~3 deg sd): a move shows mainly in the position
+#define DOCK_MOVE_COUNT 3              // this many held-back measurements in a row that agree = the station was moved: their mean is adopted
+#define DOCK_MOVE_COUNT_DOUBT 2        // ... after a dock that needed retries or failed (never 1)
+#define DOCK_MOVE_AGREE_POS 0.03f      // m, to the mean of the held-back ones
+#define DOCK_MOVE_AGREE_YAW_DEG 6.0f
 #define DOCK_TRACK_SAMPLES 200         // RTK track samples kept (5 Hz: 40 s)
 #define MOTION_REVERSE_SPEED_MAX 0.15f        // m/s, reverse line follower (MOVING_REVERSE)
 #define MOTION_REVERSE_LOOKAHEAD 0.30f        // m: cross-track e -> travel aimed atan(e / this) back at the line
@@ -586,6 +588,7 @@ extern volatile uint32_t HEADING_EPOCH;
 // the zones that straddle the back block's corners and the wall behind it (closer than the sensor's target
 // separation) read in between and stamped phantom lines across the gap (HIL 2026-11-02); the station is known.
 extern volatile bool     TOF_MAP_HOLD;
+extern volatile float    DOCK_SHIFT[3];   // console Y: along, lateral (m, station frame), yaw (rad)
 
 enum motor_instruction {
   MOTOR_STOP,
@@ -667,6 +670,7 @@ enum controller_signal {
     SIGNAL_UNDOCK,              // console U: reverse out of the station and stay
     SIGNAL_SET_STATION,         // console S: docked by hand -> measure the station pose
     SIGNAL_FORGET_STATION,      // console X: no station known (tests; the next hand dock measures it)
+    SIGNAL_SHIFT_STATION,       // console Y<along cm>,<lat cm>,<yaw deg>: move the stored station (tests: DOCK_SHIFT)
 };
 
 typedef struct {

@@ -289,7 +289,7 @@ def dock_score(B, world_yaml, W, res, t0):
                 d['approaches'].append(int(ma.group(1)))
             if any(u in line for u in USER_MSGS):
                 d['user_msgs'].append((tt, line[line.index('[DOCK]'):][:110]))
-            if 'Station moved: adopted' in line:
+            if 'Station moved: adopted' in line or 'Trying the held-back' in line:   # (the trial is stored by its dock)
                 d['adopted'].append((tt, d['docks']))
             d['set_verified'] |= 'Station set (verified' in line
             mm = RE_ST.search(line)

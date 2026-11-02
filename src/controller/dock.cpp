@@ -146,15 +146,15 @@ dock_station_t DOCK_STATION = { false, 0.0, 0.0, 0.0f, 0 };
 #define DOCK_RECENT 8
 static float recent_pos[DOCK_RECENT], recent_yaw[DOCK_RECENT];
 static int recent_n = 0, recent_i = 0;
-// Held-back measurements in a row
+// Held-back measurements in a row that agree with their mean
 struct Meas { double x, y; float yaw; };
 static Meas held[DOCK_MOVE_COUNT];
 static int held_n = 0;
-// The last dock needed retries or failed: one held-back measurement is enough to adopt
+// The last dock needed retries or failed: DOCK_MOVE_COUNT_DOUBT held-back measurements are enough
 static bool doubt = false;
 
-void dock_station_init(double x, double y, float yaw) {
-    DOCK_STATION = { true, x, y, wrap_pi(yaw), 1 };
+void dock_station_init(double x, double y, float yaw, uint16_t n) {
+    DOCK_STATION = { true, x, y, wrap_pi(yaw), n };
     recent_n = recent_i = 0;
     held_n = 0;
     doubt = false;
@@ -162,11 +162,19 @@ void dock_station_init(double x, double y, float yaw) {
 
 void dock_station_doubt(bool d) { doubt = d; }
 
-bool dock_station_held_latest(double* x, double* y, float* yaw) {
-    if (held_n == 0) return false;
-    const Meas& h = held[held_n - 1];
-    *x = h.x; *y = h.y; *yaw = h.yaw;
-    return true;
+static void held_mean(double* x, double* y, float* yaw) {
+    double mx = 0.0, my = 0.0, sx = 0.0, sy = 0.0;
+    for (int i = 0; i < held_n; i++) {
+        mx += held[i].x; my += held[i].y;
+        sx += cos(held[i].yaw); sy += sin(held[i].yaw);
+    }
+    *x = mx / held_n; *y = my / held_n; *yaw = (float)atan2(sy, sx);
+}
+
+int dock_station_held_mean(double* x, double* y, float* yaw) {
+    if (held_n == 0) return 0;
+    held_mean(x, y, yaw);
+    return held_n;
 }
 
 static float rms(const float* v, int n) {
@@ -186,9 +194,13 @@ int dock_station_measure(double x, double y, float yaw) {
     float gate_yaw = fmaxf(DOCK_GATE_MIN_YAW_DEG * (float)DEG_TO_RAD,
                            DOCK_GATE_SIGMAS * (recent_n >= 3 ? rms(recent_yaw, recent_n) : 0.0f));
     if (dpos <= gate_pos && fabsf(dyaw) <= gate_yaw) {
-        S.x += DOCK_EST_WEIGHT * dx;
-        S.y += DOCK_EST_WEIGHT * dy;
-        S.yaw = wrap_pi(S.yaw + DOCK_EST_WEIGHT * dyaw);
+        // A running mean (1/(n+1)) until the weight reaches its floor; the yaw (in-dock play, ~3 deg per
+        // measurement) averages over more measurements than the position (~1 cm)
+        float w = 1.0f / ((float)S.n + 1.0f);
+        float wp = fmaxf(w, DOCK_EST_WEIGHT), wy = fmaxf(w, DOCK_EST_WEIGHT_YAW);
+        S.x += wp * dx;
+        S.y += wp * dy;
+        S.yaw = wrap_pi(S.yaw + wy * dyaw);
         if (S.n < 65535) S.n++;
         recent_pos[recent_i] = dpos;
         recent_yaw[recent_i] = dyaw;
@@ -202,27 +214,26 @@ int dock_station_measure(double x, double y, float yaw) {
     }
     // Outside the gate: held back. A run of them that agree with each other = the station moved.
     if (held_n > 0) {
-        const Meas& h0 = held[0];
-        bool agree = hypot(x - h0.x, y - h0.y) <= DOCK_MOVE_AGREE_POS &&
-                     fabsf(wrap_pi(yaw - h0.yaw)) <= DOCK_MOVE_AGREE_YAW_DEG * (float)DEG_TO_RAD;
+        double hx, hy;
+        float hyaw;
+        held_mean(&hx, &hy, &hyaw);
+        bool agree = hypot(x - hx, y - hy) <= DOCK_MOVE_AGREE_POS &&
+                     fabsf(wrap_pi(yaw - hyaw)) <= DOCK_MOVE_AGREE_YAW_DEG * (float)DEG_TO_RAD;
         if (!agree) held_n = 0;
     }
     held[held_n++] = { x, y, yaw };
     SerialDebug.printf("[DOCK] Measurement %.1f cm along, %.1f cm lateral, %.2f deg: outside the gate "
                        "(%.1f cm, %.2f deg), held back (%d in a row)\r\n", along * 100.0f, lat * 100.0f,
                        dyaw * RAD_TO_DEG, gate_pos * 100.0f, gate_yaw * RAD_TO_DEG, held_n);
-    if (held_n < (doubt ? 1 : DOCK_MOVE_COUNT)) return DOCK_MEAS_GATED;
+    // Never on one measurement: a single back-out measures the mower's yaw in the funnel play, not the axis
+    if (held_n < (doubt ? DOCK_MOVE_COUNT_DOUBT : DOCK_MOVE_COUNT)) return DOCK_MEAS_GATED;
     int k = held_n;
     bool after_retries = doubt;
-    double mx = 0.0, my = 0.0, sx = 0.0, sy = 0.0;
-    for (int i = 0; i < k; i++) {
-        mx += held[i].x; my += held[i].y;
-        sx += cos(held[i].yaw); sy += sin(held[i].yaw);
-    }
-    uint16_t n = S.n;
-    dock_station_init(mx / k, my / k, (float)atan2(sy, sx));
-    S.n = n;
-    SerialDebug.printf("[DOCK] Station moved: adopted x=%.3f y=%.3f yaw=%.2f deg (%d measurement(s) agreed%s)\r\n",
+    double mx, my;
+    float myaw;
+    held_mean(&mx, &my, &myaw);
+    dock_station_init(mx, my, myaw, (uint16_t)k);   // the mean of k measurements: weight 1/(k+1) next
+    SerialDebug.printf("[DOCK] Station moved: adopted x=%.3f y=%.3f yaw=%.2f deg (mean of %d agreeing measurements%s)\r\n",
                        S.x, S.y, S.yaw * RAD_TO_DEG, k, after_retries ? ", the last dock needed retries" : "");
     return DOCK_MEAS_ADOPTED;
 }

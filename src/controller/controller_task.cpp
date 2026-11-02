@@ -397,13 +397,14 @@ static void approach_failed(const char* why) {
     SerialDebug.printf("[DOCK] Approach missed (%s)\r\n", why);
     double hx, hy;
     float hyaw;
+    int held_k = 0;
     bool reroute = false;
     if (dock_attempt >= dock_attempts_total()) {
-        // A held-back undock measurement disagrees with the estimate and every approach on the estimate
-        // missed: the station was moved. Once more on that measurement (unverified: a dock stores it, a
-        // failure restores the old estimate). The back-off leaves the failed line and ends on the new
-        // pre-dock point.
-        if (dock_verifying || !dock_station_held_latest(&hx, &hy, &hyaw)) {
+        // Held-back undock measurements disagree with the estimate and every approach on the estimate
+        // missed: the station was moved. Once more on their mean (unverified: a dock stores it, and its
+        // clean approach is a second measurement; a failure restores the old estimate). The back-off
+        // leaves the failed line and ends on the new pre-dock point.
+        if (dock_verifying || !(held_k = dock_station_held_mean(&hx, &hy, &hyaw))) {
             dock_failed("all approaches missed");
             return;
         }
@@ -414,10 +415,10 @@ static void approach_failed(const char* why) {
     double sx, sy, ex, ey;
     st_point(0.0f, lat, &sx, &sy);
     if (reroute) {
-        SerialDebug.printf("[DOCK] Trying the last undock measurement x=%.3f y=%.3f yaw=%.2f\r\n", hx, hy, hyaw * RAD_TO_DEG);
+        SerialDebug.printf("[DOCK] Trying the held-back undock measurement(s) x=%.3f y=%.3f yaw=%.2f (mean of %d)\r\n",
+                           hx, hy, hyaw * RAD_TO_DEG, held_k);
         dock_backup = DOCK_STATION;
-        dock_station_init(hx, hy, hyaw);
-        DOCK_STATION.n = dock_backup.n;
+        dock_station_init(hx, hy, hyaw, (uint16_t)held_k);
         dock_verifying = true;
         dock_missed_before = dock_attempt;
         dock_attempt = 0;
@@ -493,7 +494,7 @@ static void docked() {
         SaveStation();
         SerialDebug.printf("[DOCK] Station set (verified by a dock)\r\n");
         log_station();
-        return;
+        if (!dock_missed_before) return;   // set station; a moved-station trial goes on: its approach measures
     }
     if (!approach_clean) {
         SerialDebug.printf("[DOCK] Not a measurement (retries, creep or no RTK fix on the approach)\r\n");
@@ -1224,6 +1225,20 @@ static void controller_signal_callback(dds_callback_context_t* context) {
         case SIGNAL_SET_STATION:
             start_set_station();
             break;
+        case SIGNAL_SHIFT_STATION: {   // tests: an estimate that the station has moved away from
+            if (dock_phase != DP_NONE || !DOCK_STATION.set) {
+                SerialDebug.printf("[DOCK] Cannot move the station now\r\n");
+                break;
+            }
+            double nx, ny;
+            st_point(DOCK_SHIFT[0], DOCK_SHIFT[1], &nx, &ny);
+            dock_station_init(nx, ny, DOCK_STATION.yaw + DOCK_SHIFT[2], DOCK_STATION.n);
+            dock_verifying = false;
+            SaveStation();
+            SerialDebug.printf("[DOCK] Station moved by the console\r\n");
+            log_station();
+            break;
+        }
         case SIGNAL_FORGET_STATION:
             if (dock_phase != DP_NONE) {
                 SerialDebug.printf("[DOCK] Cannot forget the station while %s\r\n", state_name(robot_state));

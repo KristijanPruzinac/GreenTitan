@@ -978,6 +978,10 @@ class WebUi(Node):
         return 'ok'
 
     def command(self, name):
+        m = re.fullmatch(r'move_station:(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)', name)
+        if m:  # tests (drive_test): move the stored station, cm along, cm left, deg (console Y)
+            self.send('Y%s,%s,%s\n' % m.groups())
+            return True
         if name == 'takeover':  # manual on; the assist follows (parse -> ensure_assist)
             with self.lock:
                 if self.manual is not True:
