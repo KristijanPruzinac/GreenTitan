@@ -10,7 +10,7 @@ robot:
   type: wheeled
   # The real Mower V3 parts (frame bars, braces, drive wheels, casters; Fusion STEP) for the ToF
   # line of sight: the sim's ToF rays hit these triangles plus the body boxes below (motors, cover)
-  occlusion_mesh_file: ../../robot_package/web/mower_v3.json
+  occlusion_mesh_file: package://robot_package/web/mower_v3.json
   body:
     - {name: frame, shape: {box: [0.400, 0.240, 0.020]}, position: [-0.1125, 0.0, 0.119], mass: 0.8, color: [0.7, 0.7, 0.72]}
     - {name: drive_left, shape: {box: [0.057, 0.137, 0.057]}, position: [0.0, 0.092, 0.0755], mass: 2.2, color: [0.15, 0.15, 0.15]}
