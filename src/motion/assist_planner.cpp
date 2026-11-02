@@ -2,9 +2,13 @@
 #include <new>
 #include "../functions.h"
 #include "../debug/debug_serial.h"
+#ifndef IRAM_ATTR
+#define IRAM_ATTR
+#endif
 
 #define PLAN_W_CLEAR 1.0f     // score: clearance below PLAN_COMFORT, squared share
 #define PLAN_W_SMOOTH 0.15f   // score: change of curvature against the last tick (as an angle, atan(k * 0.5 m))
+#define PLAN_BOUND_EPS 1e-5f  // score: margin on the bounds (rounding)
 
 // Curvatures tried (1/m, + left), besides the reference: straight to an on-the-spot-like 0.29 m radius
 static const float CURV[PLAN_CURVATURES] = { 0.0f, 0.3f, -0.3f, 0.6f, -0.6f, 1.0f, -1.0f, 1.6f, -1.6f, 2.4f, -2.4f, 3.5f, -3.5f };
@@ -59,6 +63,17 @@ static inline int cell_x(float x) { return (int)((x - PLAN_GRID_X0) * (1.0f / PL
 static inline int cell_y(float y) { return (int)((y - PLAN_GRID_Y0) * (1.0f / PLAN_CELL) + 100.0f) - 100; }
 static inline float max2(float a, float b) { return a > b ? a : b; }
 static inline float pos(float a) { return a > 0.0f ? a : 0.0f; }
+// sqrt(a) or a hair more (+1 mm), without a call: Newton on the inverse square root from the bit-pattern guess
+static inline float sqrt_over(float a) {
+  if (a <= 0.0f) return 0.0f;
+  union { float f; uint32_t i; } u = { a };
+  u.i = 0x5f3759df - (u.i >> 1);
+  float r = u.f;
+  r *= 1.5f - 0.5f * a * r * r;
+  r *= 1.5f - 0.5f * a * r * r;
+  r *= 1.5f - 0.5f * a * r * r;
+  return a * r + 0.001f;
+}
 
 // b - a wrapped to [-pi, pi], in float (functions.cpp's angle_diff takes fmod in double)
 static inline float wrap_diff(float a, float b) {
@@ -113,47 +128,48 @@ static void prepare(const PlanRequest& rq) {
 // Body at axle pose (x, y, heading c/s): the weight of the points closer than they may come (memory 1, solid
 // TOF_SWEEP_MIN_POINTS), *dmin the smallest clearance (memory: the second smallest, a lone stray point doesn't
 // count) and *dall the smallest of any point, both capped at cap
-static int pose_check(float x, float y, float c, float s, float cap, float* dmin, float* dall) {
+static IRAM_ATTR int pose_check(float x, float y, float c, float s, float cap, float* dmin, float* dall) {
   const float bcx = 0.5f * (MOWER_FRONT_OVERHANG - MOWER_REAR_OVERHANG);
   const float hl = 0.5f * (MOWER_FRONT_OVERHANG + MOWER_REAR_OVERHANG), hw = MOWER_HALF_WIDTH;
   float bx = x + c * bcx, by = y + s * bcx, reach = body_r + cap, r2 = reach * reach;
-  int x0 = cell_x(bx - reach), x1 = cell_x(bx + reach), y0 = cell_y(by - reach), y1 = cell_y(by + reach);
-  if (x0 < 0) x0 = 0;
+  int y0 = cell_y(by - reach), y1 = cell_y(by + reach);
   if (y0 < 0) y0 = 0;
-  if (x1 >= PLAN_GRID_NX) x1 = PLAN_GRID_NX - 1;
   if (y1 >= PLAN_GRID_NY) y1 = PLAN_GRID_NY - 1;
   float m1 = cap, m2 = cap, ms = cap;
   int viol = 0;
   op_poses++;
   for (int cy = y0; cy <= y1; cy++) {
-    float gy = PLAN_GRID_Y0 + cy * PLAN_CELL, ny = by < gy ? gy - by : pos(by - gy - PLAN_CELL);
-    for (int cx = x0; cx <= x1; cx++) {
-      float gx = PLAN_GRID_X0 + cx * PLAN_CELL, nx = bx < gx ? gx - bx : pos(bx - gx - PLAN_CELL);
-      if (nx * nx + ny * ny > r2) continue;   // the cell's nearest part is out of reach
-      int cell = cy * PLAN_GRID_NX + cx;
-      for (int i = q_start[cell]; i < q_start[cell + 1]; i++) {
-        op_pts++;
-        float dx = qx[i] - bx, dy = qy[i] - by;
-        if (dx * dx + dy * dy > r2) continue;
-        op_dist++;
-        // body_dist about the body's centre (it is symmetric there); outside, squared until it can matter
-        float u = c * dx + s * dy, v = c * dy - s * dx, d;
-        u = (u < 0.0f ? -u : u) - hl;
-        v = (v < 0.0f ? -v : v) - hw;
-        bool solid = qs[i];
-        if (u < 0.0f && v < 0.0f) d = max2(u, v);
-        else {
-          float thr = max2(solid ? ms : m2, lim[i]), pu = pos(u), pv = pos(v), d2 = pu * pu + pv * pv;
-          if (d2 >= thr * thr) continue;   // neither closer than kept so far nor than it may come
-          d = sqrtf(d2);
-        }
-        if (!solid) {
-          if (d < m1) { m2 = m1; m1 = d; } else if (d < m2) m2 = d;
-          if (d < lim[i]) viol++;
-        } else {
-          if (d < ms) ms = d;
-          if (d < lim[i]) viol += TOF_SWEEP_MIN_POINTS;
-        }
+    // The row's cells within reach: one contiguous span of the point list
+    float gy = PLAN_GRID_Y0 + cy * PLAN_CELL, ny = by < gy ? gy - by : pos(by - gy - PLAN_CELL), hx2 = r2 - ny * ny;
+    if (hx2 < 0.0f) continue;
+    float hx = sqrt_over(hx2);
+    int x0 = cell_x(bx - hx), x1 = cell_x(bx + hx);
+    if (x0 < 0) x0 = 0;
+    if (x1 >= PLAN_GRID_NX) x1 = PLAN_GRID_NX - 1;
+    if (x1 < x0) continue;
+    int row = cy * PLAN_GRID_NX, i1 = q_start[row + x1 + 1];
+    for (int i = q_start[row + x0]; i < i1; i++) {
+      op_pts++;
+      float dx = qx[i] - bx, dy = qy[i] - by;
+      if (dx * dx + dy * dy > r2) continue;
+      op_dist++;
+      // body_dist about the body's centre (it is symmetric there); outside, squared until it can matter
+      float u = c * dx + s * dy, v = c * dy - s * dx, d;
+      u = (u < 0.0f ? -u : u) - hl;
+      v = (v < 0.0f ? -v : v) - hw;
+      bool solid = qs[i];
+      if (u < 0.0f && v < 0.0f) d = max2(u, v);
+      else {
+        float thr = max2(solid ? ms : m2, lim[i]), pu = pos(u), pv = pos(v), d2 = pu * pu + pv * pv;
+        if (d2 >= thr * thr) continue;   // neither closer than kept so far nor than it may come
+        d = sqrtf(d2);
+      }
+      if (!solid) {
+        if (d < m1) { m2 = m1; m1 = d; } else if (d < m2) m2 = d;
+        if (d < lim[i]) viol++;
+      } else {
+        if (d < ms) ms = d;
+        if (d < lim[i]) viol += TOF_SWEEP_MIN_POINTS;
       }
     }
   }
@@ -164,7 +180,8 @@ static int pose_check(float x, float y, float c, float s, float cap, float* dmin
 
 // Command (vc, wc) from the drive's state now, the wheels ramping at PLAN_WHEEL_ACCEL, for PLAN_HORIZON s. Free
 // travel: the fastest body point's travel (|v| + |w| x tail radius) to the last pose before a point comes too close.
-static PlanResult eval(const PlanRequest& rq, float vc, float wc) {
+// Given up (ok false) once its clearance alone costs the score more than pen_max: it can't win any more
+static IRAM_ATTR PlanResult eval(const PlanRequest& rq, float vc, float wc, float pen_max = 1e9f) {
   const float B = WHEEL_BASE, inv_b = 1.0f / WHEEL_BASE;   // (a float division is a library call on the ESP32)
   float l = rq.v0 - 0.5f * rq.w0 * B, r = rq.v0 + 0.5f * rq.w0 * B;
   float lt = vc - 0.5f * wc * B, rt = vc + 0.5f * wc * B;
@@ -207,7 +224,11 @@ static PlanResult eval(const PlanRequest& rq, float vc, float wc) {
         hit = true; free = max2(0.0f, tau - TOF_GUARD_STEP); break;
       }
       tau_ok = tau1 + dall - rq.clearance;
-      if (comfort && d < clear) clear = d;
+      if (comfort && d < clear) {
+        clear = d;
+        float pc = (PLAN_COMFORT - clear) * (1.0f / PLAN_COMFORT);
+        if (PLAN_W_CLEAR * pc * pc > pen_max + PLAN_BOUND_EPS) { PlanResult res = {}; return res; }
+      }
     }
     tau = tau1;
   }
@@ -243,31 +264,66 @@ static float score(const PlanRequest& rq, PlanResult& c) {
   return sp - rq.w_dev * dev - rq.w_head * fabsf(off) / 3.1416f - PLAN_W_CLEAR * pc * pc - PLAN_W_SMOOTH * smooth - rq.w_side * side;
 }
 
-PlanResult planner_plan(const PlanRequest& rq, float w_exact, PlanResult* exact) {
+// A plan's cost: planner_exact begins it, planner_best (if asked) adds to it
+static uint32_t plan_us = 0;
+static void plan_begin() { op_poses = op_pts = op_dist = 0; }
+static void plan_account(uint32_t us, bool first) {
+  if (first) { stat_n++; plan_us = 0; }
+  plan_us += us; stat_sum += us;
+  if (plan_us > stat_max) stat_max = plan_us;
+  stat_poses += op_poses; stat_pts += op_pts; stat_dist += op_dist;
+  static uint32_t plan_dist = 0;
+  plan_dist = (first ? 0 : plan_dist) + op_dist;
+  if (plan_dist > stat_dist_max) stat_dist_max = plan_dist;
+}
+
+PlanResult planner_exact(const PlanRequest& rq, float w) {
   uint32_t t0 = PLAN_CLOCK_US();
-  op_poses = op_pts = op_dist = 0;
+  plan_begin();
   prepare(rq);
-  if (exact) *exact = eval(rq, rq.lin, w_exact);
+  PlanResult c = eval(rq, rq.lin, w);
+  plan_account(PLAN_CLOCK_US() - t0, true);
+  return c;
+}
+
+PlanResult planner_best(const PlanRequest& rq) {
+  uint32_t t0 = PLAN_CLOCK_US();
+  plan_begin();
   PlanResult best = {};
   best.score = -1e9f;
+  // Each candidate's best possible score (full speed, nothing near), tried best first: once a bound can't beat the
+  // best so far, neither can the rest, and a rollout stops once its clearance costs too much. The same choice as
+  // trying them all in order (a tie goes to the earlier one)
+  float kk[PLAN_CURVATURES + 1], vv[PLAN_CURVATURES + 1], ub[PLAN_CURVATURES + 1];
+  int ord[PLAN_CURVATURES + 1];
+  const float h = 1.5708f;
   for (int i = 0; i <= PLAN_CURVATURES; i++) {
     float k = i < PLAN_CURVATURES ? CURV[i] : rq.kappa_ref;
     float vc = rq.lin;
     if (fabsf(k) * vc > MANUAL_ANGULAR_SPEED) vc = MANUAL_ANGULAR_SPEED / fabsf(k);   // tight arcs slower
-    PlanResult c = eval(rq, vc, k * vc);
+    float dev = fabsf(atanf(0.5f * k) - atanf(0.5f * rq.kappa_ref)) / h;
+    float smooth = fabsf(atanf(0.5f * k) - atanf(0.5f * rq.kappa_prev)) / h;
+    kk[i] = k; vv[i] = vc;
+    ub[i] = (rq.lin > 1e-3f ? vc / rq.lin : 0.0f) - rq.w_dev * dev - PLAN_W_SMOOTH * smooth;
+    int j = i;
+    for (; j > 0 && ub[ord[j - 1]] < ub[i]; j--) ord[j] = ord[j - 1];
+    ord[j] = i;
+  }
+  int best_i = -1;
+  for (int n = 0; n <= PLAN_CURVATURES; n++) {
+    int i = ord[n];
+    if (best_i >= 0 && ub[i] < best.score - PLAN_BOUND_EPS) break;
+    float k = kk[i], vc = vv[i];
+    PlanResult c = eval(rq, vc, k * vc, best_i >= 0 ? ub[i] - best.score : 1e9f);
     if (!c.ok) continue;
     c.kappa = k;
     c.score = score(rq, c);
 #ifdef PLAN_DEBUG
     SerialDebug.printf("[WALL] cand k %.2f v %.2f sc %.2f so %.2f cl %.2f th %.2f s %.2f\r\n", k, c.v, c.scale, c.soft, c.clear, c.end_th, c.score);
 #endif
-    if (c.score > best.score) best = c;
+    if (c.score > best.score || (c.score == best.score && i < best_i)) { best = c; best_i = i; }
   }
-  uint32_t us = PLAN_CLOCK_US() - t0;
-  stat_n++; stat_sum += us;
-  if (us > stat_max) stat_max = us;
-  stat_poses += op_poses; stat_pts += op_pts; stat_dist += op_dist;
-  if (op_dist > stat_dist_max) stat_dist_max = op_dist;
+  plan_account(PLAN_CLOCK_US() - t0, false);
   return best;
 }
 

@@ -152,7 +152,6 @@ typedef struct {
                                    // more room, picks the way to turn; otherwise the smaller turn
 #define TOF_ALIGN_DONE_ANGLE 0.26f // rad: within 15 deg of the wall ...
 #define TOF_ALIGN_DONE_DIST 0.10f  // ... and of the follow distance: LOCKED
-#define TOF_ALIGN_SLOW_OFF 0.30f   // m: ALIGN slows from the stick's speed to TOF_WALL_MAX_SPEED over this before the follow line
 #define TOF_ALIGN_MAX_RUN 2.5f     // m from where the curve started without locking: stop, FREE (any speed)
 #define TOF_UNLOCK_TURN 0.4f       // rad/s away from the wall, held TOF_UNLOCK_TIME_MS: back to FREE
 #define TOF_UNLOCK_TIME_MS 300
