@@ -135,14 +135,16 @@ static void start_turn() {
 #endif
 }
 
-// Stop the wheels and drop the path; also drops queued messages (a real stop)
-static void motion_stop() {
+// Stop the wheels and drop the path. drop_queued (a stop of its own, a stall): also drop the
+// queued messages, which were all sent before it. A WAITING command must not: the queue is FIFO,
+// so what waits behind it was sent after it (stop + reverse back to back lost the reverse, 2026-11-02).
+static void motion_stop(bool drop_queued) {
     mode = WAITING;
     speed_cap = 0.0f;
     path.clear();
     point_requested = false;
     publish_motor(MOTOR_STOP, 0.0f, 0.0f);
-    xQueueReset(thread_context.queue); // Clear any pending motion commands to prevent them from executing after a stop command
+    if (drop_queued) xQueueReset(thread_context.queue);
 }
 
 static void motion_add_point(double px, double py, uint8_t tool, int8_t edge) {
@@ -240,7 +242,7 @@ static void reverse_update(uint32_t now_ms) {
     }
     if (now_ms - stall_anchor_ms > MOTION_STALL_TIME_MS) {
         SerialDebug.printf("[MOTION] Stalled reversing at (%.2f, %.2f), stopping\r\n", x, y);
-        motion_stop();
+        motion_stop(true);
         signal_controller(SIGNAL_OBSTACLE);
         return;
     }
@@ -355,7 +357,7 @@ static void pose_updated_callback(dds_callback_context_t* context) {
     if (stalled) {
         SerialDebug.printf("[MOTION] Stalled at (%.2f, %.2f) (%s), stopping\r\n",
                            x, y, turning ? "turn did not finish" : "no progress");
-        motion_stop();
+        motion_stop(true);
         signal_controller(SIGNAL_OBSTACLE);
         return;
     }
@@ -368,7 +370,7 @@ static void motion_command_callback(dds_callback_context_t* context) {
 
     if (data->mode == WAITING) {
         SerialDebug.printf("Motion command: WAITING\r\n");
-        motion_stop();
+        motion_stop(false);
     }
     else if (data->mode == MOTION_PAUSE) {
         if (mode == MOVING) mode = MOTION_PAUSE;
