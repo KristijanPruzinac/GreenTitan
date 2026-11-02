@@ -23,7 +23,10 @@
                                   // too close by now (the last check's nearest point less the travel since)
 #define PLAN_SKIP_REACH 0.10f     // m beyond the clearance those in-between checks look (how far they let it skip)
 #define PLAN_WHEEL_ACCEL 0.35f    // m/s^2 per wheel: motor_task's ramp (MOTOR_ACCELERATION at the wheel)
-#define PLAN_SOFT_DECEL 0.06f     // m/s^2 at the wheels: the score's braking (the guard's is TOF_GUARD_DECEL)
+#ifndef PLAN_SOFT_TIME
+#define PLAN_SOFT_TIME 3.75f      // s: an arc that runs into something sooner is scored down (softness^2: the share
+                                  // it runs free; the same as 0.06 m/s^2 of braking at 0.45 m/s)
+#endif
 #define PLAN_COMFORT 0.30f       // m, body clearance below which a rollout is scored down ...
 #define PLAN_EXACT_CLEAR 0.20f    // m: the stick is taken as it is when its rollout keeps this much, at full speed
 #define PLAN_CELL 0.10f           // m, bucket grid over the obstacle points (a pose scans each row as one span)
@@ -64,7 +67,7 @@ struct PlanResult {
   float v, w;           // command (already slowed for its free travel)
   float kappa;
   float scale;          // speed kept against what was asked, 0..1
-  float soft;           // the same braking at PLAN_SOFT_DECEL (scored: an arc into something loses early)
+  float soft;           // sqrt(time it runs free / PLAN_SOFT_TIME), <= 1 (scored: an arc into something loses early)
   float clear;          // m, smallest body clearance along the rollout (capped at PLAN_COMFORT)
   float end_th;         // heading at the rollout's end (obstacle frame)
   float score;

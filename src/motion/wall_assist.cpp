@@ -625,6 +625,24 @@ static void steer(float kappa, bool pivot, float lin, float cap, float* v, float
 
 static float follow_dist() { return TOF_WALL_CLEARANCE + MOWER_HALF_WIDTH; }
 
+// Following speed: the stick's up to TOF_FOLLOW_SPEED, down to TOF_CORNER_SPEED by TOF_LANE_SLOW from anything in
+// the body's lane ahead (an inner corner is decided only once a wall ahead fits and meets the side wall, late at
+// speed; a lumpy hedge across the path fits no line at all: bench goal_hedge 2026-11-02). The second nearest point,
+// as the guard counts them (a lone one is a mixed return)
+static float ahead_cap(float lin) {
+  lin = fminf(lin, TOF_FOLLOW_SPEED);
+  const float lane = MOWER_HALF_WIDTH + TOF_GUARD_CLEARANCE;
+  float x1 = 1e9f, x2 = 1e9f;
+  for (int k = 0; k < rn; k++) {
+    if (rx[k] < MOWER_FRONT_OVERHANG || rx[k] > TOF_CORNER_DETECT || fabsf(ry[k]) > lane) continue;
+    if (tof_memory()[ridx[k]].z_cm < TOF_GUARD_MIN_Z_CM) continue;
+    if (rx[k] < x1) { x2 = x1; x1 = rx[k]; }
+    else if (rx[k] < x2) x2 = rx[k];
+  }
+  if (x2 > 1e8f) return lin;
+  return fminf(lin, fmaxf(TOF_CORNER_SPEED, brake(x2 - TOF_LANE_SLOW)));
+}
+
 // Inner corner: the wall ahead crosses the path within TOF_CORNER_DETECT and meets side wall L on its side (sg).
 // *x0: where it crosses the path, (ix, iy): the corner (robot frame)
 static bool inner_corner(const WallLine& L, float sg, float* x0, float* ix, float* iy) {
@@ -654,9 +672,18 @@ static float approach(float ang, uint32_t now, int* s_out, float* ux_out, float*
   // gone round (FREE, the planner), and the mower comes back to that heading after
   const float h = angle_diff(P.yaw, intent_yaw);
   auto along_intent = [h](float a) { return fabsf(remainderf(a - h, (float)M_PI)) <= TOF_FOLLOW_INTENT; };
+  // ... or, going round, a wall beside that stands across the heading held within TOF_ALIGN_DETECT: there is no way
+  // round it there, it is followed (HIL head_on 2026-11-02: turning left and right in front of a long wall)
+  auto blocks_intent = [h](const WallLine& L) {
+    float cr = cosf(h) * L.uy - sinf(h) * L.ux;
+    if (fabsf(cr) < 0.5f) return false;
+    float s = (L.cx * L.uy - L.cy * L.ux) / cr;   // along the heading held to the line
+    return s > 0.0f && s < TOF_ALIGN_DETECT;
+  };
   for (int s = 0; s < 2; s++) {
     const WallLine& L = lines[s];
-    if (good_since[s] == 0 || now - good_since[s] < TOF_LOCK_TIME_MS || !along_intent(L.angle)) continue;
+    if (good_since[s] == 0 || now - good_since[s] < TOF_LOCK_TIME_MS) continue;
+    if (!along_intent(L.angle) && !(detour && blocks_intent(L))) continue;
     if (L.x_max - MOWER_FRONT_OVERHANG - TOF_WALL_END_AHEAD < TOF_LOCK_MIN_RUN) continue;
     float closing = -sigma(s) * L.angle;   // > 0: heading toward it
     if (closing < -0.05f || ang * sigma(s) < -TOF_UNLOCK_TURN) continue;   // turning or heading away
@@ -1086,7 +1113,7 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
           float kt = copysignf((1.0f - cosf(a)) / fabsf(off), a);
           if (kt * k >= 0.0f && fabsf(kt) > fabsf(k)) k = kt;
         }
-        steer(k, pivot, lin, fabsf(k) < 0.4f ? lin : TOF_WALL_MAX_SPEED, &v, &w);   // user speed until it curves
+        steer(k, pivot, lin, TOF_FOLLOW_SPEED, &v, &w);   // the user's speed, the turn rate holds the curve
       }
     }
 
@@ -1146,7 +1173,7 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
         bool pivot;
         // On the corner-turn distance: a short wall after the end (a step) may end in an inner corner at once
         float k = pursuit(tx, ty, tux, tuy, TOF_CORNER_STOP, e, &circling, &pivot);
-        steer(k, pivot, lin, TOF_WALL_MAX_SPEED, &v, &w);
+        steer(k, pivot, lin, TOF_CORNER_SPEED, &v, &w);
       }
     }
 
@@ -1210,7 +1237,7 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
         float k = state == WALL_CORNER
                       ? pursuit(L.cx, L.cy, L.ux, L.uy, TOF_CORNER_STOP, nullptr, &circle, &pivot, TOF_CORNER_LOOKAHEAD)
                       : pursuit(L.cx, L.cy, L.ux, L.uy, follow_dist(), nullptr, &circle, &pivot);
-        steer(k, false, lin, TOF_WALL_MAX_SPEED, &v, &w);
+        steer(k, false, lin, state == WALL_CORNER ? TOF_CORNER_SPEED : ahead_cap(lin), &v, &w);
         float room_end = L.x_max - MOWER_FRONT_OVERHANG - TOF_WALL_END_AHEAD;
         if (state == WALL_LOCKED && room_end <= 0.0f && !wall_goes_on(L)) {
           // The wall ends (outer corner, opening, free end): round its end, recorded as an outline point

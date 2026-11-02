@@ -198,6 +198,8 @@ def head_on(tmax, lin=0.3):
 
 
 add('inner_head_on', 'edges', (3.5, 6.2, 90), head_on(15), (), 'straight into the 90 deg inner corner along its bisector')
+add('hil_head_on', 'edges', (-0.5, -4.6, -90), head_on(20), ('lock', 'following'),
+    'HIL drive test head_on: 0.3 m/s straight at the south wall from 1.8 m, it must lock and still follow at the end')
 add('pocket_follow', 'edges', (4.5 - WT - FOLLOW, -0.9, -90), follow_to(lambda r: r.plant.y < -4.0, tmax=30), ('lock', 'reached'),
     'along the wall with the 0.9 m pocket (narrower than the mower needs): past its opening, not into it')
 # Manual drive 2026-11-01 (137-153 s, stuck): south along the pocket wing's outside (wall on the right), an inner
@@ -441,6 +443,9 @@ def evaluate(r, m, checks):
         elif c == 'reached':
             ok = 'reached' in r.marks
             out.append((c, ok, 'yes' if ok else (_last_free(r, lock or 0.0) or f'not reached ({r.state})')))
+        elif c == 'following':   # still on a wall when the script ends
+            st = r.trans[-1][1] if r.trans and r.trans[-1][3].startswith('stop key') else r.state   # before finish()
+            out.append((c, st not in ('FREE', None), st or 'no state'))
         elif c == 'turned':
             piv = [x for x in r.trans if x[2] == 'PIVOT']
             done = [x for x in r.trans if x[1] == 'PIVOT' and x[2] == 'LOCKED']
