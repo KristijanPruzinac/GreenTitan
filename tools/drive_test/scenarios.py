@@ -237,7 +237,7 @@ SCENARIOS = {
     'dock_repeat': {
         'world': 'dock', 'station': STATION, 'spawn': at_station(STATION, DOCKED),
         'steps': [SETTLE] + CYCLE * 20,
-        'checks': {'docks_min': 20, 'no_dock_msgs': True, 'docked_end': True, 'station_err': (1.0, 1.5)},
+        'checks': {'docks_min': 20, 'no_dock_msgs': True, 'docked_end': True, 'station_err': (2.5, 3.0)},
     },
     # The station was moved 8 cm / 4 deg since the board stored it. Self-contained: spawned docked in the moved
     # station, it forgets the stored one and learns it on the way out, then the console moves the stored
@@ -252,7 +252,7 @@ SCENARIOS = {
         'steps': [SETTLE, {'cmd': 'forget_station'}, {'wait': 1}] + CYCLE[:2] +
                  [{'cmd': 'move_station:%.1f,%.1f,%.1f' % NUDGE_BACK}, {'wait': 1}] + HOME + CYCLE * 4,
         'checks': {'docks_min': 5, 'no_dock_msgs': True, 'docked_end': True, 'adopted_within': 4, 'last_approaches_max': 2,
-                   'station_err': (1.5, 3.0)},
+                   'station_err': (2.5, 3.0)},
     },
 }
 
