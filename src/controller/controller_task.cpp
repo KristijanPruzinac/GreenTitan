@@ -231,6 +231,7 @@ enum dock_phase {
 
 static int      dock_phase = DP_NONE;
 static int      dock_attempt = 0;          // approaches that failed in this docking
+static int      dock_missed_before = 0;    // approaches missed on the old estimate before a retry on the last undock measurement
 static bool     dock_verifying = false;    // first dock with a just-measured station (not stored yet)
 static dock_station_t dock_backup;         // the station before set station, back on a failed verify
 static bool     resume_after_charge = false;   // mission interrupted (battery, rain): go on once charged
@@ -324,6 +325,7 @@ static void dock_failed(const char* why) {
         DOCK_STATION = dock_backup;
         dock_verifying = false;
     }
+    dock_station_doubt(true);   // the next undock measurement, if held back, is adopted
     dock_phase = DP_NONE;
     set_state(ROBOT_STATE_DOCK_FAILED);
     SerialDebug.printf("[DOCK] Failed (%s): Couldn't dock. Check the station is clear, or set it again\r\n", why);
@@ -393,14 +395,34 @@ static void approach_failed(const char* why) {
     motion_stop();
     dock_attempt++;
     SerialDebug.printf("[DOCK] Approach missed (%s)\r\n", why);
+    double hx, hy;
+    float hyaw;
+    bool reroute = false;
     if (dock_attempt >= dock_attempts_total()) {
-        dock_failed("all approaches missed");
-        return;
+        // A held-back undock measurement disagrees with the estimate and every approach on the estimate
+        // missed: the station was moved. Once more on that measurement (unverified: a dock stores it, a
+        // failure restores the old estimate). The back-off leaves the failed line and ends on the new
+        // pre-dock point.
+        if (dock_verifying || !dock_station_held_latest(&hx, &hy, &hyaw)) {
+            dock_failed("all approaches missed");
+            return;
+        }
+        reroute = true;
     }
     float pre, lat, speed;
-    attempt_plan(dock_attempt, &pre, &lat, &speed);
+    attempt_plan(reroute ? dock_attempt - 1 : dock_attempt, &pre, &lat, &speed);
     double sx, sy, ex, ey;
     st_point(0.0f, lat, &sx, &sy);
+    if (reroute) {
+        SerialDebug.printf("[DOCK] Trying the last undock measurement x=%.3f y=%.3f yaw=%.2f\r\n", hx, hy, hyaw * RAD_TO_DEG);
+        dock_backup = DOCK_STATION;
+        dock_station_init(hx, hy, hyaw);
+        DOCK_STATION.n = dock_backup.n;
+        dock_verifying = true;
+        dock_missed_before = dock_attempt;
+        dock_attempt = 0;
+        attempt_plan(0, &pre, &lat, &speed);
+    }
     st_point(-pre, lat, &ex, &ey);
     dock_phase = DP_BACKOFF;
     phase_ms = millis();
@@ -442,7 +464,7 @@ static void go_home(bool from_mission, bool resume) {
         return;
     }
     resume_after_charge = resume;
-    dock_attempt = 0;
+    dock_attempt = dock_missed_before = 0;
     stop_motors();
     motor_main_off();
     if (from_mission && CONFIG_PATH) {
@@ -460,7 +482,8 @@ static void docked() {
     stop_motors();
     dock_phase = DP_NONE;
     set_state(ROBOT_STATE_CHARGING);
-    SerialDebug.printf("[DOCK] Docked after %d approach(es)\r\n", dock_attempt + 1);
+    SerialDebug.printf("[DOCK] Docked after %d approach(es)\r\n", dock_missed_before + dock_attempt + 1);
+    dock_station_doubt(dock_missed_before + dock_attempt > 0);   // retries: a held-back undock measurement next is adopted
     // The contact pose is the track's last sample: the heading there from the turned-back track
     dock_track_add(contact_pose.x, contact_pose.y, contact_gyro);
     float yaw, spread, chord, drift;
@@ -702,7 +725,7 @@ static void set_station_backout_done() {
         backout_continue(false);
         return;
     }
-    dock_attempt = 0;
+    dock_attempt = dock_missed_before = 0;
     resume_after_charge = false;
     route_to_predock();   // standing on the axis about DOCK_SET_BACKOUT out: straight into the approach
 }

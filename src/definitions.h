@@ -85,7 +85,7 @@ typedef struct {
 #define DOCK_GATE_SIGMAS 3.0f          // gate: within this many sigma of the recent measurements ...
 #define DOCK_GATE_MIN_POS 0.03f        // m ... but never tighter than this
 #define DOCK_GATE_MIN_YAW_DEG 1.5f
-#define DOCK_MOVE_COUNT 3              // this many gated measurements in a row that agree = the station was moved
+#define DOCK_MOVE_COUNT 2              // this many gated measurements in a row that agree = the station was moved (1 after a dock that needed retries or failed)
 #define DOCK_MOVE_AGREE_POS 0.02f      // m
 #define DOCK_MOVE_AGREE_YAW_DEG 1.0f
 #define DOCK_TRACK_SAMPLES 200         // RTK track samples kept (5 Hz: 40 s)

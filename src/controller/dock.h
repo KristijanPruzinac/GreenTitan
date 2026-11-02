@@ -43,7 +43,12 @@ enum dock_measure_result { DOCK_MEAS_ACCEPTED, DOCK_MEAS_GATED, DOCK_MEAS_ADOPTE
 void dock_station_init(double x, double y, float yaw);   // a new station (set station): forget history
 // One measurement from a clean dock: within DOCK_GATE_SIGMAS of the recent ones -> blended in with
 // DOCK_EST_WEIGHT; otherwise held back; DOCK_MOVE_COUNT held-back ones in a row that agree with each
-// other -> their mean is adopted (the station was moved). Logged, never a user message.
+// other (1 while in doubt) -> their mean is adopted (the station was moved). Logged, never a user message.
 int dock_station_measure(double x, double y, float yaw);
+// The last dock needed retries or failed (true) or went in first try (false). Cleared by an accepted
+// measurement and a new station.
+void dock_station_doubt(bool d);
+// The newest held-back measurement (false: none since the last accepted one or the last new station)
+bool dock_station_held_latest(double* x, double* y, float* yaw);
 
 #endif

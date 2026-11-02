@@ -150,11 +150,23 @@ static int recent_n = 0, recent_i = 0;
 struct Meas { double x, y; float yaw; };
 static Meas held[DOCK_MOVE_COUNT];
 static int held_n = 0;
+// The last dock needed retries or failed: one held-back measurement is enough to adopt
+static bool doubt = false;
 
 void dock_station_init(double x, double y, float yaw) {
     DOCK_STATION = { true, x, y, wrap_pi(yaw), 1 };
     recent_n = recent_i = 0;
     held_n = 0;
+    doubt = false;
+}
+
+void dock_station_doubt(bool d) { doubt = d; }
+
+bool dock_station_held_latest(double* x, double* y, float* yaw) {
+    if (held_n == 0) return false;
+    const Meas& h = held[held_n - 1];
+    *x = h.x; *y = h.y; *yaw = h.yaw;
+    return true;
 }
 
 static float rms(const float* v, int n) {
@@ -183,6 +195,7 @@ int dock_station_measure(double x, double y, float yaw) {
         recent_i = (recent_i + 1) % DOCK_RECENT;
         if (recent_n < DOCK_RECENT) recent_n++;
         held_n = 0;
+        doubt = false;
         SerialDebug.printf("[DOCK] Measurement %.1f cm along, %.1f cm lateral, %.2f deg: blended in\r\n",
                            along * 100.0f, lat * 100.0f, dyaw * RAD_TO_DEG);
         return DOCK_MEAS_ACCEPTED;
@@ -198,16 +211,18 @@ int dock_station_measure(double x, double y, float yaw) {
     SerialDebug.printf("[DOCK] Measurement %.1f cm along, %.1f cm lateral, %.2f deg: outside the gate "
                        "(%.1f cm, %.2f deg), held back (%d in a row)\r\n", along * 100.0f, lat * 100.0f,
                        dyaw * RAD_TO_DEG, gate_pos * 100.0f, gate_yaw * RAD_TO_DEG, held_n);
-    if (held_n < DOCK_MOVE_COUNT) return DOCK_MEAS_GATED;
+    if (held_n < (doubt ? 1 : DOCK_MOVE_COUNT)) return DOCK_MEAS_GATED;
+    int k = held_n;
+    bool after_retries = doubt;
     double mx = 0.0, my = 0.0, sx = 0.0, sy = 0.0;
-    for (int i = 0; i < held_n; i++) {
+    for (int i = 0; i < k; i++) {
         mx += held[i].x; my += held[i].y;
         sx += cos(held[i].yaw); sy += sin(held[i].yaw);
     }
     uint16_t n = S.n;
-    dock_station_init(mx / held_n, my / held_n, (float)atan2(sy, sx));
+    dock_station_init(mx / k, my / k, (float)atan2(sy, sx));
     S.n = n;
-    SerialDebug.printf("[DOCK] Station moved: adopted x=%.3f y=%.3f yaw=%.2f deg (%d docks agreed)\r\n",
-                       S.x, S.y, S.yaw * RAD_TO_DEG, DOCK_MOVE_COUNT);
+    SerialDebug.printf("[DOCK] Station moved: adopted x=%.3f y=%.3f yaw=%.2f deg (%d measurement(s) agreed%s)\r\n",
+                       S.x, S.y, S.yaw * RAD_TO_DEG, k, after_retries ? ", the last dock needed retries" : "");
     return DOCK_MEAS_ADOPTED;
 }
