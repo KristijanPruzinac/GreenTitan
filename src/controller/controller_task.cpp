@@ -506,9 +506,9 @@ static void start_set_station() {
         SerialDebug.printf("[DOCK] Set station rejected: no pose\r\n");
         return;
     }
-    // The line is drawn along the parked heading (it may be off by degrees; that only bends the
-    // line, not the result). Unconfirmed at boot: steer on the gyro from it, so an EKF relock
-    // halfway does not jerk the line.
+    // Straight back on the gyro from the parked heading (a heading hold, no position line): the
+    // parked EKF yaw may be far off at boot, and a line along it bent the real track by that error.
+    // A relock halfway changes nothing. Only the length of the line is used.
     double sx = p.x + GNSS_ANTENNA_BEHIND_AXLE * cos(p.yaw), sy = p.y + GNSS_ANTENNA_BEHIND_AXLE * sin(p.yaw);
     double ex = sx - DOCK_SET_BACKOUT * cos(p.yaw), ey = sy - DOCK_SET_BACKOUT * sin(p.yaw);
     dock_track_reset();
@@ -518,7 +518,7 @@ static void start_set_station() {
     set_state(ROBOT_STATE_SETTING_STATION);
     SerialDebug.printf("[DOCK] Setting station: reversing out %.1f m\r\n", DOCK_SET_BACKOUT);
     motion_stop();
-    motion_reverse(sx, sy, ex, ey, HEADING_CONFIRMED ? NAN : p.yaw);
+    motion_reverse(sx, sy, ex, ey, p.yaw);   // always a gyro heading hold: the measurement wants a straight track
 }
 
 static void set_station_reject(const char* why) {

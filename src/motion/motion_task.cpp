@@ -52,11 +52,15 @@ static int mode = WAITING; // WAITING, MOVING, MOVING_REVERSE, MOTION_PAUSE
 static float speed_cap = 0.0f;
 
 // Reverse line follower (MOVING_REVERSE, docking): the axle backs along the line rev_a -> rev_b.
-// Closed loop on the fused pose: slip and bumps bend any "straight" drive, so the heading command is
-// the line heading plus a pure-pursuit style cross-track correction, never an open heading hold.
+// Closed loop on the fused pose: the heading command is the line heading plus a pure-pursuit style
+// cross-track correction. With a start yaw given (the heading not known yet, or set station) it is a
+// gyro heading hold instead: straight back on the start heading, no cross-track term, ended by the
+// distance from the start. A line drawn along a wrong boot heading would bend the real path by that
+// error (HIL 2026-11-02: 31 deg), and the set-station measurement wants a straight track.
 static double rev_ax, rev_ay, rev_ux, rev_uy, rev_len;
+static double rev_bx, rev_by;             // base_link at the start (heading hold: progress = distance)
 static float  rev_speed;
-static bool   rev_gyro_heading = false;   // heading = rev_yaw0 + gyro turn since the start
+static bool   rev_gyro_heading = false;   // heading hold: heading = rev_yaw0 + gyro turn since the start
 static float  rev_yaw0;
 static double rev_gyro0;
 static uint32_t rev_turn_ms = 0;          // turning on the spot since (0 = backing)
@@ -194,6 +198,8 @@ static void reverse_start(const motion_command_t* c) {
     rev_speed = c->speed > 0.0f ? fminf(c->speed, MOTION_REVERSE_SPEED_MAX) : MOTION_REVERSE_SPEED_MAX;
     rev_gyro_heading = !isnan(c->start_yaw) && imu_yaw_now(&rev_gyro0);
     rev_yaw0 = c->start_yaw;
+    rev_bx = x;
+    rev_by = y;
     rev_turn_ms = 0;
     mode = MOVING_REVERSE;
     stall_anchor_set = false;
@@ -207,23 +213,36 @@ static void reverse_start(const motion_command_t* c) {
 static void reverse_update(uint32_t now_ms) {
     float h = yaw;
     double g;
-    if (rev_gyro_heading && imu_yaw_now(&g)) h = wrap_pi(rev_yaw0 + (float)(g - rev_gyro0));
-    double ax = x + GNSS_ANTENNA_BEHIND_AXLE * cos(h);
-    double ay = y + GNSS_ANTENNA_BEHIND_AXLE * sin(h);
-    double px = ax - rev_ax, py = ay - rev_ay;
-    double s = px * rev_ux + py * rev_uy;           // progress along the line
-    double e = -px * rev_uy + py * rev_ux;          // axle left of the line
+    float want_yaw;
+    double s, e;
+    if (rev_gyro_heading) {   // heading hold on the gyro
+        if (!imu_yaw_now(&g)) return;
+        float turned = (float)(g - rev_gyro0);
+        h = wrap_pi(rev_yaw0 + turned);
+        want_yaw = rev_yaw0;
+        s = hypot(x - rev_bx, y - rev_by);
+        e = turned;   // logged: the gyro turn since the start (rad)
+    } else {
+        double ax = x + GNSS_ANTENNA_BEHIND_AXLE * cos(h);
+        double ay = y + GNSS_ANTENNA_BEHIND_AXLE * sin(h);
+        double px = ax - rev_ax, py = ay - rev_ay;
+        s = px * rev_ux + py * rev_uy;           // progress along the line
+        e = -px * rev_uy + py * rev_ux;          // axle left of the line
+        // Backing up, the axle travels along yaw + pi: aim that direction back at the line
+        float line = atan2f((float)rev_uy, (float)rev_ux);
+        float travel = line - atanf((float)e / MOTION_REVERSE_LOOKAHEAD);
+        want_yaw = wrap_pi(travel + (float)M_PI);
+    }
     if (s >= rev_len) {
-        SerialDebug.printf("[MOTION] Reverse end at (%.2f, %.2f), %.1f cm off the line\r\n", x, y, e * 100.0);
+        if (rev_gyro_heading)
+            SerialDebug.printf("[MOTION] Reverse end at (%.2f, %.2f), heading held (gyro turn %.2f deg)\r\n", x, y, e * RAD_TO_DEG);
+        else
+            SerialDebug.printf("[MOTION] Reverse end at (%.2f, %.2f), %.1f cm off the line\r\n", x, y, e * 100.0);
         mode = WAITING;
         publish_motor(MOTOR_STOP, 0.0f, 0.0f);
         signal_controller(SIGNAL_MOTION_DONE);
         return;
     }
-    // Backing up, the axle travels along yaw + pi: aim that direction back at the line
-    float line = atan2f((float)rev_uy, (float)rev_ux);
-    float travel = line - atanf((float)e / MOTION_REVERSE_LOOKAHEAD);
-    float want_yaw = wrap_pi(travel + (float)M_PI);
     float err = wrap_pi(want_yaw - h);   // normalize_angle is [0, 2 pi): a tiny -err read as a full turn (HIL 2026-11-02)
     float w = fmaxf(-MAX_ANGULAR_VEL, fminf(MAX_ANGULAR_VEL, MOTION_ROTATE_GAIN * err));
     float v = 0.0f;

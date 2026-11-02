@@ -75,7 +75,7 @@ typedef struct {
 #define DOCK_SEARCH_LATERAL 0.05f      // m, ... then one slow approach each side, this far off the axis
 #define DOCK_SET_BACKOUT 1.5f          // m, set station: reverse out this far, recording the track
 #define DOCK_SET_MIN_TRACK 1.2f        // m of RTK-fixed track behind the contact point
-#define DOCK_SET_MAX_SPREAD_DEG 1.5f   // per-sample heading estimates must agree this well (RMS)
+#define DOCK_SET_MAX_SPREAD_DEG 2.5f   // per-sample heading estimates must agree this well (RMS); straight 1.5 m, 1 cm RTK: 0.55 typ., 2 cm bump jolts: 1.66 p95
 #define DOCK_MEAS_MIN_TRACK 0.8f       // m of approach track for a dock to count as a measurement
 #define DOCK_MIN_CHORD 0.6f            // m, per-sample heading estimates use chords at least this long
 #define DOCK_RTK_MAX_AGE_MS 1000       // RTK fixed must have been reported within this
