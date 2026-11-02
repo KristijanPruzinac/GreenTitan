@@ -19,7 +19,7 @@
 #define PLAN_FINE_STEPS 12
 #define PLAN_COARSE_DT 0.15f      // ... then coarser
 #define PLAN_WHEEL_ACCEL 0.35f    // m/s^2 per wheel: motor_task's ramp (MOTOR_ACCELERATION at the wheel)
-#define PLAN_SOFT_DECEL 0.10f     // m/s^2 at the wheels: the score's braking (the guard's is TOF_GUARD_DECEL)
+#define PLAN_SOFT_DECEL 0.06f     // m/s^2 at the wheels: the score's braking (the guard's is TOF_GUARD_DECEL)
 #define PLAN_COMFORT 0.30f       // m, body clearance below which a rollout is scored down ...
 #define PLAN_EXACT_CLEAR 0.20f    // m: the stick is taken as it is when its rollout keeps this much, at full speed
 #define PLAN_CELL 0.20f           // m, bucket grid over the obstacle points

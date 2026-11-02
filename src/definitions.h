@@ -140,7 +140,8 @@ typedef struct {
 #define TOF_LOCK_MAX_ANGLE 0.52f   // rad: a side fit within 30 deg of the heading ends the round of a wall end
 #define TOF_WALL_CLEARANCE 0.35f   // m, body side to wall when locked: centreline 0.55, tail swing 0.46 + ToF noise (HIL: 0.30 refused corners)
 #ifndef TOF_WALL_MAX_SPEED
-#define TOF_WALL_MAX_SPEED MANUAL_LINEAR_SPEED   // m/s, the user's speed is cut to this while the assist follows
+#define TOF_WALL_MAX_SPEED 0.2f    // m/s, following (ALIGN once it curves, LOCKED, CORNER, OUTER); the stick's full speed (0.45)
+                                   // came to 1-3 cm of the lumpy hedge (bench hedge_step, goal_hedge 2026-11-02)
 #endif
 #define TOF_MAP_SAME_FACE 0.25f   // m: map lines with both ends this close to the followed wall's fit are that wall
 #define TOF_WALL_MAX_TURN MANUAL_ANGULAR_SPEED  // rad/s
@@ -177,6 +178,9 @@ typedef struct {
 #define TOF_PLAN_BACK_ON 0.10f     // rad: back within this of the heading held (and the stick free): detour over
 #define TOF_PLAN_MAX_OFF 2.1f      // rad (120 deg): never further off the heading held (a dead end: it stops)
 #define TOF_PLAN_MIN_GO 0.06f      // m/s: slower than this forward, it turns on the spot instead
+#define TOF_PLAN_LEAN 0.3f         // rad/s: a stick leaning less only picks the side (detour, following); more turns the heading held
+#define TOF_PLAN_BACK_SPEED 0.15f  // m/s: too close to turn (a post seen late), it backs off along the trail ...
+#define TOF_PLAN_BACK_DIST 0.30f   // m ... at most this far, until a turn is free
 #define TOF_CORNER_DETECT 1.3f     // m, a wall across the path this close to the axle = inner corner
 #define TOF_CORNER_STOP 0.63f      // m, axle to both walls where a corner turn on the spot starts: tail swing 0.46 +
                                    // TOF_GUARD_CLEARANCE + 4 cm

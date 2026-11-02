@@ -137,7 +137,9 @@ static PlanResult eval(const PlanRequest& rq, float vc, float wc) {
     float tau1 = tau + (fabsf(v) + fabsf(w) * r_tail) * dt;
     t += dt;
     float d;
-    if (pose_check(x, y, cosf(th), sinf(th), PLAN_COMFORT, &d) >= TOF_SWEEP_MIN_POINTS) { hit = true; free = tau; break; }
+    // Less one guard step: slow, a step moves a point less than the 2 mm it may come closer, and the mower crept
+    // 2 mm per plan into a hedge it was already near (bench goal_hedge 2026-11-02: 1 cm)
+    if (pose_check(x, y, cosf(th), sinf(th), PLAN_COMFORT, &d) >= TOF_SWEEP_MIN_POINTS) { hit = true; free = fmaxf(0.0f, tau - TOF_GUARD_STEP); break; }
     tau = tau1;
     if (d < clear) clear = d;
   }
