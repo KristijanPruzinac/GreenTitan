@@ -36,7 +36,6 @@ struct TofFramePose {
 #define TOF_ZONE_HIGH 2     // above the plain ground threshold (TOF_MIN_HEIGHT + TOF_GROUND_SLOPE per m)
 #define TOF_ZONE_FACE 4     // on a vertical face: >= 2 zones of its column at one distance, this one >= TOF_FACE_MIN_Z
 #define TOF_ZONE_TOP 8      // ... whose top is seen (the zone above it sees past it)
-#define TOF_ZONE_GAP 16     // ... with a see-through zone between its hits (fence)
 struct TofZone {
   float x, y;             // world, m
   float z;                // above the wheel plane, m

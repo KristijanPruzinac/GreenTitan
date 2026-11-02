@@ -44,7 +44,8 @@ FW = _firmware_constants()
 FRONT, REAR, HALF = FW['MOWER_FRONT_OVERHANG'], FW['MOWER_REAR_OVERHANG'], FW['MOWER_HALF_WIDTH']
 ANTENNA = FW['GNSS_ANTENNA_BEHIND_AXLE']
 MOTOR_STOP, MOTOR_MOVE = 0, 3
-MAP_KINDS = ('wall', 'fence', 'low', 'hedge', 'post')
+TOF_YAW_DEG = -45.0   # definitions.h TOF_MOUNT_YAW (crossed)
+MAP_KINDS = ('wall', 'wall', 'low', 'wall', 'post')   # height classes; codes 1 and 3 (fence, hedge) unused
 
 
 def world_path(name):
@@ -64,12 +65,14 @@ class World:
             cfg['terrain'] = {'type': 'flat'}
         robot = simcfg.load(os.path.join(CONFIG, 'mower.yaml'))
         self.tof_cfg = next(d for d in robot['devices'] if d.get('model') == 'tof')
-        turn = os.environ.get('WALL_BENCH_TOF_YAW_DEG')   # another mount: firmware -DTOF_MOUNT_YAW to match
+        # another mount: the left sensor's yaw in deg (+ outward, - crossed), firmware -DTOF_MOUNT_YAW to match;
+        # mower.yaml's sensors sit at TOF_YAW_DEG plus their mount error
+        turn = os.environ.get('WALL_BENCH_TOF_YAW_DEG')
         if turn:
             for sen in self.tof_cfg['sensors']:
-                r = sen['rpy'][2]
-                sen['rpy'] = [sen['rpy'][0], sen['rpy'][1], r + math.copysign(math.radians(float(turn) - 20.0), r)]
-        self.tof = TofModel(self.tof_cfg, cfg, np.random.default_rng(seed))
+                r = sen['rpy'][2] + math.copysign(math.radians(float(turn) - TOF_YAW_DEG), sen['position'][1])
+                sen['rpy'] = [sen['rpy'][0], sen['rpy'][1], r]
+        self.tof = TofModel(self.tof_cfg, cfg, np.random.default_rng(seed), robot['robot'])
         self.ground_z = self.tof.scene.ground_z
         boxes, circles = [], []
         for obj in cfg.get('objects', []) or []:
@@ -544,8 +547,8 @@ def metrics(run, maps=None):
             if kind == 4:      # post: centre x0 y0, radius x1
                 x1, y1 = x0, y0
             pd, names, kinds, _ = run.world.surface([[x0, y0], [x1, y1], [(x0 + x1) / 2, (y0 + y1) / 2]])
-            truth = {'wall': 'wall', 'wire_mesh': 'fence', 'picket': 'fence', 'rail_fence': 'fence',
-                     'curb': 'low', 'hedge': 'hedge', 'post': 'post'}.get(kinds[2], kinds[2])
+            truth = {'wall': 'wall', 'wire_mesh': 'wall', 'picket': 'wall', 'rail_fence': 'wall',
+                     'curb': 'low', 'hedge': 'wall', 'post': 'post'}.get(kinds[2], kinds[2])
             objs.append({'kind': MAP_KINDS[kind] if 0 <= kind < len(MAP_KINDS) else str(kind), 'truth': truth,
                          'part': names[2], 'off_cm': round(float(np.abs(pd).max()) * 100, 1),
                          'len_m': round(math.hypot(x1 - x0, y1 - y0), 2)})

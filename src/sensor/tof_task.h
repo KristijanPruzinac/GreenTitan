@@ -33,7 +33,8 @@ void tof_task(void* parameter);
 
 // For the wall assist, which runs inside this task
 const TofPoint* tof_memory();                        // TOF_MEMORY_POINTS slots
-const TofRay* tof_rays(int sensor);                  // TOF_ZONES rays; 0 = left, 1 = right
+const TofRay* tof_rays(int sensor);                  // TOF_ZONES rays; 0 = left, 1 = right (mounted)
+int tof_side_sensor(int side);                       // the sensor looking to side 0 (left) / 1 (right): crossed mount swaps
 bool tof_latest_frame(int sensor, const tof_frame_t** frame);   // false: no frame within TOF_FRAME_TIMEOUT_MS
 void tof_forget_point(int index);
 int tof_sensor_count();                              // sensors found at boot (HIL: 2)

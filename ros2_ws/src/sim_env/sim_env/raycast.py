@@ -12,6 +12,13 @@ Rays share one origin; parts outside the cone around them or out of range are sk
 (per ray, metres) raises the ground for that ray, e.g. grass blades. ``surface=True`` also returns
 ``cos`` (cosine of the angle between the ray and the surface normal, 1 for wires) and ``rough``
 (the part's ``roughness``, metres, 0 if unset).
+
+``RobotBody(robot_cfg)`` is the robot's own body for self-occlusion, in the robot frame: the
+triangles of ``occlusion_mesh_file`` (JSON ``{"parts": [{"pos": [x, y, z, ...] mm, "idx": [...]}]}``,
+e.g. the Mower V3 CAD mesh) if given, else the driven ``wheels`` as cylinders about y; plus the
+``body`` boxes and cylinders.
+``body.cast(origin, dirs)`` (robot frame) gives the distance to the first body hit (inf = none) and
+the cosine to the surface normal.
 """
 import math
 
@@ -173,6 +180,98 @@ class RayScene:
         frac = np.where(k1 > 0, np.clip(a0 / np.maximum(a0 - a1, 1e-12), 0, 1), 0.0)
         tg[idx] = np.where(below[rows, k1], ts[rows, k0] + frac * (ts[rows, k1] - ts[rows, k0]), np.inf)
         return tg
+
+
+class RobotBody:
+    """The robot's own parts (robot frame) as ray targets: a triangle mesh (``occlusion_mesh_file``),
+    or without one the driven ``wheels`` as cylinders about y (casters left out: they swivel and sit
+    far behind); plus the ``body`` boxes and vertical cylinders."""
+
+    def __init__(self, robot_cfg):
+        boxes, cyls, wheels = [], [], []
+        self.tri = np.zeros((0, 3, 3))
+        mesh = (robot_cfg or {}).get('occlusion_mesh_file')
+        if mesh:
+            import json
+            with open(mesh, encoding='utf-8') as f:
+                parts = json.load(f)['parts']
+            tris = []
+            for p in parts:
+                v = np.array(p['pos'], float).reshape(-1, 3) / 1000.0
+                tris.append(v[np.array(p['idx'], int).reshape(-1, 3)])
+            self.tri = np.concatenate(tris) if tris else self.tri
+        for p in (robot_cfg or {}).get('body', []) or []:
+            shape, pos = p.get('shape', {}), list(p.get('position', [0, 0, 0]))
+            if 'box' in shape:
+                boxes.append((pos, rpy_to_rot(*p.get('rpy', [0, 0, 0])), np.array(shape['box'], float) / 2))
+            elif 'cylinder' in shape:
+                r, h = shape['cylinder']
+                cyls.append([pos[0], pos[1], pos[2] - h / 2, pos[2] + h / 2, r])
+        for w in [] if mesh else (robot_cfg or {}).get('wheels', []) or []:
+            if not w.get('caster'):
+                x, y, z = w['position']
+                # about y: in (x, z, y) coordinates the wheel is an upright cylinder
+                wheels.append([x, z, y - w['width'] / 2, y + w['width'] / 2, w['radius']])
+        self.box_c = np.array([b[0] for b in boxes], float).reshape(-1, 3)
+        self.box_r = np.array([b[1] for b in boxes], float).reshape(-1, 3, 3)
+        self.box_h = np.array([b[2] for b in boxes], float).reshape(-1, 3)
+        self.cyl = np.array(cyls, float).reshape(-1, 5)
+        self.wheel = np.array(wheels, float).reshape(-1, 5)
+
+    def cast(self, o, d):
+        """A part that holds the origin is left out: the sensor looks out through a window in it."""
+        o = np.asarray(o, float)
+        t, cos = np.full(len(d), np.inf), np.ones(len(d))
+        out = ~np.all(np.abs(np.einsum('bk,bkj->bj', o[None, :] - self.box_c, self.box_r)) <= self.box_h, axis=1)
+        if out.any():
+            tb, _, cb = _boxes(o, d, self.box_c[out], self.box_r[out], self.box_h[out])
+            better = tb < t
+            t[better], cos[better] = tb[better], cb[better]
+        for cyl, perm in ((self.cyl, [0, 1, 2]), (self.wheel, [0, 2, 1])):
+            q = o[perm]
+            cyl = cyl[(np.hypot(cyl[:, 0] - q[0], cyl[:, 1] - q[1]) > cyl[:, 4]) | (q[2] < cyl[:, 2]) | (q[2] > cyl[:, 3])]
+            if len(cyl):
+                tc, _ = _cylinders(q, d[:, perm], cyl)
+                better = tc < t
+                t[better], cos[better] = tc[better], 1.0   # round: taken as facing the sensor
+        if len(self.tri):
+            # only triangles with a corner in front of the origin along some ray
+            axis = d.mean(axis=0)
+            axis /= max(np.linalg.norm(axis), 1e-9)
+            cone = math.acos(float(np.clip((d @ axis).min(), -1, 1)))
+            rel = self.tri - o
+            dist = np.linalg.norm(rel, axis=2)
+            ang = np.arccos(np.clip(np.einsum('tkj,j->tk', rel, axis) / np.maximum(dist, 1e-9), -1, 1))
+            size = np.linalg.norm(self.tri - self.tri.mean(axis=1, keepdims=True), axis=2).max(axis=1)
+            near = np.nonzero(np.any(ang <= cone, axis=1) | (ang.min(axis=1) <= cone + np.arcsin(
+                np.clip(size / np.maximum(dist.min(axis=1), 1e-9), 0, 1))))[0]
+            for k in range(0, len(near), 256):
+                tt, cc = _triangles(o, d, self.tri[near[k:k + 256]])
+                better = tt < t
+                t[better], cos[better] = tt[better], cc[better]
+        return t, cos
+
+
+def _triangles(o, d, tri):
+    """Moller-Trumbore, every ray against every triangle: (t, |cos| to the normal) of the nearest."""
+    v0, e1, e2 = tri[:, 0], tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]
+    p = np.cross(d[None, :, :], e2[:, None, :])                     # (T, N, 3)
+    det = np.einsum('tj,tnj->tn', e1, p)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        inv = 1.0 / det
+        s = o - v0                                                   # (T, 3)
+        u = np.einsum('tj,tnj->tn', s, p) * inv
+        q = np.cross(s, e1)                                          # (T, 3)
+        v = (d @ q.T).T * inv
+        t = (e2 * q).sum(axis=1)[:, None] * inv
+        ok = (np.abs(det) > 1e-12) & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 1e-6)
+    t = np.where(ok, t, np.inf)
+    i = np.argmin(t, axis=0)
+    rays = np.arange(d.shape[0])
+    tb = t[i, rays]
+    nrm = np.cross(e1, e2)
+    nrm /= np.maximum(np.linalg.norm(nrm, axis=1, keepdims=True), 1e-12)
+    return tb, np.abs(np.sum(nrm[i] * d, axis=1))
 
 
 def _boxes(o, d, c, rot, half):
