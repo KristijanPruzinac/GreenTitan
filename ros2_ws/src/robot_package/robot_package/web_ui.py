@@ -4,9 +4,14 @@
     ros2 run robot_package web_ui --ros-args -p world:=<world.yaml> # HIL: also draw the true objects
 
 Commands go to the firmware console (esp/console) as if typed there: the stick as "v<lin>,<ang>\\n"
-at a steady 10 Hz from this node's own timer while the page reports it held (the page sends the
-stick at 10 Hz; if that stops for STICK_TIMEOUT, e.g. Wi-Fi drops, the node sends one stop, as on
-release). Buttons map to fixed keys (KEYS); nothing else is passed on.
+at a steady 20 Hz from this node's own timer while the page reports it held (the page sends the
+stick at 20 Hz; if that stops for STICK_TIMEOUT, e.g. Wi-Fi drops, the node sends one stop, as on
+release). Buttons map to fixed keys (KEYS); nothing else is passed on. "takeover" / "handback" switch
+manual on / off without toggling blindly, and manual starting switches the wall assist on (no button).
+
+The page gets its state pushed (GET /events, server-sent events): one message per new EKF pose (and per
+log line, map or outline change, at least every 0.25 s); map, outlines and log only when they changed.
+GET /state is the same as one polled snapshot (tools/drive_test).
 
 State shown: the EKF pose (/odometry/filtered/global, base_link = antenna), esp/log (last lines,
 the wall-assist state, manual/assist flags, the outline being recorded), esp/wall_map (typed
@@ -14,16 +19,18 @@ objects, format below), and with `world` the true objects (sim_env obstacles.exp
 true mower (/sim/greentitan/ground_truth), moved into the odom frame through the datum.
 
 esp/wall_map v1 (Int16MultiArray): [1, n, then per object kind, x0, y0, x1, y1, height, hits],
-cm in odom; kind 0 wall, 1 fence, 2 low edge, 3 hedge, 4 post (x0, y0 centre, x1 radius).
+cm in odom; kind 0 wall, 1 fence, 2 low edge, 3 hedge, 4 post (x0, y0 centre, x1 radius). The page
+shows height classes only: wall (0, 1, 3), low edge (2), post (4).
 
-Only Python stdlib + rclpy: no rosbridge, no external JS for the 2D page, works offline (the optional
-3D view loads three.js from cdnjs the first time it is opened).
+Only Python stdlib + rclpy: no rosbridge. The page loads three.js (3D view) and aerial imagery tiles
+(placed with the datum) from the internet; offline it falls back to a plain 2D grid.
 """
 import collections
 import json
 import math
 import os
 import re
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -37,14 +44,20 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu, NavSatFix
 from std_msgs.msg import Int16MultiArray, String
 
-MAX_LIN, MAX_REV, MAX_ANG = 0.3, 0.1, 0.6   # m/s forward, m/s reverse, rad/s
+MAX_LIN, MAX_REV, MAX_ANG = 0.45, 0.15, 0.9  # m/s forward, m/s reverse, rad/s (1.5x since 2026-11-02)
+STICK_HZ = 20                                # v commands per second while the stick is held
 STICK_TIMEOUT = 0.6                          # s without a stick report from the page -> stop (0.35 stopped on Wi-Fi jitter)
 LOG_LINES = 30
-KEYS = {'manual': 'm', 'assist': 'f', 'status': 'i', 'stop': ' '}
+PUSH_MIN = 0.015                             # s between two pushed messages (caps a burst at ~60/s)
+PUSH_IDLE = 0.25                             # s: push anyway (ages, sim truth) when nothing new came in
+ASSIST_WINDOW = 3.0                          # s after manual starts in which the node switches the assist on
+KEYS = {'manual': 'm', 'status': 'i', 'stop': ' ',
+        'capture': 'c', 'outline': 'o', 'point': 'p', 'finish': 'e'}   # c o p e: outline capture (console keys)
 METERS_PER_LAT = 111111.0                    # the firmware's flat-earth conversion (gps_topic_callback)
 
 RE_WALL_STATE = re.compile(r'\[WALL\] (\w+) -> (\w+): (.*)')
 RE_POINT = re.compile(r'\[(?:WALL|DEBUG)\] Point added \((-?\d+), (-?\d+)\) cm( \(corner\))?')
+RE_WEB_FILE = re.compile(r'^/web/[\w-]+\.json$')  # data files next to the page (no paths: nothing else is served)
 RE_DATUM = re.compile(r'(?:Datum published|Datum set to): lat=(-?[\d.]+) lon=(-?[\d.]+)')
 
 
@@ -53,6 +66,9 @@ def _yaw(q):
 
 
 def _page_path():
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'web', 'drive.html')
+    if os.path.exists(here):  # run from a source tree: its own page
+        return here
     try:
         from ament_index_python.packages import get_package_share_directory
         path = os.path.join(get_package_share_directory('robot_package'), 'web', 'drive.html')
@@ -115,6 +131,13 @@ class WebUi(Node):
         self.declare_parameter('host', '0.0.0.0')
         self.declare_parameter('world', '')
         self.lock = threading.Lock()
+        self.cond = threading.Condition(self.lock)  # /events streams wait on it
+        self.seq = 0                                 # bumped on every pushed change
+        self.map_rev = self.out_rev = 0
+        self.pose_n = 0                              # EKF poses received
+        self.datum = None                            # (lat, lon) of the odom origin: esp/datum or the log
+        self.assist_due = 0.0                        # monotonic deadline to switch the assist on (manual started)
+        self.assist_asked = False
         self.log = collections.deque(maxlen=LOG_LINES)
         self.log_id = 0
         self.log_tail = ''
@@ -152,7 +175,7 @@ class WebUi(Node):
         self.create_subscription(NavSatFix, 'esp/datum', self.on_datum, 10)
         if self.world:
             self.create_subscription(Odometry, '/sim/greentitan/ground_truth', self.on_truth, qos_profile_sensor_data)
-        self.create_timer(0.1, self.tick)
+        self.create_timer(1.0 / STICK_HZ, self.tick)
 
     # ------------------------------------------------------------------ ROS in
     def on_log(self, msg):
@@ -165,6 +188,13 @@ class WebUi(Node):
             for line in lines:
                 if line:
                     self.parse(line)
+            self.ensure_assist(now)
+            self.bump()
+
+    def bump(self):
+        """A pushed value changed (caller holds the lock): wake the /events streams."""
+        self.seq += 1
+        self.cond.notify_all()
 
     def parse(self, line):
         self.log_id += 1
@@ -181,6 +211,8 @@ class WebUi(Node):
         if m:
             self.set_datum(float(m.group(1)), float(m.group(2)))
         if 'Manual mode ON' in line:
+            if self.manual is not True:  # manual starts: the assist is always on while driving by hand
+                self.assist_due, self.assist_asked = time.monotonic() + ASSIST_WINDOW, False
             self.manual = True
         elif 'Manual mode OFF' in line or 'Not in manual mode' in line:
             self.manual = False
@@ -191,32 +223,60 @@ class WebUi(Node):
             self.assist = False
         if 'Path capture started' in line:
             self.recording, self.outlines = True, []
+            self.out_rev += 1
         elif 'New outline started' in line:
             self.outlines.append([])
+            self.out_rev += 1
         elif 'Path capture completed' in line or 'Path capture failed' in line:
             self.recording = False
+
+    def ensure_assist(self, now):
+        """Within ASSIST_WINDOW after manual started: assist off -> 'f' once; not known -> ask once ('i')."""
+        if not self.assist_due:
+            return
+        if now > self.assist_due or not self.manual or self.assist:
+            self.assist_due = 0.0
+        elif self.assist is False:
+            self.send('f')
+            self.assist_due = 0.0
+        elif not self.assist_asked:
+            self.send('i')
+            self.assist_asked = True
 
     def add_point(self, x, y, corner):
         if not self.outlines:
             self.outlines.append([])
         self.outlines[-1].append([x, y, corner])
+        self.out_rev += 1
 
     def on_datum(self, m):
         with self.lock:
             self.set_datum(m.latitude, m.longitude)
+            self.bump()
 
     def set_datum(self, lat, lon):
         # esp/datum has full precision, a log line 7 decimals (~1 cm); the latest one counts
+        self.datum = (lat, lon)
         if self.world and (lat, lon) != self.world.datum:
             self.world.datum = (lat, lon)
             self.world_rev += 1
+
+    def datum_json(self):
+        """Odom origin for the page's aerial map: [lat, lon, source] or None (caller holds the lock)."""
+        if self.datum:
+            return [self.datum[0], self.datum[1], 'datum']
+        if self.world:  # sim before a datum is seen: the firmware's datum is near the world origin
+            return [self.world.origin['latitude'], self.world.origin['longitude'], 'world']
+        return None
 
     def on_pose(self, m):
         p = m.pose.pose.position
         with self.lock:
             self.t_pose = time.monotonic()
+            self.pose_n += 1
             self.pose = {'x': p.x, 'y': p.y, 'yaw': _yaw(m.pose.pose.orientation),
-                         'v': m.twist.twist.linear.x, 'w': m.twist.twist.angular.z}
+                         'v': m.twist.twist.linear.x, 'w': m.twist.twist.angular.z, 'n': self.pose_n}
+            self.bump()
 
     def on_imu(self, _):
         self.t_imu = time.monotonic()
@@ -245,13 +305,15 @@ class WebUi(Node):
         objs = [d[2 + 7 * i: 9 + 7 * i] for i in range(n)]
         with self.lock:
             self.wall_map, self.t_map = objs, time.monotonic()
+            self.map_rev += 1
+            self.bump()
 
     # ------------------------------------------------------------------ console out
     def send(self, keys):
         self.console.publish(String(data=keys))
 
     def tick(self):
-        """10 Hz: the held stick as a v command, one stop when it is released or goes silent."""
+        """STICK_HZ: the held stick as a v command, one stop when it is released or goes silent."""
         with self.lock:
             stick = self.stick
             if stick and time.monotonic() - stick[2] > STICK_TIMEOUT:
@@ -275,12 +337,29 @@ class WebUi(Node):
             self.stick = None
             if held:
                 self.notice = 'manual is off'
+                self.bump()
                 return 'manual off'
         if was:
             self.send(' ')
         return 'ok'
 
     def command(self, name):
+        if name == 'takeover':  # manual on; the assist follows (parse -> ensure_assist)
+            with self.lock:
+                if self.manual is not True:
+                    self.send('m')
+                    return True
+                self.assist_due, self.assist_asked = time.monotonic() + ASSIST_WINDOW, False
+                self.ensure_assist(time.monotonic())
+            return True
+        if name == 'handback':  # stop, manual off ('m' toggles: only when manual is known to be on)
+            with self.lock:
+                self.stick = None
+                manual = self.manual
+            self.send(' ')
+            if manual:
+                self.send('m')
+            return True
         if name not in KEYS:
             return False
         if name == 'stop':
@@ -290,20 +369,48 @@ class WebUi(Node):
         return True
 
     # ------------------------------------------------------------------ HTTP out
+    def live(self, now):
+        """The small part of the state that goes out with every push (caller holds the lock)."""
+        age = lambda t: None if t is None else round(now - t, 3)  # noqa: E731
+        truth = self.truth if self.truth and now - self.truth['t'] < 1.0 else None
+        return {
+            'pose': self.pose, 'age_pose': age(self.t_pose), 'age_log': age(self.t_log), 'age_imu': age(self.t_imu),
+            'truth': truth and {**truth, 't': age(truth['t'])},   # t: age in s
+            'rtf': self.rtf() if truth else None,
+            'manual': self.manual, 'assist': self.assist, 'assist_state': self.assist_state,
+            'assist_why': self.assist_why, 'recording': self.recording, 'age_map': age(self.t_map),
+            'world_rev': self.world_rev, 'datum': self.datum_json(),
+            'held': self.stick is not None, 'notice': self.notice, 'log_id': self.log_id,
+            'limits': [MAX_LIN, MAX_REV, MAX_ANG],
+        }
+
     def state(self, since):
-        now = time.monotonic()
-        age = lambda t: None if t is None else round(now - t, 2)  # noqa: E731
         with self.lock:
-            return {
-                'pose': self.pose, 'age_pose': age(self.t_pose), 'age_log': age(self.t_log), 'age_imu': age(self.t_imu),
-                'truth': self.truth if self.truth and now - self.truth['t'] < 1.0 else None,
-                'rtf': self.rtf() if self.truth and now - self.truth['t'] < 1.0 else None,
-                'manual': self.manual, 'assist': self.assist, 'assist_state': self.assist_state,
-                'assist_why': self.assist_why, 'recording': self.recording, 'outlines': self.outlines,
-                'map': self.wall_map, 'age_map': age(self.t_map), 'world_rev': self.world_rev,
-                'held': self.stick is not None, 'notice': self.notice,
-                'log': [[i, s] for i, s in self.log if i > since], 'log_id': self.log_id,
-            }
+            s = self.live(time.monotonic())
+            s.update(outlines=self.outlines, map=self.wall_map, log=[[i, t] for i, t in self.log if i > since])
+            return s
+
+    def stream(self, write, since):
+        """Push messages to one /events client until it goes away (write raises)."""
+        sent_seq, sent_map, sent_out, sent_log, t_last = -1, -1, -1, since, 0.0
+        while True:
+            with self.cond:
+                self.cond.wait_for(lambda: self.seq != sent_seq, timeout=PUSH_IDLE)
+                sent_seq = self.seq
+                msg = self.live(time.monotonic())
+                if self.map_rev != sent_map:
+                    msg['map'], sent_map = self.wall_map, self.map_rev
+                if self.out_rev != sent_out:
+                    msg['outlines'], sent_out = self.outlines, self.out_rev
+                if self.log_id < sent_log:  # the node restarted under a reconnecting page
+                    sent_log = 0
+                msg['log'] = [[i, t] for i, t in self.log if i > sent_log]
+                sent_log = self.log_id
+            write(b'data: ' + json.dumps(msg, separators=(',', ':')).encode() + b'\n\n')
+            wait = PUSH_MIN - (time.monotonic() - t_last)
+            if wait > 0:
+                time.sleep(wait)
+            t_last = time.monotonic()
 
     def world_json(self):
         with self.lock:
@@ -313,13 +420,16 @@ class WebUi(Node):
 
 
 def make_handler(ui, page_path):
+    web_dir = os.path.dirname(page_path)
+
     class Handler(BaseHTTPRequestHandler):
         # Keep-alive: with HTTP/1.0 every poll and stick report opened a new connection, and from Windows into
         # WSL each one can stall (2 s for "localhost": IPv6 first), long enough for the stick timeout to stop
         # the mower again and again (manual drive 2026-11-01). Every reply sets Content-Length.
         protocol_version = 'HTTP/1.1'
+        disable_nagle_algorithm = True  # a pushed pose or a stick report goes out at once, not up to 40 ms later
 
-        def log_message(self, *args):  # quiet: the page polls 7x per second
+        def log_message(self, *args):  # quiet: the page sends the stick 20x per second
             pass
 
         def reply(self, code, body, ctype='application/json'):
@@ -336,14 +446,28 @@ def make_handler(ui, page_path):
             if path in ('/', '/index.html'):
                 with open(page_path, 'rb') as f:
                     self.reply(200, f.read(), 'text/html; charset=utf-8')
-            elif path == '/state':
+            elif path in ('/state', '/events'):
                 since = 0
                 for kv in query.split('&'):
                     if kv.startswith('since='):
                         since = int(kv[6:] or 0) if kv[6:].lstrip('-').isdigit() else 0
-                self.reply(200, ui.state(since))
+                if path == '/state':
+                    return self.reply(200, ui.state(since))
+                self.send_response(200)  # server-sent events: no length, the stream ends with the connection
+                self.send_header('Content-Type', 'text/event-stream')
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                self.close_connection = True
+                try:
+                    self.wfile.write(b'retry: 1000\n\n')
+                    ui.stream(self.wfile.write, since)
+                except (OSError, socket.timeout):  # the page went away (broken pipe, reset)
+                    pass
             elif path == '/world':
                 self.reply(200, ui.world_json())
+            elif RE_WEB_FILE.match(path) and os.path.isfile(os.path.join(web_dir, path[5:])):
+                with open(os.path.join(web_dir, path[5:]), 'rb') as f:  # the mower mesh, the sensor mounts
+                    self.reply(200, f.read())
             else:
                 self.reply(404, {'error': 'not found'})
 
