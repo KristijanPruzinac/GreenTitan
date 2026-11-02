@@ -476,6 +476,7 @@ static bool fused_pose_seen = false;
 void gps_topic_callback(dds_callback_context_t* context) {
     gps_data_t* data = (gps_data_t*)context->message_data.data;
 
+    imu_set_ground_speed((float)hypot(data->vel_north, data->vel_east));   // standstill gyro bias (imu_task)
     if (!datum_published) return;
 
     // Convert lat/lon to local meters relative to datum
@@ -614,6 +615,32 @@ void gps_topic_callback(dds_callback_context_t* context) {
     RCSOFTCHECK(rcl_publish(&gps_publisher, &gps_msg, NULL));
 }
 
+// Latest pose as of its arrival, for fused_pose_now() (other tasks call it)
+struct PoseNowRef { fused_pose_data_t pose; float vy; double t, gyro_yaw; bool has_gyro, valid; };
+static portMUX_TYPE pose_now_mux = portMUX_INITIALIZER_UNLOCKED;
+static PoseNowRef pose_now_ref = {};
+
+// The pose arrives 20-30 times a second, already predicted to its arrival (fused_pose_callback).
+// From there to now: yaw with the gyro turn since then, position with the EKF's body velocity
+// along the heading halfway through. Only the EKF's own velocity: wheel steps and commanded speed
+// are not trustworthy (slip, wall hits) and never move the pose.
+bool fused_pose_now(fused_pose_data_t* out) {
+    portENTER_CRITICAL(&pose_now_mux);
+    PoseNowRef r = pose_now_ref;
+    portEXIT_CRITICAL(&pose_now_mux);
+    if (!r.valid) return false;
+    double dt = esp_timer_get_time() * 1e-6 - r.t;
+    if (dt < 0.0 || dt > MOTION_POSE_TIMEOUT_MS / 1000.0) return false;
+    double g;
+    float turn = (r.has_gyro && imu_yaw_now(&g)) ? (float)(g - r.gyro_yaw) : 0.0f;
+    float mid = r.pose.yaw + 0.5f * turn;
+    *out = r.pose;
+    out->x += (cosf(mid) * r.pose.vx - sinf(mid) * r.vy) * dt;
+    out->y += (sinf(mid) * r.pose.vx + cosf(mid) * r.vy) * dt;
+    out->yaw = normalize_angle(r.pose.yaw + turn);
+    return true;
+}
+
 void fused_pose_callback(const void* msgin) {
     const std_msgs__msg__Float64MultiArray* msg = (const std_msgs__msg__Float64MultiArray*)msgin;
     if (msg->data.size < 9) return;
@@ -674,6 +701,28 @@ void fused_pose_callback(const void* msgin) {
         .vx    = vx,
         .omega = omega,
     };
+
+    // The pose as of now, kept for fused_pose_now() with the gyro yaw it is carried from
+    double gyro_ref = 0.0;
+    bool has_gyro = imu_yaw_now(&gyro_ref);
+    double ref_t = esp_timer_get_time() * 1e-6;
+    portENTER_CRITICAL(&pose_now_mux);
+    pose_now_ref.pose = data;
+    pose_now_ref.vy = vy;
+    pose_now_ref.t = ref_t;
+    pose_now_ref.has_gyro = has_gyro;
+    pose_now_ref.gyro_yaw = gyro_ref;
+    pose_now_ref.valid = true;
+    portEXIT_CRITICAL(&pose_now_mux);
+
+    // The EKF sends 20-30 poses/s since 2026-11-02; /fused_pose stays at MOTION_UPDATE_FREQUENCY,
+    // the rate motion_task runs its control on (its ramps and path steps are per pose): the first
+    // pose after each 1/MOTION_UPDATE_FREQUENCY tick. Tasks that want the pose between them call
+    // fused_pose_now().
+    static double dds_due_t = 0.0;
+    if (ref_t < dds_due_t) return;
+    dds_due_t += 1.0 / MOTION_UPDATE_FREQUENCY;
+    if (dds_due_t <= ref_t) dds_due_t = ref_t + 1.0 / MOTION_UPDATE_FREQUENCY;   // first pose or a gap
 
     if (TASKS_STARTED) {
         dds_result_t result = DDS_PUBLISH("/fused_pose", data);

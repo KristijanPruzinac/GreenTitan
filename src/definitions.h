@@ -440,6 +440,12 @@ typedef struct {
 #else
 #define IMU_SAMPLE_DELAY 0.015    // s, MPU6050 low-pass + I2C read (estimate; measure on the robot)
 #endif
+// Standstill gyro bias (2026-11-02, imu_task, ARCHITECTURE §5): while clearly still the yaw holds and the z bias is relearnt
+#define IMU_STILL_SETTLE 1.0      // s, wheels stopped this long first (a hint inside the gate, never odometry)
+#define IMU_STILL_BLOCK 0.5       // s, stillness is judged per block of reads; a still block's yaw is taken back
+#define IMU_STILL_RATE 0.003      // rad/s (0.17 deg/s), a block's mean rate (bias removed) below this is still; a turn above it is never held
+#define IMU_STILL_GPS_SPEED 0.10f // m/s, GPS ground speed below this (HIL parked: 0.024 median, 0.068 p99)
+#define IMU_BIAS_WINDOW 4.0       // s of still blocks in a row: their mean becomes the bias
 #define MOTOR_UPDATE_FREQUENCY 1000
 #define GPS_UPDATE_FREQUENCY 5
 
@@ -518,6 +524,11 @@ typedef struct {
     float vx;
     float omega;
 } fused_pose_data_t;
+
+// The latest EKF pose projected to now (main.cpp, 2026-11-02): yaw carried by the integrated gyro
+// since the pose arrived, position moved by the EKF's own velocity over that time (never the
+// commanded speed). false without a pose or when it is older than MOTION_POSE_TIMEOUT_MS. Any task.
+bool fused_pose_now(fused_pose_data_t* out);
 
 enum motion_mode {
     WAITING,          // stop and drop the queued path
