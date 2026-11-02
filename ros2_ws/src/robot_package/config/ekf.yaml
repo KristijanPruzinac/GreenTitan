@@ -1,6 +1,8 @@
 ekf:
   ros__parameters:
-    frequency: 10.0
+    # 30 Hz (10 until 2026-11-02): it publishes once per cycle with a new measurement, so the output
+    # follows /imu/data (25 Hz, HIL 20) instead of every second one, ~20 ms fresher on average
+    frequency: 30.0
     sensor_timeout: 1.0
     # GPS arrives ~0.1-0.25 s after its epoch (stamped with receiver time): rewind and replay
     smooth_lagged_data: true

@@ -1,5 +1,6 @@
 #include "imu_task.h"
 #include "../hil/hil.h"
+#include "../motor/motor_task.h"
 
 //Calibration
 static double gyro_x_offset = 0;
@@ -62,6 +63,94 @@ static bool imu_calibrate_step(){
 }
 
 bool imu_ready(){ return calibration_completed; }
+
+// Latest integrated yaw for imu_yaw_now(), written after every read (other tasks read it)
+static portMUX_TYPE yaw_mux = portMUX_INITIALIZER_UNLOCKED;
+static double yaw_latest = 0.0, yaw_latest_t = 0.0;   // rad, esp_timer s
+static float gz_latest = 0.0f;                        // rad/s, bias removed
+
+bool imu_yaw_now(double* yaw){
+  if (!calibration_completed) return false;
+  portENTER_CRITICAL(&yaw_mux);
+  double y = yaw_latest, t = yaw_latest_t;
+  float gz = gz_latest;
+  portEXIT_CRITICAL(&yaw_mux);
+  if (t == 0.0) return false;
+  // The read itself is IMU_SAMPLE_DELAY old when taken; the rate is held up to 0.1 s past it
+  double ahead = fmin(esp_timer_get_time() * 1e-6 - t + IMU_SAMPLE_DELAY, 0.1);
+  *yaw = y + gz * ahead;
+  return true;
+}
+
+// GPS ground speed for the standstill test, from the bridge's /gps callback
+static volatile float gps_speed = 1e6f;
+static volatile uint32_t gps_speed_ms = 0;
+void imu_set_ground_speed(float speed){
+  gps_speed = speed;
+  gps_speed_ms = millis();
+}
+
+// Standstill gyro bias (2026-11-02). The boot calibration alone left the parked heading drifting
+// with the bias: 45 deg in 16 min parked in HIL (user drive 2026-11-02; there mostly the sim bias
+// scaled by the varying sim speed, on the robot the MPU6050's drift), and nothing corrects the
+// heading while the mower stands. While the
+// mower is clearly still the gyro z mean is the bias: wheels stopped for IMU_STILL_SETTLE (a
+// command hint only, never odometry), GPS ground speed below IMU_STILL_GPS_SPEED, and per block
+// of IMU_STILL_BLOCK reads a low spread and a mean within IMU_STILL_RATE of the current bias. A
+// still block's yaw is taken back (the yaw holds), and every IMU_BIAS_WINDOW of still blocks
+// replaces the bias with their mean (HIL replay: a slower blend, 10-60 s, left more drift on the
+// drive after each stop, because the sim bias moves with the sim speed). A real turn faster than
+// IMU_STILL_RATE fails the block and is integrated as always; one slower than that while the wheels stand is
+// held out and, after IMU_BIAS_WINDOW, learnt as bias: 0.17 deg/s, below what a push would do.
+static double still_wheels_t = 0.0;                        // last time a wheel turned
+static double blk_t0 = 0.0, blk_yaw0 = 0.0, blk_sum = 0.0, blk_sum_sq = 0.0;
+static int blk_n = 0;
+static double win_sum = 0.0, win_t = 0.0;
+static int win_n = 0;
+
+// Returns the yaw to keep: blk_yaw0 when a still block ends, else yaw unchanged
+static double imu_still_step(double now, double prev_t, double raw_z, double yaw_before, double yaw){
+  float wl, wr;
+  motor_get_step_rates(&wl, &wr);
+  if (wl != 0.0f || wr != 0.0f || still_wheels_t == 0.0) still_wheels_t = now;
+  bool gate = now - still_wheels_t >= IMU_STILL_SETTLE &&
+              millis() - gps_speed_ms < 500 && gps_speed < IMU_STILL_GPS_SPEED;
+  if (!gate) {
+    blk_n = 0;
+    win_n = 0; win_sum = win_t = 0.0;
+    return yaw;
+  }
+  if (blk_n == 0) { blk_t0 = prev_t; blk_yaw0 = yaw_before; blk_sum = blk_sum_sq = 0.0; }
+  blk_sum += raw_z;
+  blk_sum_sq += raw_z * raw_z;
+  blk_n++;
+  if (now - blk_t0 < IMU_STILL_BLOCK) return yaw;
+
+  double mean = blk_sum / blk_n;
+  double sd = sqrt(fmax(blk_sum_sq / blk_n - mean * mean, 0.0));
+  bool still = fabs(mean - gyro_z_offset) < IMU_STILL_RATE && sd < IMU_CALIBRATION_MAX_STD;
+  double keep = yaw;
+  if (still) {
+    keep = blk_yaw0;   // the yaw holds over the block
+    win_sum += blk_sum; win_n += blk_n; win_t += now - blk_t0;
+    if (win_t >= IMU_BIAS_WINDOW) {
+      static double printed_bias = 0.0;
+      static uint32_t printed_ms = 0;
+      gyro_z_offset = win_sum / win_n;
+      win_n = 0; win_sum = win_t = 0.0;
+      if (millis() - printed_ms > 60000 || fabs(gyro_z_offset - printed_bias) > 2e-4) {
+        SerialDebug.printf("[IMU] Still: gyro z bias %.5f rad/s (%+.2f deg/min since last report)\r\n",
+                           gyro_z_offset, (gyro_z_offset - printed_bias) * 60.0 * 180.0 / M_PI);
+        printed_bias = gyro_z_offset;
+        printed_ms = millis();
+      }
+    }
+  } else {
+    win_n = 0; win_sum = win_t = 0.0;
+  }
+  blk_n = 0;
+  return keep;
+}
 
 void imu_calibrate(){
   calibration_completed = false;
@@ -161,7 +250,9 @@ void imu_task(void* parameter) {
               double roll_acc = atan2(ay, az), pitch_acc = atan2(-ax_g, sqrt(ay * ay + az * az));
               if (last_t > 0.0) {
                 double dt = now - last_t;
+                double yaw_before = yaw;
                 yaw += 0.5 * (gz + last_gz) * dt;
+                yaw = imu_still_step(now, last_t, imu_gyro.gyro.z, yaw_before, yaw);
                 double cr = cos(roll), sr = sin(roll), tp = tan(pitch);
                 roll += (gx + (sr * gy + cr * gz) * tp) * dt;
                 pitch += (cr * gy - sr * gz) * dt;
@@ -174,6 +265,11 @@ void imu_task(void* parameter) {
               }
               last_t = now;
               last_gz = gz;
+              portENTER_CRITICAL(&yaw_mux);
+              yaw_latest = yaw;
+              yaw_latest_t = now;
+              gz_latest = (float)gz;
+              portEXIT_CRITICAL(&yaw_mux);
               double s_now[5] = { ax, ay, az, gx, gy };
               for (int i = 0; i < 5; i++) sum[i] += s_now[i];
               n++;

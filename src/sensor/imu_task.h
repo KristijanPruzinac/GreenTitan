@@ -23,6 +23,8 @@ extern double odom_angular_velocity;
 bool init_imu();
 void imu_calibrate();
 bool imu_ready();   // gyro bias calibrated, /imu is being published
+bool imu_yaw_now(double* yaw);            // integrated gyro yaw now (rad, unwrapped, relative); false before calibration
+void imu_set_ground_speed(float speed);   // GPS ground speed (m/s), for the standstill gyro bias
 
 void imu_task(void* parameter);
 
