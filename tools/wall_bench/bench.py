@@ -322,6 +322,7 @@ class Run:
         self.tof_latency = float(self.world.tof_cfg.get('latency', 0.0))
         self.clear = 9.0
         self.assist_on = False
+        self.stick = (0.0, 0.0)          # the user's last stick command (lin, ang)
         # boot_heading (deg): the heading is a guess at boot, off by about this much and wandering while the
         # mower stands, until it drove ~0.3 m (the GPS yaw gate confirms it after ~1 s of driving)
         self.boot = math.radians(boot_heading) if boot_heading else 0.0
@@ -400,7 +401,7 @@ class Run:
                 self.min_clear = (d, self.t, name, where)
             if d <= 0.0 and not self.contact:
                 self.contact = (self.t, name, where)
-        self.rows.append((self.t, p.x, p.y, p.yaw, p.v, p.w, self.state, self.clear, p.dist))
+        self.rows.append((self.t, p.x, p.y, p.yaw, p.v, p.w, self.state, self.clear, p.dist, self.stick[0]))
 
     def run_for(self, sec):
         for _ in range(int(round(sec / self.DT))):
@@ -410,12 +411,16 @@ class Run:
     def v(self, lin, ang, dur=0.1):
         """Joystick: one 'v<lin>,<ang>' command, then dur seconds."""
         self.fw.send(f'V {lin:.3f} {ang:.3f}')
+        self.stick = (lin, ang)
         self.run_for(dur)
 
     def key(self, k):
+        if k == ' ':
+            self.stick = (0.0, 0.0)
         self.fw.send('K ' + ('s' if k == ' ' else k))
 
     def idle(self, sec):
+        self.stick = (0.0, 0.0)
         self.run_for(sec)
 
     def assist(self, on):
@@ -534,6 +539,18 @@ def metrics(run, maps=None):
             cl = np.array([q[7] for q in r])
             m['clearance_locked_median'] = round(float(np.median(cl[locked])), 3)
         m['_surface'] = (sd, sdir, sname)
+    # Pushed: stick forward; standing: < 5 cm/s and not turning on the spot; pivot: < 5 cm/s turning >= 0.2 rad/s;
+    # speed: true forward speed over the stick's
+    stick = np.array([q[9] for q in r])
+    v, w = np.array([q[4] for q in r]), np.array([q[5] for q in r])
+    push = stick > 0.01
+    if push.any():
+        slow = push & (np.abs(v) < 0.05)
+        m['push'] = {'s': round(float(push.sum()) * Run.DT, 1), 'stall_s': round(float((slow & (np.abs(w) < 0.2)).sum()) * Run.DT, 1),
+                     'pivot_s': round(float((slow & (np.abs(w) >= 0.2)).sum()) * Run.DT, 1),
+                     'speed': round(float(v[push].mean()), 3), 'ratio': round(float(v[push].mean() / stick[push].mean()), 2)}
+    if 'reached' in run.marks:
+        m['time_to_goal'] = round(run.marks['reached'] - go, 1)
     if run.points:
         pd = np.abs(run.world.surface([[p[1], p[2]] for p in run.points])[0])
         m['outline'] = {'n': len(run.points), 'median_cm': round(float(np.median(pd)) * 100, 1),
@@ -567,6 +584,10 @@ def print_metrics(m, out=sys.stdout):
         print(f"  outline points {o['n']} ({o['corners']} corners): off the true surface median {o['median_cm']} max {o['max_cm']} cm", file=out)
     if 'map' in m:
         print(f"  map objects {len(m['map'])}: " + ', '.join(f"{o['kind']}({o['truth']}, {o['len_m']} m, {o['off_cm']} cm)" for o in m['map']), file=out)
+    if 'push' in m:
+        p = m['push']
+        print(f"  pushed {p['s']} s: speed {p['speed']:.2f} m/s ({p['ratio'] * 100:.0f} % of the stick), standing {p['stall_s']} s, "
+              f"turning on the spot {p['pivot_s']} s; time to goal {m.get('time_to_goal')} s", file=out)
     for tr in m['transitions']:
         print(f"    {tr[0]:7.2f} {tr[1]} -> {tr[2]}: {tr[3]}", file=out)
 

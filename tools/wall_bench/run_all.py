@@ -30,6 +30,8 @@ def main():
     ap.add_argument('--out', default='/tmp/wall_bench')
     ap.add_argument('--slip', type=float, default=0.0, help='mean wheel slip, 0..0.9')
     ap.add_argument('--terrain', choices=('flat', 'world'), default='flat', help="ToF rays against flat ground or the world's terrain")
+    ap.add_argument('--goals', action='store_true', help='add time to goal, time standing / turning on the spot while '
+                    'pushed and speed over the stick (medians over the seeds)')
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     build.build()
@@ -58,7 +60,15 @@ def main():
         nknown += verdict == 'KNOWN'
         if verdict == 'KNOWN':
             why = f'(known: {known}) ' + why
-        print(f"{n:{width}s} {verdict:5s} {ok}/{len(rs)}  min {min(mins) * 100 if mins else float('nan'):5.1f} cm  {why}")
+        # goal-directed: median over the seeds of the time to the goal, the time standing while pushed, the speed
+        pm = [r['metrics']['push'] for r in rs if r['metrics'].get('push')]
+        tg = [r['metrics']['time_to_goal'] for r in rs if r['metrics'].get('time_to_goal') is not None]
+        goal = ''
+        if a.goals and pm:
+            med = lambda v: sorted(v)[len(v) // 2]   # noqa: E731
+            goal = (f" goal {med(tg) if tg else float('nan'):5.1f} s stand {med([p['stall_s'] for p in pm]):4.1f} s "
+                    f"spin {med([p['pivot_s'] for p in pm]):4.1f} s speed {med([p['ratio'] for p in pm]) * 100:3.0f} %")
+        print(f"{n:{width}s} {verdict:5s} {ok}/{len(rs)}  min {min(mins) * 100 if mins else float('nan'):5.1f} cm{goal}  {why}")
     sim = sum(r['sim_s'] for r in results)
     print(f'{npass}/{len(names)} scenarios pass all seeds, {nknown} known limits; {len(results)} runs, {sim:.0f} s simulated in {wall:.0f} s '
           f'on {a.jobs} jobs ({sim / wall:.0f}x real time overall); failure plots in {a.out}')

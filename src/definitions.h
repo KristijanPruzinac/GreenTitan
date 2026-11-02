@@ -129,10 +129,10 @@ typedef struct {
 #define TOF_LOCK_MAX_ANGLE 0.52f   // rad: a side fit within 30 deg of the heading ends the round of a wall end
 #define TOF_WALL_CLEARANCE 0.35f   // m, body side to wall when locked: centreline 0.55, tail swing 0.46 + ToF noise (HIL: 0.30 refused corners)
 #ifndef TOF_WALL_MAX_SPEED
-#define TOF_WALL_MAX_SPEED 0.2f    // m/s, the user's speed is cut to this while the assist steers
+#define TOF_WALL_MAX_SPEED MANUAL_LINEAR_SPEED   // m/s, the user's speed is cut to this while the assist follows
 #endif
 #define TOF_MAP_SAME_FACE 0.25f   // m: map lines with both ends this close to the followed wall's fit are that wall
-#define TOF_WALL_MAX_TURN 0.5f     // rad/s
+#define TOF_WALL_MAX_TURN MANUAL_ANGULAR_SPEED  // rad/s
 #define TOF_WALL_MIN_SPEED 0.05f   // m/s, slowest forward speed while braking toward a stop point
 #define TOF_LOOKAHEAD 0.5f         // m: the assist steers by pure pursuit to a point this far along the follow path
 #define TOF_ALIGN_DETECT 1.3f      // m along the heading to a wall's follow line: curve onto it from here (ALIGN)
@@ -153,7 +153,19 @@ typedef struct {
 #define TOF_BEND_REACH 0.6f        // m: end (points within this) goes on: no OUTER (wavy walls; 45 deg stays a corner)
 #define TOF_OUTER_MAX_TURN 4.71f   // rad round a wall end without finding the wall again: stop, FREE
 #define TOF_OUTER_END_DIST 0.2f    // m, the wall found round an end passes this close to the end point
-#define TOF_BLOCKED_MS 1000        // the guard holds the assist's command at a standstill this long: stop, FREE
+#define TOF_BLOCKED_MS 1000        // the guard holds the assist's command at a standstill this long: FREE (the planner goes on)
+// Shared control (2026-11-02, src/motion/assist_planner.h): in FREE the stick is the intent and the planner drives it
+// round what is in the way; the heading the user held is kept while it goes round and returned to after
+#define TOF_PLAN_PERIOD_MS 50      // planner (and command) every
+#define TOF_FOLLOW_INTENT 0.87f    // rad (50 deg): only a wall this close to the heading held is followed (ALIGN)
+#define TOF_PLAN_FREE_DEV 0.3f     // FREE: weight of staying on the stick's (or the way back's) curvature
+#define TOF_PLAN_FOLLOW_DEV 3.0f   // following: weight of staying on the pursuit's curvature
+#define TOF_PLAN_HEAD 0.3f         // FREE detour: weight of ending the rollout off the heading held (per pi)
+#define TOF_PLAN_SIDE 0.6f         // FREE detour: going round on the other side than it started
+#define TOF_PLAN_RETURN_GAIN 1.0f  // rad/s per rad off the heading held: the way back after a detour
+#define TOF_PLAN_BACK_ON 0.10f     // rad: back within this of the heading held (and the stick free): detour over
+#define TOF_PLAN_MAX_OFF 2.1f      // rad (120 deg): never further off the heading held (a dead end: it stops)
+#define TOF_PLAN_MIN_GO 0.06f      // m/s: slower than this forward, it turns on the spot instead
 #define TOF_CORNER_DETECT 1.3f     // m, a wall across the path this close to the axle = inner corner
 #define TOF_CORNER_STOP 0.63f      // m, axle to both walls where a corner turn on the spot starts: tail swing 0.46 +
                                    // TOF_GUARD_CLEARANCE + 4 cm
@@ -187,8 +199,8 @@ typedef struct {
 #define TOF_GUARD_STEP 0.02f       // m, checked every
 #define TOF_GUARD_DECEL 0.25f      // m/s^2 at the wheels (the motor ramp does ~0.35)
 #define TOF_GUARD_DELAY 0.10f      // s, command to motion (tick, frame and pose age)
-#define TOF_GUARD_RANGE 1.3f       // m from the axle: solid samples (map, frozen wall) kept this close
-#define TOF_SOLID_POINTS 256       // solid samples (map, frozen wall) the guard checks at most
+#define TOF_GUARD_RANGE 1.8f       // m from the axle: solid samples (map, frozen wall) kept this close
+#define TOF_SOLID_POINTS 384       // solid samples (map, frozen wall) the guard checks at most
 #define TOF_SOLID_SPACING 0.04f    // m between samples along a map segment
 #define TOF_TRAIL_POINTS 64        // axle poses kept for the trail, one per TOF_TRAIL_SPACING (or 9 deg of turn)
 #define TOF_TRAIL_SPACING 0.05f    // m
@@ -473,8 +485,8 @@ typedef struct {
 #define MOTOR_MIN_STEP_RATE 20  // steps/s, the lowest LEDC frequency; slower stands still
 
 // Manual mode
-#define MANUAL_LINEAR_SPEED   0.3f
-#define MANUAL_ANGULAR_SPEED  0.6f
+#define MANUAL_LINEAR_SPEED   0.45f   // m/s, full stick (2026-11-02, was 0.3)
+#define MANUAL_ANGULAR_SPEED  0.9f    // rad/s (was 0.6)
 #define MANUAL_WATCHDOG_MS    500
 
 // Shared manual-mode state (defined in main.cpp, written only by controller_task)

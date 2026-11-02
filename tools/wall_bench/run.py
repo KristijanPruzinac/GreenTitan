@@ -19,6 +19,7 @@ def main():
     ap.add_argument('--plot')
     ap.add_argument('--slip', type=float, default=0.0, help='mean wheel slip, 0..0.9')
     ap.add_argument('--terrain', choices=('flat', 'world'), default='flat', help="ToF rays against flat ground or the world's terrain")
+    ap.add_argument('--log', action='store_true', help="print the firmware's [WALL] lines")
     ap.add_argument('--list', action='store_true')
     a = ap.parse_args()
     if a.list or not a.scenario:
@@ -29,6 +30,9 @@ def main():
     t0 = time.time()
     res = scenarios.run(a.scenario, a.seed, a.world, a.plot, a.slip, a.terrain)
     wall = time.time() - t0
+    if a.log:
+        for t, s in res['log']:
+            print(f'{t:7.2f} {s}')
     print(f"{a.scenario} seed {a.seed} on {res['world']}: {'PASS' if res['pass'] else 'FAIL'} "
           f"({res['sim_s']:.1f} s simulated in {wall:.1f} s, {res['sim_s'] / wall:.1f}x real time)")
     for c, ok, d in res['checks']:

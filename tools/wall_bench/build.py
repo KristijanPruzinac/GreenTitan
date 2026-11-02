@@ -31,7 +31,7 @@ def _dds_dir():
 
 def _inputs(dds):
     srcs = sorted(glob.glob(os.path.join(REPO, 'src/sensor/tof*.cpp')))
-    srcs += [os.path.join(REPO, p) for p in ('src/motion/wall_assist.cpp', 'src/functions.cpp', 'src/hil/hil.cpp')]
+    srcs += [os.path.join(REPO, p) for p in ('src/motion/wall_assist.cpp', 'src/motion/assist_planner.cpp', 'src/functions.cpp', 'src/hil/hil.cpp')]
     srcs += [os.path.join(dds, 'esp_dds.cpp'), os.path.join(HERE, 'bench.cpp')]
     headers = glob.glob(os.path.join(REPO, 'src/**/*.h'), recursive=True) + glob.glob(os.path.join(HERE, 'shim/**/*.h'), recursive=True)
     return srcs, headers
