@@ -60,7 +60,7 @@ SCENARIOS = {
     # corner (turn left), 0.8 m east, an outer 90 deg corner (turn right), then south along x -11.
     'step_corner': {
         'world': 'edges', 'spawn': (-11.25, 2.0, -math.pi / 2),
-        'steps': [(0.25, 0, 38.0)],
+        'steps': [(0.25, 0, 34.0)],   # 38 s at the old 0.2 m/s follow; faster since 2026-11-02, reaches the wall end
         'checks': {'lock': True, 'inner': True, 'outer': True,
                    'end': {'x': (-10.6, -10.15), 'yaw_deg': -90, 'yaw_tol': 25}},
     },
@@ -133,7 +133,7 @@ SCENARIOS = {
     # Inside the curved wall (radius 3.5 m), wall on the left: locked all along (until the stop key), map a chain.
     'arc_follow': {
         'world': 'garden', 'spawn': (-2.5, 4.45, math.pi / 3),
-        'steps': [(0.25, 0, 28.0)],
+        'steps': [(0.25, 0, 24.0)],   # the arc's east end is reached at ~28.5 s since the faster follow (2026-11-02)
         'checks': {'lock': True, 'no_outer': True},
     },
     # North along the wavy wall, wall on the left, from 1.4 m before it starts (the heading is confirmed by then):
