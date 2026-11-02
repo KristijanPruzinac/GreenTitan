@@ -139,7 +139,7 @@ These are what the software must survive:
 ## 8. Open hardware items
 
 - [ ] Cut the 23HS32 shafts to ~12–13 mm, assemble the motor + gearbox + bracket, and test-fit.
-- [ ] Verify DM542T supply voltage against the 18 V Einhell pack. Choose and record the microstep setting.
+- [ ] Verify DM542T supply voltage against the 18 V Einhell pack (it runs mostly below the 20 V minimum; see the 7S proposal below). Choose and record the microstep setting.
 - [ ] Measure and record the Mower V3 wheel radius and wheel base for the firmware.
 - [ ] Bring-up checks for the firmware constants (`src/definitions.h`): the gear ratio is exactly 10:1 (mark the wheel and count 10 motor turns), `MOTOR_MICROSTEPS` matches the DM542T DIP, both wheels turn forward on `w` (stepper wiring sign), and the STEP pulses look clean on a scope at 100 and 2000 steps/s.
 - [ ] Mount the MPU6050 above the axle midpoint (2026-10-30, §2), record which way it faces, and confirm `IMU_INVERT`.
@@ -149,5 +149,9 @@ These are what the software must survive:
 - [ ] ToF holders at the front corners (x 0.11, y ±0.15, z 0.09, crossed 45°: each looking across the nose to the other side, **proposed** 2026-11-02; the sim mounts them 1–1.5° off, as a print would be; the cover must not cut the 45° fields across the nose), wired to GPIO25/23 and LPn 4/14. Then bench data for the sim model: range noise and dropouts on grass, a wall, wire mesh and a hedge, in shade and in sun.
 - [ ] **Proposed** (2026-11-02): two VL6180 (TOF050C) at the tail corners (x −0.40, y ±0.17, z 0.09, 100° out and a little back) to watch the tail in turns on the spot. In the mount study they are the only sensors that see the tail swing into a wall (seen 9 cm before contact; the front ToFs never see it), but the guard already keeps the tail off what the map holds. Needs firmware (shared Wire1, XSHUT on the free GPIO5 and 15 (15 is a strapping pin: low only mutes the boot log), address change) and a use in the assist. A front-middle VL6180 or ones beside the wheels add nothing with the crossed mount.
 - [ ] Cover: final shape, phone wet compartment, GNSS radome, cable-coil guides.
-- [ ] Charging/docking station: not designed yet.
+- [ ] Charging/docking station, **proposed** (2026-11-02, research only, nothing bought):
+  - **Pack:** a 7S Li-ion pack (about 21–29.4 V, ~10 Ah, named cells) with a smart BMS (balancing, NTC charge cut-off at 0–5 °C, UART) instead of the Einhell pack. The Einhell 5S pack spends most of its discharge below the DM542T's 20 V minimum, and it has no documented way to charge in place: charging through its tool terminals is not supported and is unknown.
+  - **Station:** no MCU. A 29.4 V CC/CV charger brick, switched onto two spring leaf contacts only while a reed switch (or hall sensor) sees a magnet on the mower (through a relay or MOSFET, not through the reed itself). That way the contacts are dead off the dock: no corrosion, no wet short. Contacts under a roof, copper paste, drain gaps. A funnel from the 8 mm bearings with about ±10 cm and ±10–15° capture after a 1–2 m straight approach. The station stands in open sky: RTK float near walls is the commercial mowers' main docking failure.
+  - **Mower:** two wide flat plates (stainless or nickel-plated brass, about 40 × 80 mm), an ideal diode (LM74610/LM74700 module) so the plates are never live from the pack, and an ADC divider on the contact side. Docked = contact voltage above about 25 V for 0.5 s. Charging = BMS current over UART, or the pack voltage rising. Retry, then report "station blocked". Undocking needs reverse driving, or a drive-through station.
+  - **Check before choosing 7S:** blade motor voltage (MY1016 12/24/36 V), blade relay DC rating (often 30 VDC), the 5 V buck's input range, and the DM542T under-voltage threshold.
 - [ ] Phone link: ROS 2 + agent + EKF run on the A12 (2026-10-30); still to prove: USB serial to the real ESP32 over the OTG splitter (ARCHITECTURE §15).
