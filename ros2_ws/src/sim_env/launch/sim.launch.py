@@ -33,6 +33,8 @@ def _scene_facts(s):
         'gnss_zones': s['world_cfg'].get('gnss_zones', []),
         # geometry for models that cast rays themselves (tof): terrain recipe and objects
         'world': {k: s['world_cfg'].get(k) for k in ('terrain', 'objects')},
+        # the robot's own parts, for models whose rays can hit it (tof self-occlusion)
+        'robot': {k: s['robot_cfg']['robot'].get(k) for k in ('body', 'wheels', 'occlusion_mesh_file')},
     }
 
 

@@ -20,12 +20,16 @@ import yaml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '../../ros2_ws/src/sim_env'))
-from sim_env import raycast  # noqa: E402
+from sim_env import config as simcfg, raycast  # noqa: E402
 from sim_env.devices.tof import TofModel  # noqa: E402
 
 CONFIG = os.path.join(HERE, '../../ros2_ws/src/greentitan_sim/config')
-WALL, FENCE, LOW, HEDGE, POST, ANY = 0, 1, 2, 3, 4, 255
+WALL, LOW, POST, ANY = 0, 2, 4, 255   # esp/wall_map codes; 1 (fence) and 3 (hedge) are no longer used
 RATE = 15.0
+
+
+def robot_config():
+    return simcfg.load(os.path.join(CONFIG, 'mower.yaml'))['robot']   # resolves occlusion_mesh_file
 
 
 def tof_config():
@@ -105,32 +109,32 @@ def scenarios():
     mesh = {'type': 'wire_mesh', 'points': [[-1.0, 0.0], [6.0, 0.0]], 'height': 1.0, 'wire_diameter': 0.0025,
             'cell': 0.05, 'post_spacing': 2.0, 'post_diameter': 0.05, 'jitter': 0.005, 'sag': 0.02,
             'bulge': 0.02, 'seed': 3}
-    s['mesh_air'] = dict(objects=[mesh], truth=[(FENCE, -1.0, 0.0, 6.0, 0.0, 1.0)],
+    s['mesh_air'] = dict(objects=[mesh], truth=[(WALL, -1.0, 0.0, 6.0, 0.0, 1.0)],
                          drive=Drive(0.0, 0.55, 0.0).line(4.0))
     hedge_box = {'name': 'hedge', 'shape': {'box': [7.0, 0.5, 1.2]}, 'position': [2.5, -0.55],
                  'reflectance': 0.2, 'roughness': 0.15}
-    s['mesh_hedge'] = dict(objects=[mesh, hedge_box], truth=[(FENCE, -1.0, 0.0, 6.0, 0.0, 1.0)],
+    s['mesh_hedge'] = dict(objects=[mesh, hedge_box], truth=[(WALL, -1.0, 0.0, 6.0, 0.0, 1.0)],
                            drive=Drive(0.0, 0.55, 0.0).line(4.0))
-    s['hedge'] = dict(objects=[dict(hedge_box, position=[2.5, -0.25])], truth=[(HEDGE, -1.0, 0.0, 6.0, 0.0, 1.2)],
+    s['hedge'] = dict(objects=[dict(hedge_box, position=[2.5, -0.25])], truth=[(WALL, -1.0, 0.0, 6.0, 0.0, 1.2)],
                       drive=Drive(0.0, 0.55, 0.0).line(4.0))
     # a hedge whose face goes in and out (0.2 m pieces, 4 cm sd) - an assumption, not in the sim's worlds
     rng = np.random.default_rng(7)
     pieces = [{'shape': {'box': [0.2, 0.5, 1.2]}, 'position': [-1.0 + 0.1 + 0.2 * i, -0.25 + rng.normal(0, 0.04)],
                'reflectance': 0.2, 'roughness': 0.15} for i in range(35)]
-    s['hedge_uneven'] = dict(objects=pieces, truth=[(HEDGE, -1.0, 0.0, 6.0, 0.0, 1.2)],
+    s['hedge_uneven'] = dict(objects=pieces, truth=[(WALL, -1.0, 0.0, 6.0, 0.0, 1.2)],
                              drive=Drive(0.0, 0.55, 0.0).line(4.0))
     s['picket'] = dict(objects=[{'type': 'picket', 'points': [[-1.0, 0.0], [6.0, 0.0]], 'height': 0.9,
                                  'board_width': 0.09, 'gap': 0.05, 'jitter': 0.01, 'thickness': 0.02,
                                  'rails': [0.15, 0.8], 'rail_height': 0.07, 'rail_prob': 1.0, 'rail_side': 'left', 'seed': 4}],
-                       truth=[(FENCE, -1.0, 0.01, 6.0, 0.01, 0.9)], drive=Drive(0.0, 0.56, 0.0).line(4.0))
+                       truth=[(WALL, -1.0, 0.01, 6.0, 0.01, 0.9)], drive=Drive(0.0, 0.56, 0.0).line(4.0))
     s['picket_bare'] = dict(objects=[{'type': 'picket', 'points': [[-1.0, 0.0], [6.0, 0.0]], 'height': 0.9,
                                       'board_width': 0.09, 'gap': 0.05, 'jitter': 0.01, 'thickness': 0.02,
                                       'rail_prob': 0.0, 'seed': 5}],
-                            truth=[(FENCE, -1.0, 0.01, 6.0, 0.01, 0.9)], drive=Drive(0.0, 0.56, 0.0).line(4.0))
+                            truth=[(WALL, -1.0, 0.01, 6.0, 0.01, 0.9)], drive=Drive(0.0, 0.56, 0.0).line(4.0))
     s['rail_fence'] = dict(objects=[{'type': 'rail_fence', 'points': [[-1.0, 0.0], [6.0, 0.0]], 'board_height': 0.10,
                                      'gap': 0.08, 'count': 4, 'thickness': 0.025, 'post_spacing': 2.0,
                                      'post_size': 0.08, 'side': 'left'}],
-                           truth=[(FENCE, -1.0, 0.065, 6.0, 0.065, 0.78)], drive=Drive(0.0, 0.62, 0.0).line(4.0))
+                           truth=[(WALL, -1.0, 0.065, 6.0, 0.065, 0.78)], drive=Drive(0.0, 0.62, 0.0).line(4.0))
     # posts beside the path: 5 cm and 24 cm diameter
     s['post'] = dict(objects=[{'shape': {'cylinder': [0.025, 1.0]}, 'position': [1.5, -0.6]},
                               {'shape': {'cylinder': [0.12, 1.0]}, 'position': [3.5, 0.75]}],
@@ -175,8 +179,8 @@ def generate(name, sc, out_dir, seed):
     rng = np.random.default_rng(seed)
     world = {'terrain': sc.get('terrain', {'type': 'flat'}), 'objects': sc['objects']}
     cfg = tof_config()
-    model = TofModel(cfg, world, rng)
-    empty = TofModel(cfg, {'terrain': world['terrain'], 'objects': []}, rng) if 'gone_after' in sc else None
+    model = TofModel(cfg, world, rng, robot_config())
+    empty = TofModel(cfg, {'terrain': world['terrain'], 'objects': []}, rng, robot_config()) if 'gone_after' in sc else None
     poses = sc['drive'].poses
     stray = sc.get('stray', 0.0)
     jump = sc.get('jump')

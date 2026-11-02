@@ -1,4 +1,5 @@
-"""Multizone time-of-flight sensor model (ST VL53L5CX / VL53L8CX style, 8x8 zones).
+"""Multizone time-of-flight sensor model (ST VL53L5CX / VL53L8CX style, 8x8 zones); with
+``chip: vl6180`` a single-zone short-range ToF (ST VL6180, e.g. the TOF050C board) on the same rays.
 
 Casts rays in numpy against the world file's geometry (``raycast.RayScene``: terrain, objects,
 fences), so it needs no Gazebo rendering. Each zone is sampled by ``rays_per_zone_side``^2 rays
@@ -17,7 +18,13 @@ fences), so it needs no Gazebo rendering. Each zone is sampled by ``rays_per_zon
   (1 + a fixed per-zone bias, sigma ``bias_frac``, drawn once) plus Gaussian noise
   sigma = noise_mm + noise_frac * d (x (1 + sun_noise) in sun), status 5; with
   probability ``dropout`` a valid zone reports status 4 instead; no target: distance 0, status 255;
-- grass: each ray sees the ground raised by uniform(0, grass_height), new per ray and frame.
+- grass: each ray sees the ground raised by uniform(0, grass_height), new per ray and frame;
+- self-occlusion: the robot's own parts (``robot_cfg``, robot frame, ``raycast.RobotBody``: the
+  triangle mesh in ``occlusion_mesh_file`` if given, else the drive wheels as cylinders, plus the
+  ``body`` boxes and cylinders) are targets too, with ``self_reflectance``: a ray that meets the
+  robot first returns from it (kind ``self``), as a real zone looking at a wheel would. The body
+  is fixed to the sensor, so its distances are cast once per sensor on a fine grid of directions
+  (``self_grid`` per zone side) and looked up per ray.
 
 Zones: k = row * res + col, row 0 = top of the field of view, col 0 = left as seen from the sensor
 looking along its +x. Zone centre direction: azimuth = ((res-1)/2 - col) * fov/res (+ = left),
@@ -26,6 +33,10 @@ elevation = ((res-1)/2 - row) * fov/res (+ = up), unit vector [cos el cos az, co
 Output: one ``std_msgs/UInt8MultiArray`` per frame with all sensors, in config order: per sensor
 1 byte sensor index, then res^2 zones x 3 bytes (distance mm uint16 little-endian, status uint8).
 Optionally a ``sensor_msgs/PointCloud2`` (x, y, z float32, ``frame_id``) of the valid zone points.
+
+``chip: vl6180`` changes the defaults (est., outdoors, conservative; datasheet: 0-100 mm guaranteed,
+up to ~150-200 mm in good conditions, ~25 deg cone, sunlight shortens it): one zone, a 25 deg square
+field for the cone, max_range 0.15, range_17 0.2, noise 3 mm + 3 %, bias 2 %, dropouts 5 %, 10 Hz.
 
 Config (defaults marked est. are guesses, no bench data yet)::
 
@@ -49,6 +60,9 @@ Config (defaults marked est. are guesses, no bench data yet)::
     bias_frac: 0.01                   # fixed per zone, est. (share of the datasheet error)
     dropout: 0.02                     # est.
     grass_height: 0.03                # m, est. (mowed lawn)
+    self_occlusion: true              # the robot's body and drive wheels block and return rays
+    self_reflectance: 0.3             # est. (printed parts, plastic wheels)
+    self_grid: 12                     # self-occlusion lookup cells per zone side
     reflectance: {ground: 0.15, wall: 0.5, curb: 0.3, picket: 0.3, rail_fence: 0.3,
                   wire_mesh: 0.35, object: 0.3}       # by object type; an object's own wins
     sensors:
@@ -67,22 +81,31 @@ DEFAULTS = {
     'max_range': 4.0, 'min_range': 0.02, 'merge_distance': 0.6, 'range_17': 2.0, 'ambient': 'shade',
     'ambient_range': {'dark': 1.0, 'shade': 1.0, 'sun': 0.5}, 'sun_noise': 0.6, 'noise_mm': 4.0,
     'noise_frac': 0.015, 'bias_frac': 0.01, 'dropout': 0.02, 'grass_height': 0.03,
+    'self_occlusion': True, 'self_reflectance': 0.3, 'self_grid': 12,
     'reflectance': {'ground': 0.15, 'wall': 0.5, 'curb': 0.3, 'picket': 0.3, 'rail_fence': 0.3,
                     'wire_mesh': 0.35, 'object': 0.3},
+}
+CHIPS = {   # defaults per chip, over DEFAULTS
+    'vl53l8cx': {},
+    'vl6180': {'rate': 10.0, 'resolution': 1, 'fov_deg': 25.0, 'max_range': 0.15, 'min_range': 0.0,
+               'range_17': 0.2, 'noise_mm': 3.0, 'noise_frac': 0.03, 'bias_frac': 0.02, 'dropout': 0.05},
 }
 STATUS_VALID, STATUS_INVALID, STATUS_NONE = 5, 4, 255
 
 
 def _get(cfg, key):
-    v = cfg.get(key, DEFAULTS[key])
-    return {**DEFAULTS[key], **v} if isinstance(DEFAULTS[key], dict) else v
+    base = CHIPS[cfg.get('chip', 'vl53l8cx')].get(key, DEFAULTS[key])
+    v = cfg.get(key, base)
+    return {**base, **v} if isinstance(base, dict) else v
 
 
 class TofModel:
     """Geometry + zone model without ROS: ``frame(position, rotation)`` gives every sensor's zones
-    for a robot pose (world frame, rotation = 3x3 robot-to-world)."""
+    for a robot pose (world frame, rotation = 3x3 robot-to-world). ``robot_cfg`` (the robot file's
+    ``robot`` block: ``body``, ``wheels``, ``occlusion_mesh_file``) gives the self-occlusion; without
+    it nothing is occluded."""
 
-    def __init__(self, cfg, world_cfg, rng=None):
+    def __init__(self, cfg, world_cfg, rng=None, robot_cfg=None):
         self.rng = rng if rng is not None else np.random.default_rng(cfg.get('seed'))
         self.scene = raycast.RayScene(world_cfg)
         self.res = int(_get(cfg, 'resolution'))
@@ -100,6 +123,8 @@ class TofModel:
         self.dropout = float(_get(cfg, 'dropout'))
         self.grass = float(_get(cfg, 'grass_height'))
         self.reflectance = _get(cfg, 'reflectance')
+        self.body = raycast.RobotBody(robot_cfg) if robot_cfg and _get(cfg, 'self_occlusion') else None
+        self.self_refl = float(_get(cfg, 'self_reflectance'))
         # nothing darker than the brightest surface can be detected beyond where it fades out
         brightest = max([float(v) for v in self.reflectance.values()] +
                         [float(p['reflectance']) for p in self.scene.parts if p.get('reflectance') is not None])
@@ -117,6 +142,27 @@ class TofModel:
         self.centre_dirs = _unit(self.az_c, self.el_c)
         self.zw = zw
         self.bias = 1.0 + self.rng.normal(0, float(_get(cfg, 'bias_frac')), (len(self.sensors), self.res * self.res))
+        self.self_lut = self._self_lut(int(_get(cfg, 'self_grid'))) if self.body is not None else None
+
+    def _self_lut(self, n):
+        """Per sensor: distance to the robot's own parts (inf = none) and its cosine, on n x n
+        directions per zone, (zones, n, n)."""
+        self.lut_n = n
+        f = (np.arange(n) + 0.5) / n - 0.5
+        az = self.az_c[:, None, None] - f[None, None, :] * self.zw
+        el = self.el_c[:, None, None] - f[None, :, None] * self.zw
+        local = _unit(np.broadcast_to(az, (len(self.az_c), n, n)), np.broadcast_to(el, (len(self.az_c), n, n))).reshape(-1, 3)
+        out = []
+        for s in self.sensors:
+            t, c = self.body.cast(s['position'], local @ s['rotation'].T)
+            out.append((t.reshape(-1, n, n), c.reshape(-1, n, n)))
+        return out
+
+    def self_share(self):
+        """Per sensor: the share of each zone's field that sees the robot itself (zones,)."""
+        if self.self_lut is None:
+            return [np.zeros(self.res * self.res) for _ in self.sensors]
+        return [np.mean(np.isfinite(t) & (t <= self.cast_range), axis=(1, 2)) for t, _ in self.self_lut]
 
     def _ray_dirs(self):
         """Sensor-frame ray directions, (zones, m*m, 3): one jittered ray per sub-cell."""
@@ -125,7 +171,18 @@ class TofModel:
         rows = (np.arange(self.m)[None, :, None] + self.rng.random(shape)) / self.m - 0.5
         az = self.az_c[:, None, None] - cols * self.zw  # left to right inside the zone
         el = self.el_c[:, None, None] - rows * self.zw  # top to bottom
+        self._sub = (rows, cols)
         return _unit(az, el).reshape(len(self.az_c), -1, 3)
+
+    def _self_hits(self, si):
+        """The robot's own parts along the last _ray_dirs() rays of sensor si: (t, cos), flat."""
+        rows, cols = self._sub
+        n = self.lut_n
+        r = np.clip(((rows + 0.5) * n).astype(int), 0, n - 1)
+        c = np.clip(((cols + 0.5) * n).astype(int), 0, n - 1)
+        z = np.broadcast_to(np.arange(len(self.az_c))[:, None, None], r.shape)
+        t, cs = self.self_lut[si]
+        return t[z, r, c].ravel(), cs[z, r, c].ravel()
 
     def frame(self, position, rotation):
         """Returns one dict per sensor: ``distance_mm`` (uint16, res^2), ``status`` (uint8, res^2),
@@ -137,10 +194,16 @@ class TofModel:
         for si, s in enumerate(self.sensors):
             rot = rotation @ s['rotation']
             o = position + rotation @ s['position']
-            dirs = self._ray_dirs().reshape(-1, 3) @ rot.T
+            local = self._ray_dirs().reshape(-1, 3)
+            dirs = local @ rot.T
             grass = self.rng.uniform(0, self.grass, len(dirs)) if self.grass > 0 else None
             t, refl, kind, cos, rough = self.scene.cast(o, dirs, self.cast_range, grass, self.reflectance, surface=True)
             t = t + rough * self.rng.random(len(t))
+            if self.self_lut is not None:   # robot frame: the body moves with the sensor
+                ts, cs = self._self_hits(si)
+                own = ts < t
+                t, refl, cos = np.where(own, ts, t), np.where(own, self.self_refl, refl), np.where(own, cs, cos)
+                kind = np.where(own, 'self', kind)
             dist, kind = self._zones(t.reshape(zones, per), (refl * cos).reshape(zones, per), kind.reshape(zones, per))
             valid = np.isfinite(dist)
             sigma = (self.noise_mm / 1000 + self.noise_frac * np.nan_to_num(dist)) * (1 + self.sun_noise * self.sun)
@@ -208,7 +271,7 @@ def _node():
     class Tof(DeviceNode):
         def __init__(self):
             super().__init__('tof_model')
-            self.model = TofModel(self.cfg, self.scene.get('world', {}), self.rng)
+            self.model = TofModel(self.cfg, self.scene.get('world', {}), self.rng, self.scene.get('robot'))
             self.latency = float(_get(self.cfg, 'latency'))
             self.frame_id = self.c('frame_id', 'world')
             self.truth = None

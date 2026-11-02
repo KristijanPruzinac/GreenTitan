@@ -8,6 +8,9 @@
 robot:
   name: greentitan
   type: wheeled
+  # The real Mower V3 parts (frame bars, braces, drive wheels, casters; Fusion STEP) for the ToF
+  # line of sight: the sim's ToF rays hit these triangles plus the body boxes below (motors, cover)
+  occlusion_mesh_file: ../../robot_package/web/mower_v3.json
   body:
     - {name: frame, shape: {box: [0.400, 0.240, 0.020]}, position: [-0.1125, 0.0, 0.119], mass: 0.8, color: [0.7, 0.7, 0.72]}
     - {name: drive_left, shape: {box: [0.057, 0.137, 0.057]}, position: [0.0, 0.092, 0.0755], mass: 2.2, color: [0.15, 0.15, 0.15]}
@@ -66,7 +69,9 @@ devices:
     accel: {range: 39.23, resolution: 0.0012}
   # Two ST VL53L8CX 8x8 multizone ToF sensors at the front corners, for wall following while
   # recording outlines. No bench data yet: the zone model is deliberately pessimistic and every
-  # number below is est. Mount not designed: position, height and the +-20 deg yaw are est.
+  # number below is est. Mount proposed, crossed (2026-11-02, tools/wall_bench/mount_study.py):
+  # each sensor looks 45 deg across the nose to the other side; position and height est.
+  # The mower's own parts cut the rays (self_occlusion, robot.occlusion_mesh_file).
   # hil/tof: per sensor 1 byte index, 64 x (uint16 LE mm, uint8 status 5/4/255); see sim_env tof.py.
   - model: tof
     name: tof
@@ -89,10 +94,10 @@ devices:
     grass_height: 0.03     # est., mowed lawn
     reflectance: {ground: 0.15, wall: 0.5, curb: 0.3, picket: 0.3, rail_fence: 0.3, wire_mesh: 0.35, object: 0.3}  # est.
     sensors:
-      # est., 20 deg in the firmware (the fields overlap 5 deg ahead); the sim mounts them 1.5 / 1 deg
-      # off that, as a printed holder would be
-      - {name: left,  position: [0.11,  0.15, 0.09], rpy: [0.0, 0.0,  0.3752458]}
-      - {name: right, position: [0.11, -0.15, 0.09], rpy: [0.0, 0.0, -0.3316126]}
+      # crossed 45 deg in the firmware (TOF_MOUNT_YAW -0.7854: left looks right, right looks left);
+      # the sim mounts them 1.5 / 1 deg off that, as a printed holder would be
+      - {name: left,  position: [0.11,  0.15, 0.09], rpy: [0.0, 0.0, -0.8115781]}
+      - {name: right, position: [0.11, -0.15, 0.09], rpy: [0.0, 0.0,  0.7679449]}
   # DM542T + 23HS32 + MG23-G10. microsteps must match the driver DIP switches (HARDWARE.md §8).
   # No max_step_rate: STEP comes from LEDC hardware (2026-10-27), the firmware clamps speed itself.
   - model: stepper

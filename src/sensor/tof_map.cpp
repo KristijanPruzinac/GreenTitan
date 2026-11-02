@@ -60,7 +60,6 @@ void tof_frame_analyse(const TofRay* rays, const tof_frame_t& f, const TofFrameP
     while (row >= 0) {
       if (kind[row * 8 + c] != ZONE_HIT) { row--; continue; }
       int run[8], n = 1, gaps = 0, next = row - 1;
-      bool gap = false;
       float sum = zones[row * 8 + c].rho;
       run[0] = row * 8 + c;
       for (int r = row - 1; r >= 0; r--) {
@@ -68,7 +67,6 @@ void tof_frame_analyse(const TofRay* rays, const tof_frame_t& f, const TofFrameP
         float ref = sum / n;
         if (kind[k] == ZONE_HIT && fabsf(zones[k].rho - ref) <= face_tol(ref) && zones[k].z > zones[run[n - 1]].z) {
           run[n++] = k; sum += zones[k].rho;
-          if (gaps) gap = true;
           gaps = 0;
           next = r - 1;
           continue;
@@ -87,7 +85,7 @@ void tof_frame_analyse(const TofRay* rays, const tof_frame_t& f, const TofFrameP
         for (int i = 0; i < n; i++) {
           TofZone& z = zones[run[i]];
           if (z.z < TOF_FACE_MIN_Z) continue;   // at the foot: may be ground or grass
-          z.flags |= TOF_ZONE_FACE | (gap ? TOF_ZONE_GAP : 0) | (top ? TOF_ZONE_TOP : 0);
+          z.flags |= TOF_ZONE_FACE | (top ? TOF_ZONE_TOP : 0);
           z.top_lo = lo; z.top_hi = hi;
         }
       }
@@ -109,7 +107,7 @@ struct Obj {
   float ux, uy;                      // unit direction end 0 -> end 1
   float residual;                    // rms off the line, m
   float z_max, lo_sum, hi_sum;       // highest face point; sums of the top bounds over top_obs
-  float face_obs, top_obs, gap_obs, cross_hit, cross_through;   // evidence, halved when large
+  float face_obs, top_obs;           // evidence, halved when large
   uint32_t hits, t_first, t_ms;
   uint16_t empty_frames;             // frames in a row whose rays all passed through it
   uint32_t empty_since;
@@ -124,7 +122,7 @@ struct Cell {
   uint16_t hits, frames;             // frames = 0: free
   float sx, sy;                      // points relative to the cell corner
   uint32_t t_first, t_last, t_frame;
-  uint16_t top, gap;
+  uint16_t top;
   float z_max, lo_sum, hi_sum;
 };
 
@@ -218,9 +216,8 @@ static void add_sum(Obj& o, float x, float y, float w) {
 
 static void halve_evidence(Obj& o) {
   if (o.face_obs > 4000.0f) {
-    o.face_obs *= 0.5f; o.top_obs *= 0.5f; o.gap_obs *= 0.5f; o.lo_sum *= 0.5f; o.hi_sum *= 0.5f;
+    o.face_obs *= 0.5f; o.top_obs *= 0.5f; o.lo_sum *= 0.5f; o.hi_sum *= 0.5f;
   }
-  if (o.cross_hit + o.cross_through > 2000.0f) { o.cross_hit *= 0.5f; o.cross_through *= 0.5f; }
 }
 
 // Line (or post centre and radius) from the sums; segment ends are projected onto the new line
@@ -249,21 +246,18 @@ static void refit(Obj& o) {
   o.residual = sqrtf(lmin);
 }
 
+// Height classes only (2026-11-02): wall (tall, any kind: wall, hedge, fence), low edge, post. MAP_FENCE and
+// MAP_HEDGE are never set (their codes stay reserved in esp/wall_map)
 static void type_object(Obj& o) {
-  if (o.post) { o.kind = MAP_POST; return; }
-  float crossed = o.cross_hit + o.cross_through;
-  float through = crossed >= TOF_MAP_FENCE_MIN_RAYS ? o.cross_through / crossed : 0.0f;
-  float gaps = o.face_obs >= TOF_MAP_FENCE_MIN_RAYS ? o.gap_obs / o.face_obs : 0.0f;
-  if (through >= TOF_MAP_FENCE_THROUGH || gaps >= TOF_MAP_FENCE_GAP) o.kind = MAP_FENCE;
+  if (o.post) o.kind = MAP_POST;
   else if (has_top(o) && top_height(o) < TOF_MAP_LOW_HEIGHT) o.kind = MAP_LOW;
-  else if (o.residual >= TOF_MAP_HEDGE_RESIDUAL) o.kind = MAP_HEDGE;
   else o.kind = MAP_WALL;
 }
 
-static void add_evidence(Obj& o, float n, float top, float gap, float z_max, float lo_sum, float hi_sum,
+static void add_evidence(Obj& o, float n, float top, float z_max, float lo_sum, float hi_sum,
                          uint32_t t_first, uint32_t t_last) {
   o.hits += (uint32_t)n;
-  o.face_obs += n; o.top_obs += top; o.gap_obs += gap; o.lo_sum += lo_sum; o.hi_sum += hi_sum;
+  o.face_obs += n; o.top_obs += top; o.lo_sum += lo_sum; o.hi_sum += hi_sum;
   o.z_max = fmaxf(o.z_max, z_max);
   if (t_first < o.t_first) o.t_first = t_first;
   if (t_last > o.t_ms) o.t_ms = t_last;
@@ -273,7 +267,7 @@ static void add_evidence(Obj& o, float n, float top, float gap, float z_max, flo
 static void add_point(Obj& o, const TofZone& z, uint32_t now) {
   add_sum(o, z.x, z.y, 1.0f);
   bool top = z.flags & TOF_ZONE_TOP;
-  add_evidence(o, 1.0f, top ? 1.0f : 0.0f, (z.flags & TOF_ZONE_GAP) ? 1.0f : 0.0f, z.z,
+  add_evidence(o, 1.0f, top ? 1.0f : 0.0f, z.z,
                top ? z.top_lo : 0.0f, top ? z.top_hi : 0.0f, now, now);
 }
 
@@ -283,7 +277,7 @@ static bool confirmed(const Cell& c) { return c.frames >= TOF_MAP_CELL_FRAMES; }
 
 static void absorb_cell(Obj& o, Cell& c) {
   add_sum(o, cell_x(c), cell_y(c), c.hits);
-  add_evidence(o, c.hits, c.top, c.gap, c.z_max, c.lo_sum, c.hi_sum, c.t_first, c.t_last);
+  add_evidence(o, c.hits, c.top, c.z_max, c.lo_sum, c.hi_sum, c.t_first, c.t_last);
   c.frames = 0;
 }
 
@@ -298,7 +292,6 @@ static void cell_add(const TofZone& z, uint32_t now) {
         c.hits++;
         c.sx += z.x - cx * TOF_MAP_CELL; c.sy += z.y - cy * TOF_MAP_CELL;
         if (z.flags & TOF_ZONE_TOP) { c.top++; c.lo_sum += z.top_lo; c.hi_sum += z.top_hi; }
-        if (z.flags & TOF_ZONE_GAP) c.gap++;
       }
       c.z_max = fmaxf(c.z_max, z.z);
       if (c.t_frame != now && c.frames < 60000) { c.frames++; c.t_frame = now; }
@@ -310,7 +303,7 @@ static void cell_add(const TofZone& z, uint32_t now) {
   Cell& c = cells[free_slot >= 0 ? free_slot : oldest];
   bool top = z.flags & TOF_ZONE_TOP;
   c = { cx, cy, 1, 1, z.x - cx * TOF_MAP_CELL, z.y - cy * TOF_MAP_CELL, now, now, now,
-        (uint16_t)(top ? 1 : 0), (uint16_t)((z.flags & TOF_ZONE_GAP) ? 1 : 0), z.z,
+        (uint16_t)(top ? 1 : 0), z.z,
         top ? z.top_lo : 0.0f, top ? z.top_hi : 0.0f };
 }
 
@@ -449,7 +442,6 @@ void tof_map_frame(const TofRay* rays, const tof_frame_t& f, const TofFramePose&
   for (int j = 0; j < nn; j++) {
     NearObj& q = near_objs[j];
     Obj& o = objs[q.i];
-    o.cross_hit += q.hit; o.cross_through += q.through;
     if (q.hit == 0 && q.close >= (o.post ? 1 : 3)) {
       if (o.empty_frames == 0) { o.empty_since = now; o.e0 = q.e0; o.e1 = q.e1; }
       else { o.e0 = fminf(o.e0, q.e0); o.e1 = fmaxf(o.e1, q.e1); }
@@ -511,9 +503,8 @@ static void merge_sums(Obj& a, const Obj& b) {
   a.sxy += b.sxy + dx * b.sy + dy * b.sx + b.sw * dx * dy;
   a.sx += b.sx + b.sw * dx; a.sy += b.sy + b.sw * dy; a.sw += b.sw;
   a.hits += b.hits;
-  a.face_obs += b.face_obs; a.top_obs += b.top_obs; a.gap_obs += b.gap_obs;
+  a.face_obs += b.face_obs; a.top_obs += b.top_obs;
   a.lo_sum += b.lo_sum; a.hi_sum += b.hi_sum;
-  a.cross_hit += b.cross_hit; a.cross_through += b.cross_through;
   a.z_max = fmaxf(a.z_max, b.z_max);
   a.side += a.ux * b.ux + a.uy * b.uy >= 0.0f ? b.side : -b.side;
   if (b.t_first < a.t_first) a.t_first = b.t_first;
@@ -726,8 +717,8 @@ static void split_bowed() {
     Obj* h[2] = { &o, &b };
     for (int k = 0; k < 2; k++) {
       Obj& q = *h[k];
-      q.hits /= 2; q.face_obs *= 0.5f; q.top_obs *= 0.5f; q.gap_obs *= 0.5f; q.lo_sum *= 0.5f; q.hi_sum *= 0.5f;
-      q.cross_hit *= 0.5f; q.cross_through *= 0.5f; q.side *= 0.5f;
+      q.hits /= 2; q.face_obs *= 0.5f; q.top_obs *= 0.5f; q.lo_sum *= 0.5f; q.hi_sum *= 0.5f;
+      q.side *= 0.5f;
       q.empty_frames = 0;
       refit(q);
     }
@@ -1196,10 +1187,8 @@ void tof_map_debug() {
   for (int i = 0; i < TOF_MAP_OBJECTS; i++) {
     const Obj& o = objs[i];
     if (!o.used) continue;
-    float crossed = o.cross_hit + o.cross_through;
-    printf("    [dbg] obj %d %s kind %d ep %d: face %.0f top %.2f gap %.2f through %.2f of %.0f, rms %.1f cm, zmax %.2f\n", i,
-           o.post ? "post" : "seg", o.kind, o.epoch, o.face_obs, o.top_obs / fmaxf(o.face_obs, 1), o.gap_obs / fmaxf(o.face_obs, 1),
-           o.cross_through / fmaxf(crossed, 1), crossed, o.residual * 100, o.z_max);
+    printf("    [dbg] obj %d %s kind %d ep %d: face %.0f top %.2f, rms %.1f cm, zmax %.2f\n", i,
+           o.post ? "post" : "seg", o.kind, o.epoch, o.face_obs, o.top_obs / fmaxf(o.face_obs, 1), o.residual * 100, o.z_max);
   }
   int n = 0, conf = 0;
   for (int i = 0; i < TOF_MAP_CELLS; i++) if (cells[i].frames) { n++; if (confirmed(cells[i])) conf++; }

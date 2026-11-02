@@ -25,6 +25,7 @@ static int sensors_found = 0;
 
 const TofPoint* tof_memory() { return memory; }
 const TofRay* tof_rays(int sensor) { return rays[sensor]; }
+int tof_side_sensor(int side) { return TOF_MOUNT_YAW < 0.0f ? 1 - side : side; }
 int tof_sensor_count() { return sensors_found; }
 
 bool tof_latest_frame(int sensor, const tof_frame_t** frame) {
