@@ -851,12 +851,22 @@ static bool same_face(const Obj& a, const Obj& b) {
   float lo = fminf(ta, tb), hi = fmaxf(ta, tb);
   float overlap = fminf(hi, la) - fmaxf(lo, 0.0f);   // < 0: the gap between them
   float off = fmaxf(fmaxf(pa, pb), fmaxf(qa, qb));
+  // overlapping: how far apart the lines are where both are (2026-11-02: the far end of a long line measured
+  // against a short one a few degrees off, 0.3 m and more away, kept two pieces of one face apart: they cross)
+  float off_ov = off;
+  if (overlap > 0.0f) {
+    float s0 = fmaxf(lo, 0.0f), s1 = fminf(hi, la);
+    float d0, d1, t;
+    seg_coords(b, a.x0 + s0 * a.ux, a.y0 + s0 * a.uy, &d0, &t);
+    seg_coords(b, a.x0 + s1 * a.ux, a.y0 + s1 * a.uy, &d1, &t);
+    off_ov = fmaxf(d0, d1);
+  }
   if (fabsf(dot) >= cosf(TOF_MAP_CHAIN_ANGLE)) {   // parallel: one face, maybe seen twice with a heading error
-    if (overlap > 0.0f) return off <= TOF_MAP_PUB_DIST;
+    if (overlap > 0.0f) return off_ov <= TOF_MAP_PUB_DIST;
     return -overlap <= TOF_MAP_PUB_GAP && off <= TOF_MAP_PUB_GAP_DIST;
   }
   // at a small angle: seen twice when they overlap well, else (end to end) only in line: not two chords of a curve
-  if (overlap >= fminf(la, hi - lo) / 3.0f) return off <= TOF_MAP_PUB_DIST;
+  if (overlap >= fminf(la, hi - lo) / 3.0f) return off_ov <= TOF_MAP_PUB_DIST;
   return -overlap <= TOF_MAP_PUB_GAP && off <= TOF_MAP_EXTEND_TOL;
 }
 
@@ -999,7 +1009,8 @@ static void publish_snapshot() {
   for (int k = 0; k < n; k++) if (snap_new[k].hits > 0) snap_new[kept++] = snap_new[k];
   n = kept;
   // joints of a curved face (a chain of chords): facing ends of lines at less than the corner angle meet at
-  // the lines' crossing when it is within TOF_MAP_JOINT_GAP of both (not across a step), unless seen open
+  // the lines' crossing when it is within TOF_MAP_JOINT_GAP of both (not across a step), unless seen open; ends
+  // that overlap past the crossing are cut back to it
   for (int a = 0; a < n; a++) {
     MapObject& A = snap_new[a];
     for (int b = a + 1; b < n; b++) {
@@ -1010,7 +1021,7 @@ static void publish_snapshot() {
       float aux = (A.x1 - A.x0) / la, auy = (A.y1 - A.y0) / la, bux = (B.x1 - B.x0) / lb, buy = (B.y1 - B.y0) / lb;
       float cr = aux * buy - auy * bux;
       if (fabsf(cr) >= sinf(TOF_MAP_CORNER_ANGLE)) continue;
-      // the closest pair of ends; each must be the end facing the other line
+      // the closest pair of ends
       float* ax[2] = { &A.x0, &A.x1 }; float* ay[2] = { &A.y0, &A.y1 };
       float* bx[2] = { &B.x0, &B.x1 }; float* by[2] = { &B.y0, &B.y1 };
       int ea = 0, eb = 0;
@@ -1020,16 +1031,25 @@ static void publish_snapshot() {
           float d = hypotf(*ax[i] - *bx[j], *ay[i] - *by[j]);
           if (d < best) { best = d; ea = i; eb = j; }
         }
-      if (best < 1e-3f || best > TOF_MAP_JOINT_GAP) continue;
+      // overlapping ends (two chords that cross, or one face's pieces at a few degrees, 2026-11-02): each line may
+      // be cut back to the crossing by up to TOF_MAP_JOINT_TAIL and a third of its length
+      float tail_a = fmaxf(TOF_MAP_JOINT_OVERLAP, fminf(TOF_MAP_JOINT_TAIL, la / 3.0f));
+      float tail_b = fmaxf(TOF_MAP_JOINT_OVERLAP, fminf(TOF_MAP_JOINT_TAIL, lb / 3.0f));
+      if (best < 1e-3f || best > TOF_MAP_JOINT_GAP + fmaxf(tail_a, tail_b)) continue;
       float sa = ea ? 1.0f : -1.0f, sb = eb ? 1.0f : -1.0f;   // outward along each line at that end
-      float gx = *bx[eb] - *ax[ea], gy = *by[eb] - *ay[ea];
-      if (sa * (gx * aux + gy * auy) < -TOF_MAP_JOINT_OVERLAP || -sb * (gx * bux + gy * buy) < -TOF_MAP_JOINT_OVERLAP) continue;
       if ((aux * bux + auy * buy) * sa * sb > 0.0f) continue;   // both ends point the same way: side by side
       if (fabsf(cr) < 1e-3f) continue;   // parallel: in line is a link above, offset is a step
       float ta = ((*bx[eb] - *ax[ea]) * buy - (*by[eb] - *ay[ea]) * bux) / cr;
       float X = *ax[ea] + ta * aux, Y = *ay[ea] + ta * auy;
-      if (hypotf(X - *ax[ea], Y - *ay[ea]) > TOF_MAP_JOINT_GAP || hypotf(X - *bx[eb], Y - *by[eb]) > TOF_MAP_JOINT_GAP) continue;
-      if (!link_closed(*ax[ea], *ay[ea], X, Y, *bx[eb], *by[eb], fminf(A.height, B.height), now)) continue;
+      // each end moves along its line: out (closing a gap) up to TOF_MAP_JOINT_GAP, back (an overlap) up to its tail
+      float ma = sa * ((X - *ax[ea]) * aux + (Y - *ay[ea]) * auy), mb = sb * ((X - *bx[eb]) * bux + (Y - *by[eb]) * buy);
+      if (ma > TOF_MAP_JOINT_GAP || mb > TOF_MAP_JOINT_GAP) continue;
+      if (ma < -fmaxf(TOF_MAP_JOINT_GAP, tail_a) || mb < -fmaxf(TOF_MAP_JOINT_GAP, tail_b)) continue;
+      // a long cut only where they cross (the other end stays or moves out a little)
+      if ((ma < -TOF_MAP_JOINT_GAP && mb > TOF_MAP_JOINT_OVERLAP) || (mb < -TOF_MAP_JOINT_GAP && ma > TOF_MAP_JOINT_OVERLAP)) continue;
+      // a gap must not have been seen open; two lines that cross have no gap
+      if ((ma > 0.0f || mb > 0.0f) &&
+          !link_closed(*ax[ea], *ay[ea], X, Y, *bx[eb], *by[eb], fminf(A.height, B.height), now)) continue;
       *ax[ea] = X; *ay[ea] = Y; *bx[eb] = X; *by[eb] = Y;
     }
   }
@@ -1100,28 +1120,41 @@ void tof_map_update(const TofFramePose& p, uint32_t now) {
     refit(o);
     remove_empty(o, now);
   }
-  // confirmed cells on a segment's line, past its end by up to TOF_MAP_JOIN_GAP, extend it; on a post, join it
+  // confirmed cells on a segment's line, past its end by up to TOF_MAP_JOIN_GAP, extend it; on a post, join it.
+  // The best object takes the cell: one whose span it lies in before one it would extend, then the nearest
+  // line (2026-11-02: the first in slot order took it, so a chord grew back along its neighbour's span and the
+  // two crossed there, one face covered twice)
   for (int ci = 0; ci < TOF_MAP_CELLS; ci++) {
     Cell& c = cells[ci];
     if (!c.frames || !confirmed(c)) continue;
     float x = cell_x(c), y = cell_y(c);
+    int best = -1;
+    float best_d = 1e9f, best_along = 0.0f;
     for (int i = 0; i < TOF_MAP_OBJECTS; i++) {
       Obj& o = objs[i];
       if (!o.used || o.epoch != epoch) continue;
+      float d, along = 0.0f;
       if (o.post) {
-        if (hypotf(x - o.x0, y - o.y0) > o.x1 + TOF_MAP_CELL_TOL) continue;
-        absorb_cell(o, c);
-        break;
+        d = hypotf(x - o.x0, y - o.y0);
+        if (d > o.x1 + TOF_MAP_CELL_TOL) continue;
+      } else {
+        float len = seg_len(o);
+        seg_coords(o, x, y, &d, &along);
+        bool past = along < 0.0f || along > len;
+        if (d > (past ? TOF_MAP_EXTEND_TOL : absorb_tol(o)) ||
+            along < -TOF_MAP_JOIN_GAP || along > len + TOF_MAP_JOIN_GAP) continue;
+        if (past) d += 1.0f;   // extending ranks after lying on a span
       }
-      float perp, along, len = seg_len(o);
-      seg_coords(o, x, y, &perp, &along);
-      if (perp > (along < 0.0f || along > len ? TOF_MAP_EXTEND_TOL : absorb_tol(o)) ||
-          along < -TOF_MAP_JOIN_GAP || along > len + TOF_MAP_JOIN_GAP) continue;
-      if (along < 0.0f) { o.x0 += along * o.ux; o.y0 += along * o.uy; }
-      else if (along > len) { o.x1 = o.x0 + along * o.ux; o.y1 = o.y0 + along * o.uy; }
-      absorb_cell(o, c);
-      break;
+      if (d < best_d) { best_d = d; best = i; best_along = along; }
     }
+    if (best < 0) continue;
+    Obj& o = objs[best];
+    if (!o.post) {
+      float len = seg_len(o);
+      if (best_along < 0.0f) { o.x0 += best_along * o.ux; o.y0 += best_along * o.uy; }
+      else if (best_along > len) { o.x1 = o.x0 + best_along * o.ux; o.y1 = o.y0 + best_along * o.uy; }
+    }
+    absorb_cell(o, c);
   }
   extract(now);
   for (int i = 0; i < TOF_MAP_OBJECTS; i++) {

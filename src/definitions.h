@@ -310,7 +310,10 @@ typedef struct {
 #ifndef TOF_MAP_JOINT_GAP
 #define TOF_MAP_JOINT_GAP 0.30f    // m: facing ends of lines at less than the corner angle meet at the crossing
 #endif                             // when it is this close to both (a curved face as a chain of chords)
-#define TOF_MAP_JOINT_OVERLAP 0.10f // m: ... the ends may overlap this much
+#define TOF_MAP_JOINT_OVERLAP 0.10f // m: ... the ends may overlap this much, ...
+#ifndef TOF_MAP_JOINT_TAIL
+#define TOF_MAP_JOINT_TAIL 0.50f   // m: ... or, where they cross, this much and a third of each line (cut back to the crossing)
+#endif
 #ifndef TOF_MAP_PUB_CORNER
 #define TOF_MAP_PUB_CORNER 0.40f   // m: published ends this close to two lines' crossing meet there
 #endif

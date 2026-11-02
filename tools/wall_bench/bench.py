@@ -230,6 +230,8 @@ class PoseModel:
     ~4.7 deg p95, ~0.1 s old."""
 
     def __init__(self, rng, pos_sigma=0.021, yaw_sigma=0.024, tau_pos=4.0, tau_yaw=6.0, age=0.10, vel_sigma=0.01):
+        k = float(os.environ.get('WALL_BENCH_POSE_SCALE') or 1.0)   # stress: e.g. 2 = HIL's heading error in turns
+        pos_sigma, yaw_sigma = pos_sigma * k, yaw_sigma * k
         self.rng = rng
         self.ps, self.ys, self.tp, self.ty, self.age, self.vs = pos_sigma, yaw_sigma, tau_pos, tau_yaw, age, vel_sigma
         self.e = rng.normal(0, pos_sigma, 2)
@@ -570,7 +572,107 @@ def metrics(run, maps=None):
                          'part': names[2], 'off_cm': round(float(np.abs(pd).max()) * 100, 1),
                          'len_m': round(math.hypot(x1 - x0, y1 - y0), 2)})
         m['map'] = objs
+        if len(t):
+            m['faces'] = map_faces(run, maps, xy, yaw)
     return m
+
+
+FACE_NEAR, FACE_PASS = 0.10, 1.2   # m: a map line on a face; a face counts as passed within this of the axle (score.py)
+
+
+def _seg_dist(p, a, b):
+    d = b - a
+    tt = np.clip(((p - a) @ d) / max(float(d @ d), 1e-12), 0, 1)
+    return np.hypot(*(p - (a + tt[:, None] * d)).T)
+
+
+def _edges_dist(p, e):
+    """Distances (k, n) from points p (k, 2) to the segments e (n, 2, 2)."""
+    a, d = e[None, :, 0, :], (e[:, 1, :] - e[:, 0, :])[None]
+    tt = np.clip(np.sum((p[:, None, :] - a) * d, axis=2) / np.maximum(np.sum(d * d, axis=2), 1e-12), 0, 1)
+    q = a + tt[..., None] * d
+    return np.hypot(p[:, None, 0] - q[..., 0], p[:, None, 1] - q[..., 1])
+
+
+def map_faces(run, maps, xy, yaw):
+    """Map lines per true face, as tools/drive_test/score.py's continuity: each face edge (>= 12 cm) of the
+    world's parts that the mower passed (within 1.2 m and 50 deg of the true heading, on its outward side),
+    the map lines along it (within 20 deg) that come within 10 cm of it at >= 2 passed samples: pieces per
+    face (1 is ideal), the face length covered by two or more lines (double_m), and per doubled face its part
+    name and doubled length."""
+    lines = []
+    for kind, x0, y0, x1, y1 in maps:
+        if kind == 4:
+            continue
+        A, B = np.array([x0, y0]), np.array([x1, y1])
+        L = float(np.hypot(*(B - A)))
+        lines.append(A + np.linspace(0, 1, max(2, int(L / 0.05) + 1))[:, None] * (B - A))
+    path, hd = xy[::10], yaw[::10]
+    w = run.world
+    polys = []
+    for (x, y), (c, s), (hx, hy), name in zip(w.bc, w.bcs, w.bh, w.bname):
+        q = np.array([[hx, hy], [-hx, hy], [-hx, -hy], [hx, -hy]])
+        polys.append((np.c_[x + c * q[:, 0] - s * q[:, 1], y + s * q[:, 0] + c * q[:, 1]], name))
+    for (x, y), r, name in zip(w.cc, w.cr, w.cname):
+        a = np.linspace(0, 2 * math.pi, 16, endpoint=False)
+        polys.append((np.c_[x + r * np.cos(a), y + r * np.sin(a)], name))
+    edges = np.array([(poly[i], poly[(i + 1) % len(poly)]) for poly, _ in polys for i in range(len(poly))]).reshape(-1, 2, 2)
+    allpts = np.vstack(lines) if lines else np.zeros((0, 2))
+    phantom = float(sum((np.abs(w.surface(ln)[0]) > FACE_NEAR).mean() * float(np.hypot(*(ln[-1] - ln[0]))) for ln in lines))
+    faces_n = pieces = 0
+    passed = covered = double = 0.0
+    doubled = {}
+    for poly, name in polys:
+        ctr = poly.mean(axis=0)
+        if np.min(np.hypot(*(path - ctr).T)) > FACE_PASS + np.max(np.hypot(*(poly - ctr).T)):
+            continue
+        for i in range(len(poly)):
+            a0, b0 = poly[i], poly[(i + 1) % len(poly)]
+            L = float(np.hypot(*(b0 - a0)))
+            if L < 0.12:
+                continue
+            s_ = a0 + np.linspace(0, 1, max(2, int(L / 0.05) + 1))[:, None] * (b0 - a0)
+            nrm = np.array([a0[1] - b0[1], b0[0] - a0[0]]) / L
+            if np.dot((a0 + b0) / 2 - ctr, nrm) < 0:
+                nrm = -nrm
+            d = s_[:, None, :] - path[None, :, :]                       # (samples, poses, 2)
+            r = np.hypot(d[..., 0], d[..., 1])
+            b = np.abs(np.angle(np.exp(1j * (np.arctan2(d[..., 1], d[..., 0]) - hd[None, :]))))
+            near_path = np.any((r < FACE_PASS) & (b < math.radians(50)) & (d @ nrm < 0), axis=1)
+            if near_path.sum() < 4:
+                continue
+            cov = np.array([len(allpts) > 0 and np.min(np.hypot(*(allpts - q).T)) < FACE_NEAR for q in s_])
+            passed += near_path.sum() * 0.05
+            covered += (near_path & cov).sum() * 0.05
+            along = [ln for ln in lines if abs(np.dot(ln[-1] - ln[0], b0 - a0)) >=
+                     math.cos(math.radians(20)) * np.hypot(*(ln[-1] - ln[0])) * L]
+            on = []
+            mid = (a0 + b0) / 2
+            near_edges = edges[_edges_dist(mid[None], edges)[0] <= L / 2 + 0.25]
+            for ln in along:
+                # a sample is on the line where it projects inside the line within 10 cm, and the line there is
+                # nearest to this face (the far face of a thin wall is not covered by the near face's line;
+                # chords of a curve that meet at a joint don't overlap)
+                A, D = ln[0], ln[-1] - ln[0]
+                tt = ((s_ - A) @ D) / max(float(D @ D), 1e-12)
+                p = A + np.clip(tt, 0, 1)[:, None] * D
+                ok = (tt >= 0) & (tt <= 1) & (np.hypot(*(s_ - p).T) < FACE_NEAR)
+                if ok.any():
+                    mine = _seg_dist(p, a0, b0)
+                    best = np.min(_edges_dist(p, near_edges), axis=1)
+                    ok &= mine <= best + 0.01
+                on.append(ok & near_path)
+            on = [o for o in on if o.sum() >= 2]
+            if on:
+                faces_n += 1
+                pieces += len(on)
+                dm = (np.sum(on, axis=0) >= 2).sum() * 0.05
+                double += dm
+                if dm > 0:
+                    doubled[name] = round(doubled.get(name, 0.0) + dm, 2)
+    return {'faces': faces_n, 'pieces': pieces, 'pieces_per_face': round(pieces / faces_n, 2) if faces_n else None,
+            'double_m': round(double, 2), 'phantom_m': round(phantom, 2), 'lines': len(lines), 'passed_m': round(passed, 1),
+            'covered_share': round(covered / passed, 2) if passed else None, 'doubled': doubled}
 
 
 def print_metrics(m, out=sys.stdout):
@@ -587,6 +689,10 @@ def print_metrics(m, out=sys.stdout):
         print(f"  outline points {o['n']} ({o['corners']} corners): off the true surface median {o['median_cm']} max {o['max_cm']} cm", file=out)
     if 'map' in m:
         print(f"  map objects {len(m['map'])}: " + ', '.join(f"{o['kind']}({o['truth']}, {o['len_m']} m, {o['off_cm']} cm)" for o in m['map']), file=out)
+    if 'faces' in m:
+        f = m['faces']
+        print(f"  map per face: {f['faces']} faces, {f['pieces']} pieces ({f['pieces_per_face']} per face), covered twice "
+              f"{f['double_m']} m {f['doubled']}, phantom {f['phantom_m']} m, faces covered {f['covered_share']}", file=out)
     if 'push' in m:
         p = m['push']
         print(f"  pushed {p['s']} s: speed {p['speed']:.2f} m/s ({p['ratio'] * 100:.0f} % of the stick), standing {p['stall_s']} s, "

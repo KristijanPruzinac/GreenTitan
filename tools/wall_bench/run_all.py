@@ -32,6 +32,8 @@ def main():
     ap.add_argument('--terrain', choices=('flat', 'world'), default='flat', help="ToF rays against flat ground or the world's terrain")
     ap.add_argument('--goals', action='store_true', help='add time to goal, time standing / turning on the spot while '
                     'pushed and speed over the stick (medians over the seeds)')
+    ap.add_argument('--map', action='store_true', help='add the ToF map per true face: lines per face, length covered '
+                    'twice, phantom (means over the seeds)')
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     build.build()
@@ -68,7 +70,19 @@ def main():
             med = lambda v: sorted(v)[len(v) // 2]   # noqa: E731
             goal = (f" goal {med(tg) if tg else float('nan'):5.1f} s stand {med([p['stall_s'] for p in pm]):4.1f} s "
                     f"spin {med([p['pivot_s'] for p in pm]):4.1f} s speed {med([p['ratio'] for p in pm]) * 100:3.0f} %")
-        print(f"{n:{width}s} {verdict:5s} {ok}/{len(rs)}  min {min(mins) * 100 if mins else float('nan'):5.1f} cm{goal}  {why}")
+        mp = ''
+        fs = [r['metrics']['faces'] for r in rs if r['metrics'].get('faces')]
+        if a.map and fs:
+            fn, fp = sum(f['faces'] for f in fs), sum(f['pieces'] for f in fs)
+            mp = (f" map {fp / fn if fn else float('nan'):4.2f}/face dbl {sum(f['double_m'] for f in fs) / len(fs):4.2f} m "
+                  f"ph {sum(f['phantom_m'] for f in fs) / len(fs):4.2f} m")
+        print(f"{n:{width}s} {verdict:5s} {ok}/{len(rs)}  min {min(mins) * 100 if mins else float('nan'):5.1f} cm{goal}{mp}  {why}")
+    fs = [r['metrics']['faces'] for r in results if r['metrics'].get('faces')]
+    if fs:   # the ToF map against the true faces (bench.map_faces), over all runs
+        fn, fp = sum(f['faces'] for f in fs), sum(f['pieces'] for f in fs)
+        print(f"map: {fn} faces, {fp / max(fn, 1):.2f} lines per face, covered twice {sum(f['double_m'] for f in fs):.1f} m "
+              f"({sum(f['double_m'] > 0 for f in fs)} runs), phantom {sum(f['phantom_m'] for f in fs):.1f} m, "
+              f"faces covered {sum(f['covered_share'] * f['passed_m'] for f in fs if f['covered_share'] is not None) / max(sum(f['passed_m'] for f in fs), 1e-9):.2f}")
     sim = sum(r['sim_s'] for r in results)
     print(f'{npass}/{len(names)} scenarios pass all seeds, {nknown} known limits; {len(results)} runs, {sim:.0f} s simulated in {wall:.0f} s '
           f'on {a.jobs} jobs ({sim / wall:.0f}x real time overall); failure plots in {a.out}')
