@@ -37,6 +37,12 @@ static tof_frame_t tof_frames[2];
 static bool tof_new[2] = { false, false };
 
 void hil_tof_push(const uint8_t* data, size_t len) {
+  if (len >= HIL_POWER_BLOCK && data[0] == HIL_POWER_TAG) {
+    float v[2];
+    memcpy(v, data + 1, sizeof(v));
+    hil_power_set(v[0], v[1]);
+    return;
+  }
   for (size_t at = 0; at + HIL_TOF_BLOCK <= len; at += HIL_TOF_BLOCK) {
     int sensor = data[at];
     if (sensor < 0 || sensor > 1) continue;
@@ -99,4 +105,25 @@ bool hil_imu_get(hil_imu_sample_t* sample) {
   last_angle = sample->gyro_z_angle;
   last_stamp = sample->stamp;
   return true;
+}
+
+static portMUX_TYPE power_mux = portMUX_INITIALIZER_UNLOCKED;
+static float power_dock_v = 0.0f, power_battery_v = 0.0f;
+static uint32_t power_ms = 0;
+
+void hil_power_set(float dock_v, float battery_v) {
+  portENTER_CRITICAL(&power_mux);
+  power_dock_v = dock_v;
+  power_battery_v = battery_v;
+  power_ms = millis();
+  portEXIT_CRITICAL(&power_mux);
+}
+
+bool hil_power_get(float* dock_v, float* battery_v) {
+  portENTER_CRITICAL(&power_mux);
+  uint32_t t = power_ms;
+  *dock_v = power_dock_v;
+  *battery_v = power_battery_v;
+  portEXIT_CRITICAL(&power_mux);
+  return t != 0 && millis() - t < 1000;
 }

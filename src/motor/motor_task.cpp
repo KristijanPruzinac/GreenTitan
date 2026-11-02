@@ -108,17 +108,22 @@ static void motor_stop() {
 
   target_rate_a = 0;
   target_rate_b = 0;
-
-  xQueueReset(thread_context.queue); // Clear any pending motor commands to prevent them from executing after a stop command
+  // No queue reset here: the queue is FIFO, so all it holds was published after this stop
+  // (a reset dropped the MOTOR_MAIN_OFF that follows a stop, 2026-11-02)
 }
 
+static volatile bool blade_on = false;
+bool motor_blade_on() { return blade_on; }
+
 static void motor_main_on() {
+  blade_on = true;
   if (SIMULATION_ENABLED) return;
 
   digitalWrite(MOTOR_MAIN, HIGH);
 }
 
 static void motor_main_off() {
+  blade_on = false;
   if (SIMULATION_ENABLED) return;
 
   digitalWrite(MOTOR_MAIN, LOW);

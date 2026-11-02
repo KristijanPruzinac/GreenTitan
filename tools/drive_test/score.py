@@ -20,7 +20,9 @@ import argparse
 import json
 import math
 import os
+import re
 import sys
+import tempfile
 
 import numpy as np
 import rosbag2_py
@@ -236,12 +238,13 @@ def score(B, world_yaml, res, map_rows=None):
             if '[WALL]' in line and '->' in line:
                 ev.append((round(t - t0, 1), line.strip()[:110]))
     res['assist'] = {'events': len(ev), 'locks': sum('-> LOCKED' in e[1] for e in ev), 'list': ev[:20]}
-    if len(tr):
+    hard = [f for f in faces if f[0] != 'station']   # the charging station is driven into: not a clearance face
+    if len(tr) and hard:
         mins = []
         for _, _, x, y, yaw, _, _ in tr[::5]:
             fp = footprint(x, y, yaw)
             edge = np.vstack([fp[i] + np.linspace(0, 1, 8)[:, None] * (fp[(i + 1) % 4] - fp[i]) for i in range(4)])
-            mins.append(min((float(np.min(poly_dist(edge, f[2]))), f[0]) for f in faces))
+            mins.append(min((float(np.min(poly_dist(edge, f[2]))), f[0]) for f in hard))
         i = int(np.argmin([m[0] for m in mins]))
         tm = tr[::5][i]
         st = next((e[1].split('-> ')[1].split(':')[0] for e in reversed(ev) if e[0] <= tm[0] - t0), 'FREE')
@@ -250,7 +253,58 @@ def score(B, world_yaml, res, map_rows=None):
     for ln in lines:
         ln.pop('pts', None)
     res['map_lines'] = lines
+    dock_score(B, world_yaml, W, res, t0)
     return tr, ek, ax, ay, faces, objs, ev
+
+
+RE_APPROACHES = re.compile(r'Docked after (\d+) approach')
+RE_ST = re.compile(r'\[DOCK\] (Station|Measured station|Dock measurement|Undock measurement) x=(-?[\d.]+) y=(-?[\d.]+) yaw=(-?[\d.]+)')
+USER_MSGS = ('[DOCK] Failed', 'Set station rejected', 'Set station failed', 'Cannot go home: no RTK fix',
+             'No station set')   # what the drive page shows
+
+
+def dock_score(B, world_yaml, W, res, t0):
+    """Docking (worlds with a station): docks, messages the user would see, the station estimate (and each
+    measurement) against the true station, in odom: position cm, heading deg."""
+    sts = [o for o in config.load(world_yaml).get('objects', []) if o.get('type') == 'station']
+    if not sts:
+        return
+    sx, sy, syaw = obstacles.station_pose(sts[0])
+    tx, ty = W.to_odom(sx, sy)
+
+    def err(x, y, yaw_deg):
+        return round(math.hypot(x - tx, y - ty) * 100, 1), round(math.degrees(wrap(math.radians(yaw_deg) - syaw)), 2)
+    d = {'truth_odom': [round(tx, 3), round(ty, 3), round(math.degrees(syaw), 2)], 'docks': 0, 'user_msgs': [],
+         'adopted': [], 'approaches': [], 'set_verified': False, 'estimates': [], 'measurements': [], 'log': []}
+    for t, m in B.get('/esp/log', []):
+        for line in m.data.split('\n'):
+            if '[DOCK]' not in line:
+                continue
+            line = line.strip()
+            tt = round(t - t0, 1)
+            d['log'].append((tt, line[line.index('[DOCK]'):][:110]))
+            d['docks'] += 'Docked after' in line
+            ma = RE_APPROACHES.search(line)
+            if ma:
+                d['approaches'].append(int(ma.group(1)))
+            if any(u in line for u in USER_MSGS):
+                d['user_msgs'].append((tt, line[line.index('[DOCK]'):][:110]))
+            if 'Station moved: adopted' in line or 'Trying the held-back' in line:   # (the trial is stored by its dock)
+                d['adopted'].append((tt, d['docks']))
+            d['set_verified'] |= 'Station set (verified' in line
+            mm = RE_ST.search(line)
+            if mm:
+                e = err(float(mm.group(2)), float(mm.group(3)), float(mm.group(4)))
+                (d['estimates'] if mm.group(1) == 'Station' else d['measurements']).append((tt, mm.group(1), *e))
+    if d['estimates']:
+        d['final_err_cm'], d['final_err_deg'] = d['estimates'][-1][2], d['estimates'][-1][3]
+    pw = B.get('/sim/power', [])
+    d['contact_at_end'] = bool(pw and pw[-1][1].data[0] > 0.5)
+    if pw:
+        d['last_contact'] = {'along_cm': round(pw[-1][1].data[1] * 100, 1), 'lat_cm': round(pw[-1][1].data[2] * 100, 1),
+                             'yaw_deg': round(math.degrees(pw[-1][1].data[3]), 1), 'soc': round(pw[-1][1].data[4], 3)}
+    d['log'] = d['log'][-40:]
+    res['dock'] = d
 
 
 def check(name, B, tr, ev, res):
@@ -337,6 +391,36 @@ def check(name, B, tr, ev, res):
         x, yaw = tr[-1, 5], math.degrees(tr[-1, 4])
         ok = e['x'][0] <= x <= e['x'][1] and abs(wrap(math.radians(yaw - e['yaw_deg']))) <= math.radians(e['yaw_tol'])
         out['end_pose'] = (ok, f'ended at x {x:.2f}, y {tr[-1, 6]:.2f}, heading {yaw:.0f} deg')
+    d = res.get('dock')
+    if any(k in sc for k in ('docks_min', 'no_dock_msgs', 'docked_end', 'station_err', 'station_set', 'adopted_within',
+                                 'last_approaches_max')):
+        if d is None:
+            out['dock'] = (False, 'no station in the world')
+            return out
+    if 'docks_min' in sc:
+        out['docks'] = (d['docks'] >= sc['docks_min'], f"{d['docks']} docks (want {sc['docks_min']})")
+    if sc.get('no_dock_msgs'):
+        out['no_user_msgs'] = (not d['user_msgs'], f"{d['user_msgs'][0][1]} at {d['user_msgs'][0][0]} s" if d['user_msgs'] else 'none')
+    if sc.get('docked_end'):
+        out['docked_end'] = (d['contact_at_end'], f"contacts at the end: {d.get('last_contact')}")
+    if sc.get('station_set'):
+        out['station_set'] = (d['set_verified'], 'set and verified by a dock' if d['set_verified'] else 'not verified')
+    if 'station_err' in sc:
+        pc, pd = sc['station_err']
+        if 'final_err_cm' not in d:
+            out['station_err'] = (False, 'no station estimate logged')
+        else:
+            ok = d['final_err_cm'] <= pc and abs(d['final_err_deg']) <= pd
+            out['station_err'] = (ok, f"estimate {d['final_err_cm']} cm, {d['final_err_deg']} deg off the true station"
+                                      f" (want <= {pc} cm, {pd} deg)")
+    if 'last_approaches_max' in sc:   # docks get faster once the estimate has learned the station
+        ap = d['approaches']
+        out['last_approaches'] = (bool(ap) and ap[-1] <= sc['last_approaches_max'],
+                                  f'approaches per dock {ap} (want the last <= {sc["last_approaches_max"]})')
+    if 'adopted_within' in sc:
+        a = d['adopted']
+        out['adopted'] = (bool(a) and a[0][1] <= sc['adopted_within'],
+                          f'adopted after dock {a[0][1]} at {a[0][0]} s' if a else 'never adopted')
     return out
 
 
@@ -351,6 +435,12 @@ def main():
     a = ap.parse_args()
     world = a.world or (SCENARIOS[a.scenario]['world'] if a.scenario else 'edges')
     world_yaml = world if world.endswith('.yaml') else os.path.join(get_package_share_directory('greentitan_sim'), 'config', world + '.yaml')
+    if a.scenario and not a.world and SCENARIOS[a.scenario].get('station'):   # the station where the run had it
+        import scenarios
+        tmp = tempfile.NamedTemporaryFile('w', suffix='.yaml', delete=False)
+        tmp.write(scenarios.world_yaml(a.scenario))
+        tmp.close()
+        world_yaml = tmp.name
     B = read_bag(a.bag)
     res = {'bag': os.path.basename(a.bag.rstrip('/')), 'scenario': a.scenario}
     rows = [[int(v) for v in ln.split()] for ln in open(a.map) if ln.strip()] if a.map else None

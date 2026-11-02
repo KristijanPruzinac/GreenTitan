@@ -30,6 +30,14 @@ ground, on the ``side`` face of square posts.
 ``radius``, the high one's top at ``height`` +- 15 %), their centres drifting off the line in a random walk
 bounded by +-``wander``, so the face pokes out and in; rays sink up to ``roughness`` into it. The spheres
 are also the collisions.
+``station``: a charging station, ``pose: [x, y, yaw_deg]`` = where the mower's axle midpoint is when the
+contacts close, facing ``yaw_deg`` (into the station). Low funnel rails (8 cm, below the mower's cover)
+narrow from a mouth +-0.42 m wide 0.7 m out to a throat 2.5 cm wider than the wheels each side, then a
+0.25 m back block with two contact plates 0.12 m ahead of the axle (where the mower's nose plates touch).
+The dock-contact model (``devices/power.py``) reads the same pose::
+
+    - {name: station, type: station, pose: [0.0, 0.0, 0.0]}
+
 Every object may set ``reflectance`` (0..1, for optical range sensors), ``roughness`` (m, how deep
 optical rays get into it, e.g. a hedge), ``color`` and ``friction``.
 
@@ -211,8 +219,55 @@ def shape_z(obj, ground_z):
     return z
 
 
+# Station frame: x into the station (0 = axle at contact), y left. Rails: (x0, y0, x1, y1) centre lines.
+STATION_RAILS = [(-0.70, 0.42, -0.30, 0.24), (-0.30, 0.24, 0.18, 0.24)]
+STATION_RAIL = {'height': 0.08, 'thickness': 0.03}
+STATION_BACK = {'x': (0.18, 0.38), 'half_width': 0.30, 'height': 0.25}
+STATION_PLATES = {'x': (0.12, 0.18), 'y': (0.04, 0.12), 'z': (0.07, 0.12)}   # visual: spring contacts
+
+
+def station_pose(obj):
+    x, y, yaw_deg = (list(map(float, obj['pose'])) + [0.0, 0.0, 0.0])[:3]
+    return x, y, math.radians(yaw_deg)
+
+
+def _station(obj, ground_z):
+    sx, sy, syaw = station_pose(obj)
+    c, s = math.cos(syaw), math.sin(syaw)
+    w = lambda u, v: (sx + c * u - s * v, sy + s * u + c * v)  # noqa: E731
+    g0 = ground_z(sx, sy)
+    color = obj.get('color', [0.30, 0.36, 0.40])
+    parts, collisions = [], []
+    for side in (1, -1):
+        for x0, y0, x1, y1 in STATION_RAILS:
+            a, b = (x0, side * y0), (x1, side * y1)
+            ln = math.hypot(b[0] - a[0], b[1] - a[1])
+            h = STATION_RAIL['height']
+            mx, my = w((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+            box = _box('station', obj, [ln, STATION_RAIL['thickness'], h + EMBED],
+                       [mx, my, g0 - EMBED + (h + EMBED) / 2, 0, 0, syaw + math.atan2(b[1] - a[1], b[0] - a[0])], color=color)
+            parts.append(box)
+            collisions.append(box)
+        px0, px1 = STATION_PLATES['x']
+        py0, py1 = STATION_PLATES['y']
+        pz0, pz1 = STATION_PLATES['z']
+        mx, my = w((px0 + px1) / 2, side * (py0 + py1) / 2)
+        parts.append(_box('station', obj, [px1 - px0, py1 - py0, pz1 - pz0],
+                          [mx, my, g0 + (pz0 + pz1) / 2, 0, 0, syaw], color=[0.72, 0.45, 0.2]))
+    bx0, bx1 = STATION_BACK['x']
+    h = STATION_BACK['height']
+    mx, my = w((bx0 + bx1) / 2, 0.0)
+    back = _box('station', obj, [bx1 - bx0, 2 * STATION_BACK['half_width'], h + EMBED],
+                [mx, my, g0 - EMBED + (h + EMBED) / 2, 0, 0, syaw], color=color)
+    parts.append(back)
+    collisions.append(back)
+    return parts, collisions
+
+
 def expand(obj, ground_z):
     """Return (parts, collisions) for one world object; ``ground_z(x, y)`` gives the terrain height."""
+    if obj.get('type') == 'station':
+        return _station(obj, ground_z)
     if 'type' in obj:
         if obj['type'] not in POLYLINE_TYPES:
             raise ValueError(f"unknown object type: {obj['type']}")

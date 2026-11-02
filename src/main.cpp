@@ -75,6 +75,10 @@ volatile bool     MANUAL_MOTORS_STOPPED = true;
 
 volatile bool     HEADING_CONFIRMED     = false;
 volatile uint32_t HEADING_EPOCH         = 0;
+volatile bool     TOF_MAP_HOLD          = false;
+volatile float    DOCK_SHIFT[3]         = { 0.0f, 0.0f, 0.0f };
+volatile uint8_t  GPS_CARR_SOLN         = 0;
+volatile uint32_t GPS_CARR_SOLN_MS      = 0;
 
 volatile bool     DATUM_CAPTURE_ACTIVE       = false;
 volatile int      LAST_DATUM_CAPTURE_RESULT  = DATUM_RESULT_NONE;
@@ -546,7 +550,11 @@ void gps_topic_callback(dds_callback_context_t* context) {
         int dir = 0;                                                   // +1 forwards, -1 backwards
         float left, right;
         motor_get_step_rates(&left, &right);                           // ramped rates: where the wheels turn now
-        if (left + right > 0) dir = 1; else if (left + right < 0) dir = -1;
+        // Only while the wheels clearly drive one way: in a pivot the sum is a ramp rounding error, and
+        // a wedged pivot (HIL 2026-11-02, in the station rails) slid the axle and turned the boot yaw 90 deg
+        if (fabsf(left + right) >= GPS_YAW_DIR_MIN * (fabsf(left) + fabsf(right))) {
+            if (left + right > 0) dir = 1; else if (left + right < 0) dir = -1;
+        }
         if (dir != 0) {
             yaw_meas = normalize_angle(dir > 0 ? travel : travel + M_PI);
             yaw_var = (sigma / axle_speed) * (sigma / axle_speed);
@@ -766,7 +774,7 @@ static char hil_imu_frame_buf[16];
 static std_msgs__msg__UInt8MultiArray hil_tof_msg;
 static uint8_t hil_tof_buf[2 * HIL_TOF_BLOCK + 8];   // both sensors in one message (386 B)
 static std_msgs__msg__Float32MultiArray hil_stepper_msg;
-static float hil_stepper_buf[2];
+static float hil_stepper_buf[3];   // left, right steps/s; blade relay (1 on, 0 off) for the sim battery
 static std_msgs__msg__String console_msg;
 static char console_buf[64];
 static std_msgs__msg__String log_msg;
@@ -790,7 +798,7 @@ static void hil_imu_callback(const void* msgin) {
 
 static void hil_tof_callback(const void* msgin) {
     const std_msgs__msg__UInt8MultiArray* msg = (const std_msgs__msg__UInt8MultiArray*)msgin;
-    hil_tof_push(msg->data.data, msg->data.size);
+    hil_tof_push(msg->data.data, msg->data.size);   // also carries the sim's power blocks (hil.h)
 }
 
 static void console_callback(const void* msgin) {
@@ -831,8 +839,8 @@ void hil_ros_init() {
                                                &hil_tof_callback, ON_NEW_DATA));
 
         hil_stepper_msg.data.data = hil_stepper_buf;
-        hil_stepper_msg.data.capacity = 2;
-        hil_stepper_msg.data.size = 2;
+        hil_stepper_msg.data.capacity = 3;
+        hil_stepper_msg.data.size = 3;
         RCCHECK(rclc_publisher_init_best_effort(
             &hil_stepper_publisher, &node,
             ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray), "hil/stepper_rate"));
@@ -859,6 +867,7 @@ void hil_ros_init() {
 void hil_ros_tick() {
     if (HIL_ENABLED) {
         motor_get_step_rates(&hil_stepper_buf[0], &hil_stepper_buf[1]);
+        hil_stepper_buf[2] = motor_blade_on() ? 1.0f : 0.0f;
         RCSOFTCHECK(rcl_publish(&hil_stepper_publisher, &hil_stepper_msg, NULL));
     }
     if (DEBUG_OVER_ROS) {
@@ -1266,6 +1275,13 @@ void setup() {
     SerialDebug.println("  h       task stacks / heap");
     SerialDebug.println("  k       simulate obstacle");
     SerialDebug.println("  b       simulate rain");
+    SerialDebug.println("--- Docking ---");
+    SerialDebug.println("  H       home now: dock at the station");
+    SerialDebug.println("  U       undock (reverse out) and stay");
+    SerialDebug.println("  S       set station again (docked by hand, contacts live; the first departure does it itself)");
+    SerialDebug.println("  X       forget the station");
+    SerialDebug.println("  Y<a>,<l>,<deg>  move the stored station (cm along, cm left, deg; tests)");
+    SerialDebug.println("  B       power, contacts, station");
     SerialDebug.println("==================================");
     SerialDebug.println("");
 }
@@ -1499,6 +1515,41 @@ void loop() {
                     SerialDebug.println("[DEBUG] Triggering rain sensor via serial");
                     controller_signal_t signal = { SIGNAL_RAIN };
                     DDS_PUBLISH("/controller/signal", signal);
+                }
+                // Docking (ARCHITECTURE §7)
+                else if (c == 'H') {  // Home now: dock
+                    controller_signal_t signal = { SIGNAL_GO_HOME };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'U') {  // Undock and stay
+                    controller_signal_t signal = { SIGNAL_UNDOCK };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'S') {  // Set station: docked by hand, contacts live
+                    controller_signal_t signal = { SIGNAL_SET_STATION };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'X') {  // Forget the station (the next departure from a hand dock measures it)
+                    controller_signal_t signal = { SIGNAL_FORGET_STATION };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'Y') {  // "Y<along cm>,<lat cm>,<yaw deg>\n": move the stored station (tests)
+                    char buf[32]; int len = 0;
+                    while (SerialDebug.available() && len < (int)sizeof(buf) - 1) {
+                        char ch = SerialDebug.read();
+                        if (ch == '\n' || ch == '\r') break;
+                        buf[len++] = ch;
+                    }
+                    buf[len] = '\0';
+                    float al, la, yw;
+                    if (sscanf(buf, "%f,%f,%f", &al, &la, &yw) == 3) {
+                        DOCK_SHIFT[0] = al * 0.01f; DOCK_SHIFT[1] = la * 0.01f; DOCK_SHIFT[2] = yw * (float)DEG_TO_RAD;
+                        controller_signal_t signal = { SIGNAL_SHIFT_STATION };
+                        DDS_PUBLISH("/controller/signal", signal);
+                    } else SerialDebug.println("[DEBUG] Usage: Y<along cm>,<lat cm>,<yaw deg>  e.g. Y0.6,-8.0,-4");
+                }
+                else if (c == 'B') {  // Power and station status
+                    controller_print_dock_status();
                 }
             }
 

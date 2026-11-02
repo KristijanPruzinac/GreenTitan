@@ -18,7 +18,7 @@ from launch_ros.actions import Node
 from sim_env import scene as scene_builder
 
 BUILTIN_DEVICES = {'gnss': 'gnss_model', 'imu': 'imu_model', 'tof': 'tof_model', 'stepper': 'stepper_model',
-                   'diff_drive': 'diff_drive_mixer'}
+                   'diff_drive': 'diff_drive_mixer', 'power': 'power_model'}
 
 
 def _scene_facts(s):

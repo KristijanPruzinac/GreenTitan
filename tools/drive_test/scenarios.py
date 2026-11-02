@@ -4,10 +4,18 @@ Each scenario spawns the mower somewhere in a sim world and drives it through th
 holding the stick: steps of (forward m/s, turn rad/s, seconds) posted to /drive at 10 Hz. score.py checks
 the recorded drive against the sim truth. Stdlib only: drive.py runs on the Windows side too.
 
+Docking scenarios (dock*) use page actions as steps too (drive.py) and put the charging station at their
+`station` pose: the dock worlds are written in the station's frame, `world NAME` moves the station with its
+pad, shed and bumps there. The board keeps its station estimate in NVS between runs, so run set_station first
+(spawned docked, forgets the stored station, the first undock measures it), then the others; dock_nudge moves
+the station 8 cm / 4 deg.
+
     python3 scenarios.py list
     python3 scenarios.py robot NAME > robot.yaml     (mower.yaml with the scenario's spawn, needs ROS)
+    python3 scenarios.py world NAME > world.yaml     (the scenario's world with its station pose, needs ROS)
 """
 import math
+import os
 import sys
 
 
@@ -23,6 +31,41 @@ def wobbly(lin, dur, amp=0.12, seed=1, hold=0.5, lin_var=0.0):
         out.append((round(lin + lin_var * v, 3), round(amp * u, 3), min(hold, dur - t)))
         t += hold
     return out
+
+
+# Docking: the station pose (x, y, yaw deg; the axle at contact, facing into the station). 30 deg, so a mower
+# spawned docked boots with a 30 deg heading error (the EKF starts at 0): the error at the stop.
+STATION = (0.0, 0.0, 30.0)
+# Moved 8 cm to its left and turned 4 deg (dock_nudge: the stored estimate is moved back to STATION)
+STATION_NUDGED = (STATION[0] - 0.08 * math.sin(math.radians(STATION[2])),
+                  STATION[1] + 0.08 * math.cos(math.radians(STATION[2])), STATION[2] + 4.0)
+
+
+def _nudge_back():
+    """STATION in STATION_NUDGED's frame: cm along, cm left, deg (console Y moves the stored estimate by it)."""
+    c, s = math.cos(math.radians(STATION_NUDGED[2])), math.sin(math.radians(STATION_NUDGED[2]))
+    dx, dy = STATION[0] - STATION_NUDGED[0], STATION[1] - STATION_NUDGED[1]
+    return (100 * (c * dx + s * dy), 100 * (-s * dx + c * dy), STATION[2] - STATION_NUDGED[2])
+
+
+NUDGE_BACK = _nudge_back()
+
+
+def at_station(st, along, lat=0.0, rel_yaw_deg=0.0):
+    """World (x, y, yaw rad) of the axle `along` m into the station (negative = out), `lat` m to its left."""
+    c, s = math.cos(math.radians(st[2])), math.sin(math.radians(st[2]))
+    return (round(st[0] + c * along - s * lat, 4), round(st[1] + s * along + c * lat, 4), math.radians(st[2] + rel_yaw_deg))
+
+
+DOCKED = 0.02                       # m past the contact point: spawned with the contacts closed
+SETTLE = {'wait': 12}               # gyro calibration and the first poses (keep still)
+# The sim GNSS starts in float (fix after ~20 s): Set station / Home wait for it in the firmware
+# (up to 60 s), so their timeouts carry that minute on top of the drive
+HOME = [{'cmd': 'home'}, {'wait_state': 'CHARGING', 'timeout': 840}]   # incl. up to 10 min of quiet RTK wait on the approach
+# Undock waits like Home when docked with no station known: the first departure measures it (RTK fix needed)
+CYCLE = [{'cmd': 'undock'}, {'wait_state': 'IDLE', 'timeout': 120}] + HOME
+# Out of the station by hand: turn, then ~3 m away (Home then routes back round to the axis)
+AWAY = [{'manual': True}, (0, 0.5, 4.7), (0.3, 0, 11.0), {'manual': False}]
 
 # Positions in world metres (the world YAML's frame), yaw in radians. The first ~1 m of every drive is free
 # lawn: the heading at boot is a guess until about 2 s of driving.
@@ -150,6 +193,67 @@ SCENARIOS = {
         'steps': [(0.25, 0, 14.0)],
         'checks': {},
     },
+    # Docking (2026-11-02, ARCHITECTURE §7). The normal flow: docked by hand (spawned docked, 30 deg heading error
+    # at boot), no station known (X forgets the stored one). Undock: the first departure reverses 1.5 m over two
+    # one-wheel bumps (the back-out curves and slips) and measures the station quietly; out, turn, drive to ~4 m
+    # off at an angle, Home: that dock verifies and stores it. No Set station anywhere.
+    'set_station': {
+        'world': 'dock_bumps', 'station': STATION, 'spawn': at_station(STATION, DOCKED),
+        'steps': [SETTLE, {'cmd': 'forget_station'}, {'wait': 1}] + CYCLE[:2] + AWAY + HOME,
+        'checks': {'station_set': True, 'docks_min': 1, 'no_dock_msgs': True, 'docked_end': True,
+                   'station_err': (2.0, 1.5)},
+    },
+    # The manual redo: Set station (console S) while docked: back out, measure, dock right away to verify.
+    'set_station_manual': {
+        'world': 'dock_bumps', 'station': STATION, 'spawn': at_station(STATION, DOCKED),
+        'steps': [SETTLE, {'cmd': 'set_station'}, {'wait_state': 'CHARGING', 'timeout': 240}] + CYCLE[:2] +
+                 AWAY + HOME,
+        'checks': {'station_set': True, 'docks_min': 2, 'no_dock_msgs': True, 'docked_end': True,
+                   'station_err': (2.0, 1.5)},
+    },
+    # The automatic flow with the left wheel slipping 4 % (the drive curves on every straight command): the
+    # back-out curves, the heading estimate is curve-tolerant (chords turned back by the gyro). Flat dock world.
+    'set_station_slip': {
+        'world': 'dock', 'station': STATION, 'spawn': at_station(STATION, DOCKED), 'slip': {'left': 0.04},
+        'steps': [SETTLE, {'cmd': 'forget_station'}, {'wait': 1}] + CYCLE[:2] + AWAY + HOME,
+        'checks': {'station_set': True, 'docks_min': 1, 'no_dock_msgs': True, 'docked_end': True,
+                   'station_err': (2.0, 1.5)},
+    },
+    # From 4 m off the axis, 1.5 m to the side, at boot (a short straight drive confirms the heading first).
+    'dock': {
+        'world': 'dock', 'station': STATION, 'spawn': at_station(STATION, -4.0, 1.5, 20.0),
+        'steps': [SETTLE, (0.25, 0, 3.0), {'manual': False}] + HOME,
+        'checks': {'docks_min': 1, 'no_dock_msgs': True, 'docked_end': True},
+    },
+    # Boot docked, undock (heading from the station yaw and the gyro), dock again.
+    'undock_redock': {
+        'world': 'dock', 'station': STATION, 'spawn': at_station(STATION, DOCKED),
+        'steps': [SETTLE] + CYCLE,
+        'checks': {'docks_min': 1, 'no_dock_msgs': True, 'docked_end': True},
+    },
+    # 20 undock/dock cycles with the sim's normal RTK noise: no message for the user, the estimate stays put.
+    # Limits from the estimator replay (one measurement ~3 deg sd in yaw, the mower's yaw in the funnel play,
+    # ~1 cm in position): after 20 docks p95 0.8 cm / 1.3 deg.
+    'dock_repeat': {
+        'world': 'dock', 'station': STATION, 'spawn': at_station(STATION, DOCKED),
+        'steps': [SETTLE] + CYCLE * 20,
+        'checks': {'docks_min': 20, 'no_dock_msgs': True, 'docked_end': True, 'station_err': (1.0, 1.5)},
+    },
+    # The station was moved 8 cm / 4 deg since the board stored it. Self-contained: spawned docked in the moved
+    # station, it forgets the stored one and learns it on the way out, then the console moves the stored
+    # estimate back to the old pose (Y, the inverse of the nudge in the station frame). The funnel (with
+    # retries) still brings the mower in; retried docks are no measurements, but every undock from the live
+    # contacts is: 2 agreeing ones after a retried dock are adopted (their mean), or a failed approach series
+    # tries once more on the held-back mean. The last dock needs at most 2 approaches. Station limits: what
+    # docking needs (first try below ~3 deg: HIL 2.0 cm / 3.8 deg needed 2 approaches) and the replay after
+    # 5 docks (p90 2.5 deg, p95 1.1 cm).
+    'dock_nudge': {
+        'world': 'dock', 'station': STATION_NUDGED, 'spawn': at_station(STATION_NUDGED, DOCKED),
+        'steps': [SETTLE, {'cmd': 'forget_station'}, {'wait': 1}] + CYCLE[:2] +
+                 [{'cmd': 'move_station:%.1f,%.1f,%.1f' % NUDGE_BACK}, {'wait': 1}] + HOME + CYCLE * 4,
+        'checks': {'docks_min': 5, 'no_dock_msgs': True, 'docked_end': True, 'adopted_within': 4, 'last_approaches_max': 2,
+                   'station_err': (1.5, 3.0)},
+    },
 }
 
 # Checks every scenario gets: sim at real time, no contact, no phantom walls.
@@ -157,7 +261,8 @@ COMMON = {'rtf_min_median': 0.95, 'clearance_min_cm': 8.0, 'phantom_max_m': 0.3}
 
 
 def robot_yaml(name):
-    """mower.yaml with the scenario's spawn (text replace: the file keeps its comments)."""
+    """mower.yaml with the scenario's spawn and its wheel `slip` ({'left': 0.04}: that wheel turns 4 % less than
+    commanded, the stepper device's slip) (text replace: the file keeps its comments)."""
     import os
     import re
     from ament_index_python.packages import get_package_share_directory
@@ -167,12 +272,48 @@ def robot_yaml(name):
     new, n = re.subn(r'spawn:\s*\{[^}]*\}', f'spawn: {{position: [{x}, {y}], yaw: {yaw:.4f}, clearance: 0.01}}', txt)
     if n != 1:
         raise SystemExit(f'spawn line not found once in {path}')
+    for side, slip in (SCENARIOS[name].get('slip') or {}).items():
+        new, n = re.subn(r'(\{joint: ' + side + r'_joint,[^}]*)\}', lambda m: f'{m.group(1)}, slip: {slip}}}', new)
+        if n != 1:
+            raise SystemExit(f'{side}_joint motor line not found once in {path}')
     return new
+
+
+def world_path(name):
+    from ament_index_python.packages import get_package_share_directory
+    w = SCENARIOS[name]['world']
+    return w if w.endswith('.yaml') else os.path.join(get_package_share_directory('greentitan_sim'), 'config', w + '.yaml')
+
+
+def world_yaml(name):
+    """The scenario's world. With a `station` pose: the dock world (written in the station's frame) with its
+    objects and terrain features moved to that pose."""
+    txt = open(world_path(name)).read()
+    st = SCENARIOS[name].get('station')
+    if st is None:
+        return txt
+    import yaml
+    w = yaml.safe_load(txt)
+    c, s = math.cos(math.radians(st[2])), math.sin(math.radians(st[2]))
+    move = lambda p: [round(st[0] + c * p[0] - s * p[1], 4), round(st[1] + s * p[0] + c * p[1], 4)] + list(p[2:])  # noqa: E731
+    for f in (w.get('terrain') or {}).get('features') or []:
+        if 'position' in f:
+            f['position'] = move(f['position'])
+    for o in w.get('objects') or []:
+        if 'pose' in o:
+            o['pose'] = move(o['pose'][:2]) + [round(float((o['pose'] + [0, 0, 0])[2]) + st[2], 4)]
+        elif 'position' in o:
+            o['position'] = move(o['position'])
+            o['yaw'] = round(float(o.get('yaw', 0.0)) + math.radians(st[2]), 6)
+    head = f'# {os.path.basename(world_path(name))} with the station at {list(st)} (tools/drive_test/scenarios.py {name})\n'
+    return head + yaml.safe_dump(w, sort_keys=False, default_flow_style=None)
 
 
 if __name__ == '__main__':
     if len(sys.argv) > 2 and sys.argv[1] == 'robot':
         sys.stdout.write(robot_yaml(sys.argv[2]))
+    elif len(sys.argv) > 2 and sys.argv[1] == 'world':
+        sys.stdout.write(world_yaml(sys.argv[2]))
     else:
         for k, v in SCENARIOS.items():
             print(k, v['world'], v['spawn'])

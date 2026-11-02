@@ -17,6 +17,7 @@ extern bool ENABLE_MOTORS;
 
 bool init_motors();
 void motor_get_step_rates(float* left, float* right);  // current steps/s (HIL output)
+bool motor_blade_on();                                  // blade relay state (HIL output)
 
 void motor_task(void* parameter);
 

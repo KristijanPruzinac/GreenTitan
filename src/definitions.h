@@ -43,8 +43,65 @@ typedef struct {
 //Motor
 #define MOTOR_MAIN 18
 
-//Battery
-#define BATTERY_LEVEL_PIN 36
+//Battery and dock contacts (ARCHITECTURE §7 "Docking"; HARDWARE §4 and §8: proposed 7S pack, dividers not fitted)
+#define BATTERY_LEVEL_PIN 36   // ADC1_CH0: pack voltage through a divider (proposed)
+#define DOCK_SENSE_PIN 34      // ADC1_CH6, input only: contact-plate voltage through a divider (proposed)
+#ifndef POWER_ADC_FITTED
+#define POWER_ADC_FITTED 0     // 1 once both dividers are fitted: open ADC pins float and would fake "docked"
+#endif
+#define POWER_DIVIDER_RATIO 11.0f      // 100k / 10k: 29.4 V -> 2.67 V at the pin (proposed)
+#define BATTERY_V_FULL 29.4f           // 7S, 4.2 V/cell
+#define BATTERY_V_EMPTY 22.0f          // 0 % on the page (linear estimate, no BMS reading yet)
+#define BATTERY_V_LOW 22.6f            // below this for BATTERY_LOW_HOLD_MS while mowing: go home
+#define BATTERY_LOW_HOLD_MS 5000
+#define BATTERY_V_CHARGED 29.2f        // docked and above this for BATTERY_CHARGED_HOLD_MS: charged
+#define BATTERY_CHARGED_HOLD_MS 10000
+#define DOCK_V_MIN 25.0f               // contact plates above this = touching the live station contacts
+#define DOCK_CONFIRM_MS 500            // ... for this long = docked
+
+//Docking (controller_task, ARCHITECTURE §7). Station pose = axle midpoint where the contacts close + the
+//mower heading there (into the station), in odom.
+#define DOCK_PREDOCK_DIST 1.5f         // m, pre-dock point on the station axis (axle), where the straight approach starts
+#define DOCK_LEADIN_DIST 0.8f          // m further out: the route's last leg runs along the axis
+#define DOCK_APPROACH_SPEED 0.15f      // m/s, final approach (path tracker on the axis line)
+#define DOCK_SLOW_SPEED 0.08f          // m/s, recovery approaches
+#define DOCK_OVERRUN 0.05f             // m past the expected contact: no voltage by then = a miss
+#define DOCK_APPROACH_TIMEOUT_MS 30000
+#define DOCK_REVERSE_TIMEOUT_MS 60000  // a back-out (set station, undock, back-off; 1.5 m ~15 s) not done by then = blocked
+#define DOCK_REVERSE_SPEED 0.10f       // m/s, every reverse move (straight line follower, slow)
+#define DOCK_UNDOCK_DIST 1.5f          // m, reverse out of the station before going on (= pre-dock: home goes straight in)
+#define DOCK_TRIES 3                   // approaches from the pre-dock point, then the recovery
+#define DOCK_RECOVERY_PREDOCK 2.0f     // m, recovery: a fresh, longer straight approach ...
+#define DOCK_SEARCH_LATERAL 0.05f      // m, ... then one slow approach each side, this far off the axis
+#define DOCK_CONTACT_GRACE_MS 500     // the approach line ended without voltage: wait this long for the contacts (they lag the pose)
+#define DOCK_JAM_SHIFT 0.02f           // m, after a stall or pivot in the funnel: the next approach line this far away from the jam side ...
+#define DOCK_JAM_SHIFT_MAX 0.08f       // ... adding up to this (per docking, reset on Home)
+#define DOCK_MOUTH_ALONG 0.70f         // m before the contact: the funnel mouth (rails from here to the throat)
+#define DOCK_PIVOT_ABORT_DEG 10.0f     // in the funnel, yaw off the axis above this = a wheel caught a rail: back out (clean <= 5.6, jams pass 8 at -0.3 m)
+#define DOCK_PIVOT_END_ALONG 0.10f     // m before the contact: the pivot check ends here (the springs turn it up to ~8 deg)
+#define DOCK_JAM_MIN_DEG 5.0f          // a stall with less yaw than this gives no jam side
+#define DOCK_SET_BACKOUT 1.5f          // m, set station: reverse out this far, recording the track
+#define DOCK_SET_MIN_TRACK 1.2f        // m of RTK-fixed track behind the contact point
+#define DOCK_SET_MAX_SPREAD_DEG 2.5f   // per-sample heading estimates must agree this well (RMS); straight 1.5 m, 1 cm RTK: 0.55 typ., 2 cm bump jolts: 1.66 p95
+#define DOCK_MEAS_MIN_TRACK 0.8f       // m of approach track for a dock to count as a measurement
+#define DOCK_MIN_CHORD 0.6f            // m, per-sample heading estimates use chords at least this long
+#define DOCK_MAX_DRIFT_DEG 3.0f      // long-chord minus short-chord heading: a sideways slide (rails), not noise (2 cm jolts: 2.5 max)
+#define DOCK_RTK_MAX_AGE_MS 1000       // RTK fixed must have been reported within this
+#define DOCK_RTK_WAIT_MS 60000        // Set station / Home before the RTK fix (boot: float first) waits this long, quietly
+#define DOCK_FIX_WAIT_MS 600000       // the approach without RTK fix waits stopped this long, quietly (float episodes by a shed or hedge last minutes)
+#define DOCK_EST_WEIGHT 0.2f           // floor of the position weight of one accepted measurement (running mean until then)
+#define DOCK_EST_WEIGHT_YAW 0.1f       // ... and of the yaw: one measurement is the mower's yaw in the funnel play, ~3 deg sd (HIL)
+#define DOCK_GATE_SIGMAS 3.0f          // gate: within this many sigma of the recent measurements ...
+#define DOCK_GATE_MIN_POS 0.04f        // m ... but never tighter than this (position ~1 cm sd per axis)
+#define DOCK_GATE_MIN_YAW_DEG 8.0f     // above the in-dock play (~3 deg sd): a move shows mainly in the position
+#define DOCK_MOVE_COUNT 3              // this many held-back measurements in a row that agree = the station was moved: their mean is adopted
+#define DOCK_MOVE_COUNT_DOUBT 2        // ... after a dock that needed retries or failed (never 1)
+#define DOCK_MOVE_AGREE_POS 0.03f      // m, to the mean of the held-back ones
+#define DOCK_MOVE_AGREE_YAW_DEG 6.0f
+#define DOCK_TRACK_SAMPLES 200         // RTK track samples kept (5 Hz: 40 s)
+#define MOTION_REVERSE_SPEED_MAX 0.15f        // m/s, reverse line follower (MOVING_REVERSE)
+#define MOTION_REVERSE_LOOKAHEAD 0.30f        // m: cross-track e -> travel aimed atan(e / this) back at the line
+#define MOTION_REVERSE_MAX_HEADING_ERROR 0.35f   // rad, beyond this it turns on the spot before backing on
 
 //IMU
 #define GYRO_SDA_PIN 21
@@ -433,6 +490,7 @@ typedef struct {
 #define FUSED_YAW_LAG                     0.15   // s, EKF yaw behind its own stamp while turning (HIL 2026-10-30 with host and ESP clocks in step: 0.147 s; measure on the robot)
 #define GPS_YAW_RELOCK                    10     // GPS yaws in a row outside the gate (2 s of driving): fuse the next anyway
 #define GPS_YAW_CONFIRM                   5      // GPS yaws in a row inside the gate (~1 s of driving): the heading counts as known
+#define GPS_YAW_DIR_MIN                   0.5f   // forwards/backwards only when |left + right| >= this x (|left| + |right|): not in a pivot
 #define GPS_YAW_CONFIRM_DEG               15.0   // ... and each within this of the EKF yaw
 #define GPS_STILL_YAW_VAR                 3e-4   // rad^2 ((1 deg)^2): parked with the heading known, gps/odom holds the yaw from the stop
 #define MOTION_POSE_TIMEOUT_MS            500    // stop driving if /fused_pose (10 Hz) goes quiet
@@ -450,8 +508,6 @@ typedef struct {
 #define DAC_MAX_VALUE 4096
 #define DAC_MAX_BITS 12
 
-#define BATTERY_LEVEL_LOW 8
-#define BATTERY_LEVEL_CHARGED 95
 
 //Sensors
 #ifndef MICRO_ROS_DOMAIN_ID
@@ -535,8 +591,15 @@ extern volatile int      LAST_DATUM_CAPTURE_RESULT;
 // Heading state (defined in main.cpp, written by the GPS callback). At boot and after a relock the heading is a
 // guess until GPS_YAW_CONFIRM GPS yaws in a row passed the gate. ToF points placed before that are dropped (the map
 // takes none, the assist does not lock); HEADING_EPOCH counts the confirmations.
+extern volatile uint8_t  GPS_CARR_SOLN;      // NAV-PVT carrSoln of the last fix: 0 none, 1 float, 2 fixed (gps_task)
+extern volatile uint32_t GPS_CARR_SOLN_MS;   // millis() of that fix
 extern volatile bool     HEADING_CONFIRMED;
 extern volatile uint32_t HEADING_EPOCH;
+// Docking, docked, undocking, setting the station (controller_task): the ToF map takes no points. At the station
+// the zones that straddle the back block's corners and the wall behind it (closer than the sensor's target
+// separation) read in between and stamped phantom lines across the gap (HIL 2026-11-02); the station is known.
+extern volatile bool     TOF_MAP_HOLD;
+extern volatile float    DOCK_SHIFT[3];   // console Y: along, lateral (m, station frame), yaw (rad)
 
 enum motor_instruction {
   MOTOR_STOP,
@@ -568,7 +631,7 @@ bool fused_pose_now(fused_pose_data_t* out);
 enum motion_mode {
     WAITING,          // stop and drop the queued path
     MOVING,           // append end_x/end_y to the path (start_x/y unused: the path starts at the robot)
-    MOVING_REVERSE,
+    MOVING_REVERSE,   // reverse along the line start -> end (axle; slow line follower, straight lines only)
     MOTION_PAUSE,     // stop, keep the queued path
     MOTION_RESUME,
 };
@@ -581,19 +644,24 @@ typedef struct {
     double end_y;
     uint8_t tool;     // nav_tool (navigation/nav_path.h): blade on the way to this point; 0 = unchanged
     int8_t edge;      // the way to this point runs along an outline on this side: +1 left, -1 right, 0 none
+    float speed;      // m/s cap (MOVING: on the way to this point; MOVING_REVERSE: the speed); 0 = default
+    float start_yaw;  // MOVING_REVERSE: NAN = steer on the fused heading; else the true heading at the start,
+                      // carried by the gyro (docked: the station's heading, known before the EKF's is)
 } motion_command_t;
 
 enum robot_state {
     ROBOT_STATE_IDLE,
     ROBOT_STATE_MOWING,
     ROBOT_STATE_PAUSED,
-    ROBOT_STATE_RETURNING_TO_BASE,
-    ROBOT_STATE_ENTERING_CHARGING_STATION,
-    ROBOT_STATE_CHARGING,
-    ROBOT_STATE_LEAVING_CHARGING_STATION,
+    ROBOT_STATE_RETURNING_TO_BASE,   // on the way to the pre-dock point
+    ROBOT_STATE_DOCKING,             // straight approach, contact hold, back-off and retries
+    ROBOT_STATE_CHARGING,            // docked (contact voltage present)
+    ROBOT_STATE_UNDOCKING,           // reversing out of the station
     ROBOT_STATE_RECORDING_OUTLINE,
     ROBOT_STATE_MANUAL,
     ROBOT_STATE_CAPTURING_DATUM,
+    ROBOT_STATE_SETTING_STATION,     // reversing out of a hand-docked station, recording the track
+    ROBOT_STATE_DOCK_FAILED,         // all approaches failed: "Couldn't dock" on the page
 };
 
 enum controller_signal {
@@ -609,6 +677,11 @@ enum controller_signal {
     SIGNAL_MANUAL_OFF,
     SIGNAL_START_DATUM_CAPTURE,
     SIGNAL_STOP_MOWING,
+    SIGNAL_GO_HOME,             // console H: dock now
+    SIGNAL_UNDOCK,              // console U: reverse out of the station and stay
+    SIGNAL_SET_STATION,         // console S: docked by hand -> measure the station pose
+    SIGNAL_FORGET_STATION,      // console X: no station known (tests; the next hand dock measures it)
+    SIGNAL_SHIFT_STATION,       // console Y<along cm>,<lat cm>,<yaw deg>: move the stored station (tests: DOCK_SHIFT)
 };
 
 typedef struct {

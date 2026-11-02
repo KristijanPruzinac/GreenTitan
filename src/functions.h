@@ -23,5 +23,6 @@ double DistanceBetweenPoints(double x1, double y1, double x2, double y2);
 bool has_passed_goal(double x, double y, double start_x, double start_y, double end_x, double end_y);
 float normalize_angle(float radians);
 float angle_diff(float current, float target);
+float wrap_pi(float radians);   // to [-pi, pi] (normalize_angle gives [0, 2 pi): not for differences)
 int sign_of(double value);
 #endif
