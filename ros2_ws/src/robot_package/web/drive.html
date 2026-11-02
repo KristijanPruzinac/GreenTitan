@@ -3,26 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#111513">
+<meta name="theme-color" content="#eef0ea">
 <title>GreenTitan</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%233fd17a'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%231f8a3b'/%3E%3C/svg%3E">
 <!-- Mower page served by robot_package/web_ui.py (docs/ARCHITECTURE.md §10). One file. The state is pushed by the node
-     (/events, server-sent events); the 3D view (default) loads three.js from cdnjs. The ground is a lawn made in the page
-     (no downloads), shaped by the terrain the mower measured. Offline the page falls back to the 2D view. -->
+     (/events, server-sent events); the 3D view (default) loads three.js from cdnjs. Light look: a plain white floor with a
+     1 m grid, shaped in 3D by the terrain the mower measured, no sky. Offline the page falls back to the 2D view. -->
 <style>
 :root {
-  --glass: rgba(17, 21, 19, .74); --glass2: rgba(17, 21, 19, .97); --edge: rgba(255, 255, 255, .13);
-  --ink: #f2f5f3; --muted: #a3ada7; --accent: #3fd17a; --accent-ink: #052010;
-  --warn: #ffb020; --bad: #ff4d4d; --wall: #ff5a3c; --low: #ffc531; --post: #c48dff; --outline: #4fb2ff; --trail: #d9ff6e;
+  --bg: #eef0ea; --floor: #f4f5f0; --line: #d3d8cf;
+  --glass: rgba(255, 255, 255, .88); --glass2: rgba(255, 255, 255, .98); --edge: rgba(29, 35, 32, .16);
+  --ink: #1d2320; --muted: #66706a; --accent: #1f8a3b; --accent-ink: #ffffff;
+  --warn: #c27c00; --bad: #c62828; --wall: #56616b; --low: #d08a00; --post: #6a3fb5; --outline: #2f5fb3; --trail: #e07b00;
   --gut: 12px;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; height: 100%; background: #1a201c; color: var(--ink); overflow: hidden;
+html, body { margin: 0; height: 100%; background: var(--floor); color: var(--ink); overflow: hidden;
   font: 15px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-user-select: none; user-select: none; }
 button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
 #view { position: fixed; inset: 0; }
 #view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-.glass { background: var(--glass); border: 1px solid var(--edge); box-shadow: 0 4px 18px rgba(0, 0, 0, .28);
+.glass { background: var(--glass); border: 1px solid var(--edge); box-shadow: 0 3px 12px rgba(29, 35, 32, .14);
   -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2); }
 
 /* top bar: status, 2D/3D, menu */
@@ -31,15 +32,15 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 #top > * { pointer-events: auto; }
 #pill { display: flex; align-items: center; gap: 9px; height: 42px; padding: 0 15px 0 13px; border-radius: 21px; min-width: 0; }
 #pill .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
-#pill.ok .dot { background: var(--accent); box-shadow: 0 0 0 4px rgba(63, 209, 122, .18); }
-#pill.warn .dot { background: var(--warn); box-shadow: 0 0 0 4px rgba(255, 176, 32, .2); }
-#pill.bad .dot { background: var(--bad); box-shadow: 0 0 0 4px rgba(255, 77, 77, .22); }
+#pill.ok .dot { background: var(--accent); box-shadow: 0 0 0 4px rgba(31, 138, 59, .16); }
+#pill.warn .dot { background: var(--warn); box-shadow: 0 0 0 4px rgba(194, 124, 0, .18); }
+#pill.bad .dot { background: var(--bad); box-shadow: 0 0 0 4px rgba(198, 40, 40, .16); }
 #pill b { font-weight: 700; white-space: nowrap; }
 #pill span { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .spacer { flex: 1; }
 .seg { display: flex; height: 42px; border-radius: 21px; padding: 4px; flex: none; }
 .seg button { border: 0; background: none; color: var(--muted); font-weight: 700; padding: 0 13px; border-radius: 17px; }
-.seg button.on { background: rgba(255, 255, 255, .93); color: #121614; }
+.seg button.on { background: var(--ink); color: #fff; }
 .icon { width: 42px; height: 42px; border-radius: 21px; display: grid; place-items: center; padding: 0; flex: none; }
 .icon svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
 #recenter { position: absolute; right: max(var(--gut), env(safe-area-inset-right)); top: calc(max(var(--gut), env(safe-area-inset-top)) + 52px); display: none; }
@@ -47,11 +48,11 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
   display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; max-width: calc(100% - 90px); }
 .chip { padding: 6px 12px; border-radius: 15px; font-size: 13px; font-weight: 600; display: none; }
 .chip.show { display: block; }
-.chip.warn { background: rgba(255, 176, 32, .95); color: #2a1900; border: 0; }
+.chip.warn { background: #fdf1db; color: #6b4300; border: 1px solid #ecc77d; }
 .chip i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 7px; }
 #toast { position: absolute; left: 50%; top: calc(max(var(--gut), env(safe-area-inset-top)) + 56px); transform: translateX(-50%);
   max-width: calc(100% - 32px); padding: 9px 16px; border-radius: 12px; font-weight: 600; text-align: center;
-  background: rgba(255, 77, 77, .95); color: #fff; display: none; box-shadow: 0 4px 18px rgba(0, 0, 0, .3); }
+  background: var(--bad); color: #fff; display: none; box-shadow: 0 3px 12px rgba(29, 35, 32, .25); }
 
 /* bottom: Take over / joystick / STOP */
 #dock { position: absolute; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right));
@@ -59,24 +60,25 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 #dock > * { pointer-events: auto; }
 #take { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); height: 58px; padding: 0 30px; border-radius: 29px;
   border: 0; background: var(--accent); color: var(--accent-ink); font-size: 17px; font-weight: 750; letter-spacing: .01em;
-  box-shadow: 0 6px 22px rgba(0, 0, 0, .35); white-space: nowrap; }
+  box-shadow: 0 4px 14px rgba(29, 35, 32, .28); white-space: nowrap; }
 #take:active { filter: brightness(.92); }
 #take:disabled { opacity: .7; }
 body.manual #take { left: auto; right: 0; bottom: 98px; transform: none; height: 44px; padding: 0 18px; font-size: 15px;
   background: var(--glass2); color: var(--ink); border: 1px solid var(--edge); }
 #stop { position: absolute; right: 0; bottom: 0; width: 84px; height: 84px; border-radius: 50%; background: var(--bad); color: #fff;
-  border: 3px solid rgba(255, 255, 255, .92); font-size: 17px; font-weight: 800; letter-spacing: .05em; box-shadow: 0 6px 20px rgba(0, 0, 0, .4); }
-#stop:active { background: #b51d1d; }
+  border: 3px solid #fff; font-size: 17px; font-weight: 800; letter-spacing: .05em; box-shadow: 0 3px 12px rgba(29, 35, 32, .35); }
+#stop:active { background: #8e1515; }
 body:not(.manual) #stop { width: 64px; height: 64px; font-size: 13px; bottom: 11px; }
 #joy { position: absolute; left: 0; bottom: 0; width: 150px; height: 150px; border-radius: 50%; display: none; touch-action: none; }
+#joy.glass { border: 2px solid rgba(29, 35, 32, .3); }
 body.manual #joy { display: block; }
 #joy svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 #knob { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; pointer-events: none;
-  background: radial-gradient(circle at 40% 35%, #fff, #d9dfdb); box-shadow: 0 3px 10px rgba(0, 0, 0, .45); }
-#joy.held #knob { background: radial-gradient(circle at 40% 35%, #9ff0c0, var(--accent)); }
+  background: radial-gradient(circle at 40% 35%, #56665c, #2a352f); box-shadow: 0 2px 6px rgba(0, 0, 0, .35); }
+#joy.held #knob { background: radial-gradient(circle at 40% 35%, #4cbf6c, var(--accent)); }
 
 /* menu drawer */
-#scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .25); display: none; }
+#scrim { position: absolute; inset: 0; background: rgba(29, 35, 32, .18); display: none; }
 #scrim.open { display: block; }
 #drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(380px, 90vw); transform: translateX(105%); transition: transform .2s ease;
   border-radius: 18px 0 0 18px; padding: calc(max(var(--gut), env(safe-area-inset-top)) + 4px) 16px 16px; overflow-y: auto;
@@ -85,26 +87,26 @@ body.manual #joy { display: block; }
 #drawer header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
 #drawer h2 { font-size: 18px; margin: 0; }
 #drawer h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 18px 0 6px; font-weight: 700; }
-.row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid rgba(255, 255, 255, .07); font-size: 14px; }
+.row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid #e3e6df; font-size: 14px; }
 .row > :first-child { color: var(--muted); }
 .row > :last-child { text-align: right; font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 .row .ok { color: var(--accent); } .row .warn { color: var(--warn); } .row .bad { color: var(--bad); }
 label.tg { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; font-size: 14px; cursor: pointer; }
-label.tg input { appearance: none; -webkit-appearance: none; width: 42px; height: 24px; border-radius: 12px; background: rgba(255, 255, 255, .2);
+label.tg input { appearance: none; -webkit-appearance: none; width: 42px; height: 24px; border-radius: 12px; background: #cfd4cc;
   position: relative; margin: 0; cursor: pointer; transition: background .15s; flex: none; }
 label.tg input::after { content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left .15s; }
 label.tg input:checked { background: var(--accent); }
 label.tg input:checked::after { left: 21px; }
 .btns { display: flex; flex-wrap: wrap; gap: 6px; }
-.btn { border: 1px solid var(--edge); background: rgba(255, 255, 255, .08); border-radius: 10px; padding: 8px 12px; font-size: 14px; font-weight: 600; }
-.btn:active { background: rgba(255, 255, 255, .18); }
+.btn { border: 1px solid #b9c0b5; background: #f7f8f5; border-radius: 10px; padding: 8px 12px; font-size: 14px; font-weight: 600; }
+.btn:active { background: #e3e6df; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { display: inline-block; width: 16px; height: 5px; border-radius: 3px; }
-#log { font: 11.5px/1.4 ui-monospace, Menlo, Consolas, monospace; max-height: 38vh; overflow-y: auto; background: rgba(0, 0, 0, .35);
-  border-radius: 10px; padding: 6px 0; }
+#log { font: 11.5px/1.4 ui-monospace, Menlo, Consolas, monospace; max-height: 38vh; overflow-y: auto; background: #f3f4f1;
+  border: 1px solid var(--line); border-radius: 10px; padding: 6px 0; }
 #log div { padding: 1px 9px; white-space: pre-wrap; word-break: break-word; }
-#log div.wall { color: #ffd27a; }
+#log div.wall { background: #fff1cf; color: #6b4300; font-weight: 600; }
 .hint { font-size: 12px; color: var(--muted); margin-top: 14px; }
 body.touch .hint { display: none; }
 @media (max-width: 420px) {
@@ -132,8 +134,8 @@ body.touch .hint { display: none; }
   </div>
   <div id="toast"></div>
   <div id="dock">
-    <div id="joy" class="glass"><svg viewBox="0 0 150 150"><path d="M75 14v122M14 75h122" stroke="rgba(255,255,255,.18)" stroke-width="2"/>
-      <path d="M75 75L60 18A58 58 0 0 1 90 18Z M75 75L60 132A58 58 0 0 0 90 132Z" fill="rgba(63,209,122,.13)"/></svg><div id="knob"></div></div>
+    <div id="joy" class="glass"><svg viewBox="0 0 150 150"><path d="M75 14v122M14 75h122" stroke="rgba(29,35,32,.18)" stroke-width="2"/>
+      <path d="M75 75L60 18A58 58 0 0 1 90 18Z M75 75L60 132A58 58 0 0 0 90 132Z" fill="rgba(31,138,59,.12)"/></svg><div id="knob"></div></div>
     <button id="take">Take over</button>
     <button id="stop">STOP</button>
   </div>
@@ -179,8 +181,10 @@ let MESH = null;                                            // web/mower_v3.json
 const TRAIL_S = 180;                                        // trail fades out over this many seconds
 const EXTRAP_MAX = 0.25, SMOOTH_TAU = 0.07;                 // s: pose extrapolation limit, display smoothing
 // Map objects by height class only (esp/wall_map kinds: 0 wall, 1 fence, 2 low edge, 3 hedge, 4 post; unknown = tall)
-const CLS = {wall: {name: "wall", color: "#ff5a3c", thick: 0.10}, low: {name: "low edge", color: "#ffc531", thick: 0.05},
-             post: {name: "post", color: "#c48dff"}};
+const CLS = {wall: {name: "wall", color: "#56616b", thick: 0.10}, low: {name: "low edge", color: "#d08a00", thick: 0.05},
+             post: {name: "post", color: "#6a3fb5"}};
+const COL = {floor: "#f4f5f0", grid: "#d9ddd4", axis: "#9aa59a", ink: "#1d2320", muted: "#66706a",
+             outline: "#2f5fb3", trail: "#e07b00", accent: "#1f8a3b"};   // the light look (CSS :root has the same)
 const clsOf = kind => kind === 2 ? CLS.low : kind === 4 ? CLS.post : CLS.wall;
 const ASSIST_TEXT = {ALIGN: "Lining up with the wall", LOCKED: "Following the wall", CORNER: "Inner corner",
                      PIVOT: "Turning at the corner", OUTER: "Rounding the end"};
@@ -214,7 +218,7 @@ const cmd = name => post("/cmd", {cmd: name});
 let es = null;
 function connect() {
   if (es) es.close();
-  es = new EventSource("/events?since=" + logId);
+  try { es = new EventSource("/events?since=" + logId); } catch (e) { es = null; return; }   // opened as a file: no server
   es.onmessage = e => { try { onState(JSON.parse(e.data)); } catch (err) { console.error(err); } };
 }
 setInterval(() => {                                         // the node pushes at least 4x/s: silence = reconnect
@@ -349,46 +353,6 @@ function heightAt(x, y) {                                   // the field, biline
   return (f.h[k] * (1 - a) + f.h[k + 1] * a) * (1 - b) + (f.h[k + f.nx] * (1 - a) + f.h[k + f.nx + 1] * a) * b;
 }
 
-// ---- lawn: one tileable grass texture drawn in the page (blades seen from above), shared by both views ----
-const GRASS_M = 1.6;                                        // m per texture tile
-function makeGrass() {
-  const N = 512, c = document.createElement("canvas"); c.width = c.height = N;
-  const g = c.getContext("2d");
-  let seed = 7;
-  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  g.fillStyle = "#517539"; g.fillRect(0, 0, N, N);
-  const wrapDo = (x, y, r, f) => {                          // at x, y and at the wrapped copies near an edge: seamless
-    for (const ox of [0, -N, N]) for (const oy of [0, -N, N])
-      if (x + ox > -r && x + ox < N + r && y + oy > -r && y + oy < N + r) f(x + ox, y + oy);
-  };
-  for (let k = 0; k < 260; k++) {                           // soft clumps
-    const x = rnd() * N, y = rnd() * N, r = 10 + rnd() * 34, l = 28 + rnd() * 14;
-    g.fillStyle = `hsla(${88 + rnd() * 16}, 32%, ${l}%, .16)`;
-    wrapDo(x, y, r, (a, b) => { g.beginPath(); g.arc(a, b, r, 0, 2 * Math.PI); g.fill(); });
-  }
-  g.lineCap = "round";
-  for (let k = 0; k < 14000; k++) {                         // blades: short strokes in every direction
-    const x = rnd() * N, y = rnd() * N, a = rnd() * Math.PI * 2, len = 3 + rnd() * 8;
-    const l = 25 + rnd() * 20, dx = Math.cos(a) * len, dy = Math.sin(a) * len;
-    g.strokeStyle = `hsl(${80 + rnd() * 22}, ${28 + rnd() * 14}%, ${l}%)`; g.lineWidth = 0.9 + rnd() * 1.1;
-    wrapDo(x, y, len, (p, q) => { g.beginPath(); g.moveTo(p, q); g.lineTo(p + dx, q + dy); g.stroke(); });
-  }
-  const levels = [c];                                       // halved copies: the 2D view's mip levels
-  while (levels[levels.length - 1].width > 16) {
-    const s = levels[levels.length - 1], d = document.createElement("canvas"); d.width = d.height = s.width / 2;
-    const dg = d.getContext("2d"); dg.imageSmoothingQuality = "high"; dg.drawImage(s, 0, 0, d.width, d.height); levels.push(d);
-  }
-  const px = levels[levels.length - 1].getContext("2d").getImageData(0, 0, 16, 16).data;
-  const mean = [0, 0, 0];
-  for (let k = 0; k < px.length; k += 4) for (let q = 0; q < 3; q++) mean[q] += px[k + q] / (px.length / 4);
-  const tone = document.createElement("canvas"); tone.width = tone.height = 32;   // large calm patches (2D)
-  const tg = tone.getContext("2d"), td = tg.createImageData(32, 32);
-  for (let k = 0; k < td.data.length; k += 4) { const v = 128 + (rnd() - 0.5) * 70; td.data[k] = td.data[k + 1] = td.data[k + 2] = v; td.data[k + 3] = 255; }
-  tg.putImageData(td, 0, 0);
-  return {canvas: c, levels, mean, tone, patterns: new Map()};
-}
-const GRASS = makeGrass();
-
 // ---- 2D view: north up, odom frame ----
 function resize() {
   DPR = window.devicePixelRatio || 1;
@@ -409,33 +373,18 @@ function pathPoly(p, close) {
   if (close) ctx.closePath();
 }
 
-// The lawn: the grass texture at the mip level that matches the zoom (anchored to odom, so it moves with the map),
-// large calm tone patches, the terrain as a soft hillshade, and a veil that keeps the overlays readable.
-function grassPattern(level) {
-  let p = GRASS.patterns.get(level);
-  if (!p) { p = ctx.createPattern(GRASS.levels[level], "repeat"); GRASS.patterns.set(level, p); }
-  return p;
-}
-function drawLawn() {
-  const [r, g, b] = GRASS.mean, tile = GRASS_M * view.s * DPR;   // texture tile in device pixels
-  ctx.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`; ctx.fillRect(0, 0, W, H);
-  if (tile >= 12) {
-    let level = 0;
-    while (level < GRASS.levels.length - 1 && GRASS.levels[level + 1].width >= tile) level++;
-    const p = grassPattern(level), n = GRASS.levels[level].width;
-    p.setTransform(new DOMMatrix().translate(sx(0), sy(0)).scale(GRASS_M * view.s / n));
-    ctx.globalAlpha = Math.min(1, (tile - 12) / 24);        // fades into the mean colour, no shimmer
-    ctx.fillStyle = p; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
-  }
-  const tp = grassPattern.tone || (grassPattern.tone = ctx.createPattern(GRASS.tone, "repeat"));
-  tp.setTransform(new DOMMatrix().translate(sx(0), sy(0)).scale(14 * view.s / 32));   // 14 m per tone tile
-  ctx.globalCompositeOperation = "soft-light"; ctx.globalAlpha = 0.5; ctx.imageSmoothingEnabled = true;
-  ctx.fillStyle = tp; ctx.fillRect(0, 0, W, H);
-  ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+// The floor: plain light ground, the terrain as a very faint hillshade, and the 1 m grid (5, 10, 20 m zoomed out).
+function drawFloor() {
+  ctx.fillStyle = COL.floor; ctx.fillRect(0, 0, W, H);
   drawHillshade();
-  ctx.fillStyle = "rgba(16,26,18,.30)"; ctx.fillRect(0, 0, W, H);
+  let step = 1;
+  while (step * view.s < 28) step *= step === 1 ? 5 : 2;
+  const x0 = Math.floor(wx(0) / step) * step, x1 = wx(W), y0 = Math.floor(wy(H) / step) * step, y1 = wy(0);
+  ctx.lineWidth = 1;
+  for (let x = x0; x <= x1; x += step) { ctx.strokeStyle = Math.abs(x) < 1e-6 ? COL.axis : COL.grid; ctx.beginPath(); ctx.moveTo(sx(x), 0); ctx.lineTo(sx(x), H); ctx.stroke(); }
+  for (let y = y0; y <= y1; y += step) { ctx.strokeStyle = Math.abs(y) < 1e-6 ? COL.axis : COL.grid; ctx.beginPath(); ctx.moveTo(0, sy(y)); ctx.lineTo(W, sy(y)); ctx.stroke(); }
 }
-function drawHillshade() {                                  // light from the north-west, slopes exaggerated 4x
+function drawHillshade() {                                  // light from the north-west, slopes exaggerated 4x, very faint
   const f = TER.field;
   if (!f) return;
   if (!f.shade) {
@@ -446,7 +395,7 @@ function drawHillshade() {                                  // light from the no
       const gy = (H0[k + (j < f.ny - 1 ? f.nx : 0)] - H0[k - (j > 0 ? f.nx : 0)]) / (2 * f.cell);
       const s = Math.max(-1, Math.min(1, 4 * (gx * 0.7 - gy * 0.7))) * f.sure[k];   // > 0: facing away from the light
       const o = ((f.ny - 1 - j) * f.nx + i) * 4;            // row 0 = north
-      d.data[o] = d.data[o + 1] = d.data[o + 2] = s > 0 ? 0 : 255; d.data[o + 3] = Math.abs(s) * 150;
+      d.data[o] = d.data[o + 1] = d.data[o + 2] = s > 0 ? 60 : 255; d.data[o + 3] = Math.abs(s) * (s > 0 ? 40 : 90);
     }
     g.putImageData(d, 0, 0); f.shade = c;
   }
@@ -495,22 +444,22 @@ function drawScale() {
   const nice = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100].reduce((a, b) => b <= want ? b : a, 0.1);
   const len = nice * view.s, x1 = W - 70, x0 = x1 - len, y = 90;   // top right, left of the recenter button
   ctx.lineCap = "round";
-  for (const [c, w] of [["rgba(0,0,0,.55)", 5], ["#fff", 2]]) {
+  for (const [c, w] of [["rgba(255,255,255,.9)", 5], [COL.ink, 2]]) {
     ctx.strokeStyle = c; ctx.lineWidth = w;
     ctx.beginPath(); ctx.moveTo(x0, y - 5); ctx.lineTo(x0, y); ctx.lineTo(x1, y); ctx.lineTo(x1, y - 5); ctx.stroke();
   }
   ctx.lineCap = "butt";
-  label(nice < 1 ? Math.round(nice * 100) + " cm" : nice + " m", (x0 + x1) / 2, y - 12, "#fff");
+  label(nice < 1 ? Math.round(nice * 100) + " cm" : nice + " m", (x0 + x1) / 2, y - 12, COL.ink);
 }
 
 function label(text, x, y, color) {
   ctx.font = "600 12px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.7)"; ctx.strokeText(text, x, y);
+  ctx.lineWidth = 3; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.strokeText(text, x, y);
   ctx.fillStyle = color; ctx.fillText(text, x, y); ctx.textBaseline = "alphabetic";
 }
 
 function drawWorld() {                                      // sim truth: the real objects
-  ctx.fillStyle = "rgba(230,235,232,.28)"; ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = 1;
+  ctx.fillStyle = "rgba(120,126,121,.30)"; ctx.strokeStyle = "#8d938e"; ctx.lineWidth = 1;
   ctx.setLineDash([4, 3]);
   for (const p of world) {
     if (p.p) pathPoly(p.p.map(([x, y]) => [sx(x), sy(y)]), true);
@@ -528,12 +477,12 @@ function drawMap() {
       const r = Math.max(5, x1 / 100 * view.s);
       ctx.beginPath(); ctx.arc(sx(x0 / 100), sy(y0 / 100), r, 0, 2 * Math.PI);
       ctx.globalAlpha = a; ctx.fillStyle = c.color; ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = "rgba(0,0,0,.6)"; ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke(); ctx.globalAlpha = 1;
       if (labels) label(c.name, sx(x0 / 100), sy(y0 / 100) - r - 9, c.color);
     } else {
       const w = Math.max(4, Math.min(12, c.thick * view.s));
       ctx.lineCap = "round"; ctx.globalAlpha = a;
-      for (const [col, lw] of [["rgba(0,0,0,.55)", w + 4], [c.color, w]]) {
+      for (const [col, lw] of [["rgba(255,255,255,.85)", w + 4], [c.color, w]]) {
         ctx.strokeStyle = col; ctx.lineWidth = lw;
         ctx.beginPath(); ctx.moveTo(sx(x0 / 100), sy(y0 / 100)); ctx.lineTo(sx(x1 / 100), sy(y1 / 100)); ctx.stroke();
       }
@@ -544,7 +493,7 @@ function drawMap() {
 }
 
 function drawOutlines() {
-  ctx.strokeStyle = "#4fb2ff"; ctx.fillStyle = "#4fb2ff"; ctx.lineWidth = 2.5;
+  ctx.strokeStyle = COL.outline; ctx.fillStyle = COL.outline; ctx.lineWidth = 2.5;
   for (const o of outlines) {
     if (!o.length) continue;
     pathPoly(o.map(([x, y]) => [sx(x / 100), sy(y / 100)]), false); ctx.stroke();
@@ -554,11 +503,11 @@ function drawOutlines() {
 
 function drawTrail() {
   const t = now();
-  ctx.strokeStyle = "#d9ff6e"; ctx.lineWidth = Math.max(2, Math.min(8, 0.06 * view.s)); ctx.lineCap = "round";
+  ctx.strokeStyle = COL.trail; ctx.lineWidth = Math.max(2, Math.min(8, 0.06 * view.s)); ctx.lineCap = "round";
   for (let i = 1; i < trail.length; i++) {
     const [ax, ay] = trail[i - 1], [bx, by, bt] = trail[i];
     if (Math.hypot(bx - ax, by - ay) > 1) continue;         // pose jump: no line across it
-    ctx.globalAlpha = Math.max(0, 0.7 * (1 - (t - bt) / TRAIL_S));
+    ctx.globalAlpha = Math.max(0, 0.65 * (1 - (t - bt) / TRAIL_S));
     ctx.beginPath(); ctx.moveTo(sx(ax), sy(ay)); ctx.lineTo(sx(bx), sy(by)); ctx.stroke();
   }
   ctx.globalAlpha = 1; ctx.lineCap = "butt";
@@ -576,45 +525,46 @@ function drawMower(p) {                                     // p: axle pose
       pts.push([t.x + t.range * Math.cos(r), t.y + t.range * Math.sin(r)]);
     }
     pathPoly(bodyPoly(x, y, yaw, pts), true);
-    ctx.fillStyle = "rgba(79,178,255,.14)"; ctx.fill();
-    ctx.strokeStyle = "rgba(79,178,255,.5)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = t.shape === "cone" ? "rgba(31,138,138,.10)" : "rgba(47,95,179,.10)"; ctx.fill();
+    ctx.strokeStyle = t.shape === "cone" ? "rgba(31,138,138,.4)" : "rgba(47,95,179,.35)"; ctx.lineWidth = 1; ctx.stroke();
   }
   const big = Math.max(1, 14 / ((FRONT + REAR) * view.s));  // zoomed out: keep the mower visible (>= 14 px long)
   const sc = pts => pts.map(([u, v]) => [u * big, v * big]);
   buildTopView();
   const real = topView && (FRONT + REAR) * view.s >= TOP_MIN;
-  ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 10; ctx.shadowOffsetY = 2;
+  ctx.shadowColor = "rgba(29,35,32,.35)"; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2;
   pathPoly(bodyPoly(x, y, yaw, sc(FOOT)), true);
-  if (real) {                                               // a dark plate under the open frame keeps its outline readable
-    ctx.fillStyle = "rgba(14,20,16,.42)"; ctx.fill(); ctx.shadowColor = "transparent";
+  if (real) {                                               // a soft grey plate under the open frame keeps it readable
+    ctx.fillStyle = "rgba(29,35,32,.16)"; ctx.fill(); ctx.shadowColor = "transparent";
+    ctx.strokeStyle = "rgba(29,35,32,.4)"; ctx.lineWidth = 1; ctx.stroke();
     ctx.save(); ctx.translate(sx(x), sy(y)); ctx.rotate(-yaw); ctx.scale(view.s / 1000, view.s / 1000);
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
     ctx.drawImage(topView.c, -topView.ox, -topView.oy); ctx.restore();
   } else {
-    ctx.fillStyle = "#f4f7f5"; ctx.fill(); ctx.shadowColor = "transparent";
-    ctx.strokeStyle = "#1c2420"; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = "#c9cec7"; ctx.fill(); ctx.shadowColor = "transparent";
+    ctx.strokeStyle = COL.ink; ctx.lineWidth = 1.5; ctx.stroke();
   }
   pathPoly(bodyPoly(x, y, yaw, sc(ARROW)), true);           // heading (front = drive wheels)
-  ctx.fillStyle = "#2fc76c"; ctx.fill();
+  ctx.fillStyle = COL.accent; ctx.fill();
   if (real) { ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 1.5; ctx.stroke(); }
 }
 
 function drawTruth(p) {
   pathPoly(bodyPoly(p.x, p.y, p.yaw, FOOT), true);          // truth pose = axle midpoint
-  ctx.setLineDash([5, 4]); ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = "rgba(29,35,32,.55)"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
 }
 
 function draw2d() {
   if (view.follow && pose.disp) [view.x, view.y] = [pose.disp.x, pose.disp.y];
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  drawLawn();
+  drawFloor();
   if (prefs.truth && world.length) drawWorld();
   drawMap();
   drawOutlines();
   drawTrail();
   if (prefs.truth && st && st.truth) drawTruth(st.truth);
   if (pose.disp) drawMower(pose.disp);
-  else label(st ? "waiting for the mower position" : "connecting", W / 2, H / 2, "#d7ddd9");
+  else label(st ? "waiting for the mower position" : "connecting", W / 2, H / 2, COL.muted);
   drawScale();
 }
 
@@ -665,8 +615,8 @@ cv.addEventListener("wheel", e => { e.preventDefault(); zoomAt(e.offsetX, e.offs
 // the ground sits on the terrain field (heightAt); the mower stands on it, tilted by the accelerometer (st.tilt).
 const BODY_Z0 = 0.05, BODY_Z1 = 0.29;                       // body box height (sim mower.yaml cover envelope)
 const WHEEL_R = 0.075;                                      // drive wheel radius (box mower until the mesh loads)
-const SKY = 0xc4d6df;
-const v3 = {on: false, loading: false, ready: false, mapKey: null, worldKey: null, outKey: null, groundKey: null, trailN: -1,
+const GRID_M = 50;                                          // 3D grid: 1 m lines out to +-50 m (draped over the terrain)
+const v3 = {on: false, loading: false, ready: false, mapKey: null, worldKey: null, outKey: null, groundKey: -1, trailN: -1,
             cam: {az: -Math.PI / 2, el: 0.95, d: 8, tx: 0, ty: 0}, tilt: [0, 0]};
 
 function load3d() {
@@ -714,27 +664,34 @@ function init3d() {
   const T = THREE;
   const r = new T.WebGLRenderer({antialias: true});
   r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  r.setClearColor(SKY);
+  r.setClearColor(COL.floor);
   const scene = new T.Scene();
-  scene.fog = new T.Fog(SKY, 60, 240);
   const cam3 = new T.PerspectiveCamera(50, 1, 0.05, 600);
   cam3.up.set(0, 0, 1);
-  scene.add(new T.HemisphereLight(0xffffff, 0x6d7d66, 0.85));
-  const sun = new T.DirectionalLight(0xffffff, 0.55); sun.position.set(-3, -5, 8); scene.add(sun);
-  // ground: the flat lawn everywhere, the measured terrain (sync3dGround) on top where the mower drove
+  const HEMI = 0.8, SUN = 0.5;
+  const hemi = new T.HemisphereLight(0xffffff, 0x9aa59a, HEMI);
+  hemi.position.set(0, 0, 1); scene.add(hemi);                // sky up the z axis (the default is y: a grey floor)
+  const sun = new T.DirectionalLight(0xffffff, SUN); sun.position.set(-3, -5, 8); scene.add(sun);
+  // ground: a plain light floor everywhere, the measured terrain (sync3dGround) where the mower drove, one material.
+  // Its colour is set so that flat ground comes out at the floor colour (= the background: no horizon line); slopes
+  // shade softly by the sun. Pushed back in depth, so the grid lines on it always win.
   v3.r = r;
-  const lawn = grassMaterial();
-  const field = new T.Mesh(new T.PlaneGeometry(1200, 1200), lawn);
-  scene.add(field); v3.lawn = field;
-  const ground = new T.Mesh(new T.PlaneGeometry(1, 1), lawn);
+  const flatLight = HEMI + SUN * sun.position.clone().normalize().z;
+  const floorMat = new T.MeshLambertMaterial({color: new T.Color(COL.floor).multiplyScalar(1 / flatLight),
+                                              polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1});
+  const floor = new T.Mesh(new T.PlaneGeometry(1200, 1200), floorMat);
+  scene.add(floor); v3.floor = floor;
+  const ground = new T.Mesh(new T.PlaneGeometry(1, 1), floorMat);
   ground.visible = false; ground.frustumCulled = false; scene.add(ground);
+  const grid = new T.LineSegments(new T.BufferGeometry(), new T.LineBasicMaterial({vertexColors: true}));
+  grid.frustumCulled = false; scene.add(grid); v3.grid = grid;
 
   const box = new T.BoxGeometry(1, 1, 1), cyl = new T.CylinderGeometry(1, 1, 1, 20);
   cyl.rotateX(Math.PI / 2);                                   // axis along z
   const clsMat = new Map(Object.values(CLS).map(c => [c, new T.MeshLambertMaterial({color: c.color})]));
-  const greyMat = new T.MeshLambertMaterial({color: 0xe8ece9, transparent: true, opacity: 0.35, depthWrite: false});
-  const greyEdge = new T.LineBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.7});
-  const blueMat = new T.MeshBasicMaterial({color: 0x4fb2ff});
+  const greyMat = new T.MeshLambertMaterial({color: 0x9aa09b, transparent: true, opacity: 0.45, depthWrite: false});
+  const greyEdge = new T.LineBasicMaterial({color: 0x8d938e});
+  const blueMat = new T.MeshBasicMaterial({color: COL.outline});
   const group = () => { const g = new T.Group(); scene.add(g); return g; };
 
   // mower: the real Mower V3 parts (web/mower_v3.json, build3dModel) or, until it loads, a box around the axle
@@ -743,21 +700,30 @@ function init3d() {
   bodyGeo.translate((FRONT - REAR) / 2, 0, (BODY_Z0 + BODY_Z1) / 2);
   const bodyEdges = new T.EdgesGeometry(bodyGeo);
   const mower = group(), boxBody = new T.Group(), model = new T.Group(); mower.add(boxBody, model);
+  {                                                         // a soft contact shadow sets the light mower off the floor
+    const c = document.createElement("canvas"); c.width = c.height = 64;
+    const g = c.getContext("2d"), rg = g.createRadialGradient(32, 32, 4, 32, 32, 32);
+    rg.addColorStop(0, "rgba(29,35,32,.34)"); rg.addColorStop(0.6, "rgba(29,35,32,.18)"); rg.addColorStop(1, "rgba(29,35,32,0)");
+    g.fillStyle = rg; g.fillRect(0, 0, 64, 64);
+    const sh = new T.Mesh(new T.PlaneGeometry(L + 0.24, 2 * HALF_W + 0.24),
+                          new T.MeshBasicMaterial({map: new T.CanvasTexture(c), transparent: true, depthWrite: false}));
+    sh.position.set((FRONT - REAR) / 2, 0, 0.006); mower.add(sh);
+  }
   boxBody.add(new T.Mesh(bodyGeo, new T.MeshLambertMaterial({color: 0xf1f4f2})));
   boxBody.add(new T.LineSegments(bodyEdges, new T.LineBasicMaterial({color: 0x56605a})));
   const wheelGeo = new T.CylinderGeometry(WHEEL_R, WHEEL_R, 0.045, 20), dark = new T.MeshLambertMaterial({color: 0x1b1f1d});
   for (const s of [1, -1]) { const w = new T.Mesh(wheelGeo, dark); w.position.set(0, s * (HALF_W + 0.025), WHEEL_R); boxBody.add(w); }
   const arrow = new T.Shape(ARROW.map(([x, y]) => new T.Vector2(x, y)));
-  const am = new T.Mesh(new T.ShapeGeometry(arrow), new T.MeshBasicMaterial({color: 0x3fd17a, side: T.DoubleSide, transparent: true, opacity: 0.85}));
+  const am = new T.Mesh(new T.ShapeGeometry(arrow), new T.MeshBasicMaterial({color: COL.accent, side: T.DoubleSide, transparent: true, opacity: 0.9}));
   am.position.z = BODY_Z1 + 0.005; mower.add(am);
   const fields = new T.Group(), rays = new T.Group(); mower.add(fields, rays);
   // true mower (sim): dashed outline of the same box
-  const truth = new T.LineSegments(bodyEdges, new T.LineDashedMaterial({color: 0xffffff, dashSize: 0.04, gapSize: 0.03, transparent: true, opacity: 0.8}));
+  const truth = new T.LineSegments(bodyEdges, new T.LineDashedMaterial({color: COL.ink, dashSize: 0.04, gapSize: 0.03, transparent: true, opacity: 0.6}));
   truth.computeLineDistances(); scene.add(truth);
   // trail: a flat ribbon on the ground
   const N = 5000, trailGeo = new T.BufferGeometry();
   trailGeo.setAttribute("position", new T.BufferAttribute(new Float32Array(N * 18), 3));
-  const trailMesh = new T.Mesh(trailGeo, new T.MeshBasicMaterial({color: 0xd9ff6e, transparent: true, opacity: 0.6, side: T.DoubleSide, depthWrite: false}));
+  const trailMesh = new T.Mesh(trailGeo, new T.MeshBasicMaterial({color: COL.trail, transparent: true, opacity: 0.55, side: T.DoubleSide, depthWrite: false}));
   trailMesh.frustumCulled = false; scene.add(trailMesh);
 
   Object.assign(v3, {r, scene, cam3, box, cyl, clsMat, greyMat, greyEdge, blueMat, mower, boxBody, model, arrow3: am, fields, rays,
@@ -791,7 +757,7 @@ function build3dModel() {
 }
 
 // Each sensor: a translucent frustum (rect) or cone from its mount, and its rays (zone centres; cone: centre and two
-// rings) cut where they hit the mower's own parts: free rays light blue to full range, blocked ones orange to the hit.
+// rings) cut where they hit the mower's own parts: free rays blue to full range, blocked ones dark orange to the hit.
 function build3dSensors() {
   if (!v3.ready) return;
   clearGroup(v3.fields); clearGroup(v3.rays);
@@ -801,9 +767,9 @@ function build3dSensors() {
     const g = new T.Group();
     g.position.set(s.x, s.y, s.z); g.rotation.set((s.roll || 0) * DEG, -(s.pitch || 0) * DEG, s.yaw * DEG, "ZYX");
     g.updateMatrix();
-    const R = s.range, color = s.shape === "cone" ? 0xffb347 : 0x4fb2ff;
+    const R = s.range, color = s.shape === "cone" ? 0x1f8a8a : 0x2f5fb3;
     const fMat = new T.MeshBasicMaterial({color, transparent: true, opacity: 0.10, side: T.DoubleSide, depthWrite: false});
-    const eMat = new T.LineBasicMaterial({color, transparent: true, opacity: 0.5});
+    const eMat = new T.LineBasicMaterial({color, transparent: true, opacity: 0.4});
     const dirs = [];
     if (s.shape === "cone") {
       const geo = new T.ConeGeometry(R * Math.tan(s.fov / 2 * DEG), R, 32, 1, true);
@@ -828,7 +794,7 @@ function build3dSensors() {
     }
     v3.fields.add(g);
     // rays in the mower frame (range is radial), cast against the model where the mower stands now
-    const o = new T.Vector3(s.x, s.y, s.z), pos = [], col = [], free = [0.62, 0.85, 1], hit = [1, 0.45, 0.2];
+    const o = new T.Vector3(s.x, s.y, s.z), pos = [], col = [], free = [0.18, 0.37, 0.70], hit = [0.78, 0.30, 0.05];
     let blocked = 0;
     for (const d0 of dirs) {
       const d = new T.Vector3(...d0).normalize().applyEuler(g.rotation);
@@ -865,15 +831,16 @@ function clearGroup(g) {                                    // frees the group's
   for (const c of [...g.children]) { g.remove(c); if (c.geometry && !c.geometry.userData.shared) c.geometry.dispose(); }
 }
 
-// ground: the terrain field as a mesh, one vertex per cell centre; outside it the flat lawn (same material, so no seam)
+// ground: the terrain field as a mesh, one vertex per cell centre; outside it the flat floor (same material, so no seam);
+// the grid flat on the floor and draped over the field
 function sync3dGround() {
   const f = TER.field, key = f ? f.rev : null;
   if (key === v3.groundKey) return;
   v3.groundKey = key;
   const m = v3.ground;
   m.visible = !!f;
-  // the flat lawn around it, with a hole where the field is (the field's edge is at the base height)
-  const L = v3.lawn, x0 = f ? (f.i0 + 0.5) * f.cell : 0, y0 = f ? (f.j0 + 0.5) * f.cell : 0;
+  // the flat floor around it, with a hole where the field is (the field's edge is at the base height)
+  const L = v3.floor, x0 = f ? (f.i0 + 0.5) * f.cell : 0, y0 = f ? (f.j0 + 0.5) * f.cell : 0;
   const x1 = f ? x0 + (f.nx - 1) * f.cell : 0, y1 = f ? y0 + (f.ny - 1) * f.cell : 0, hole = f ? [x0, y0, x1, y1].join() : "";
   if (L.userData.hole !== hole) {
     const R = 600, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, s = new THREE.Shape();
@@ -882,6 +849,7 @@ function sync3dGround() {
     L.geometry.dispose(); L.geometry = new THREE.ShapeGeometry(s); L.userData.hole = hole;
   }
   L.position.z = f ? f.base : 0;
+  sync3dGrid(f, x0, y0, x1, y1);
   if (!f) return;
   if (!m.geometry.userData.dims || m.geometry.userData.dims !== f.nx + "x" + f.ny) {
     m.geometry.dispose();
@@ -903,38 +871,29 @@ function sync3dGround() {
   v3.mapKey = v3.outKey = v3.trailN = null;                 // they sit on the ground: lift them again
 }
 
-// Lawn shader: the grass texture twice (two scales, turned, so it does not visibly repeat), large soft tone patches
-// that fade out before they get too small to resolve, light from the sun on the terrain's slopes, and fog.
-// Mipmaps and anisotropy keep the far grass calm; the near grass is 3 mm per texel.
-function grassMaterial() {
-  const T = THREE, tex = new T.CanvasTexture(GRASS.canvas);
-  tex.wrapS = tex.wrapT = T.RepeatWrapping; tex.anisotropy = v3.r.capabilities.getMaxAnisotropy();
-  tex.minFilter = T.LinearMipmapLinearFilter; tex.generateMipmaps = true;
-  return new T.ShaderMaterial({
-    uniforms: {grass: {value: tex}, sun: {value: new T.Vector3(-0.35, -0.5, 0.8).normalize()},
-               fogC: {value: new T.Color(SKY)}, fogR: {value: new T.Vector2(60, 240)}, tileM: {value: GRASS_M}},
-    extensions: {derivatives: true},
-    vertexShader: `varying vec3 vW; varying vec3 vN; varying float vD;
-      void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal);
-        vec4 mv = viewMatrix * w; vD = -mv.z; gl_Position = projectionMatrix * mv; }`,
-    fragmentShader: `uniform sampler2D grass; uniform vec3 sun; uniform vec3 fogC; uniform vec2 fogR; uniform float tileM;
-      varying vec3 vW; varying vec3 vN; varying float vD;
-      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-      float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-        return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }
-      void main() {
-        vec2 p = vW.xy;
-        vec3 a = texture2D(grass, p / tileM).rgb;
-        vec3 b = texture2D(grass, mat2(0.8, -0.6, 0.6, 0.8) * p / (tileM * 0.37) + 0.31).rgb;
-        vec3 c = mix(a, b, 0.38);
-        float fw = length(fwidth(p));                       // m per pixel here
-        float t = (vnoise(p / 2.6) - 0.5) * (1.0 - smoothstep(0.08, 0.3, fw)) + (vnoise(p / 9.0 + 5.3) - 0.5) * (1.0 - smoothstep(0.3, 1.2, fw));
-        c *= 1.0 + 0.16 * t;
-        vec3 n = normalize(vN);
-        c *= 0.6 + 0.5 * max(dot(n, sun), 0.0);
-        gl_FragColor = vec4(mix(c, fogC, smoothstep(fogR.x, fogR.y, vD)), 1.0);
-      }`,
-  });
+// The 1 m grid (axes darker): flat lines at the floor height outside the field, pieces of one cell over it, just above
+// the terrain, so raised ground never hides it.
+function sync3dGrid(f, fx0, fy0, fx1, fy1) {
+  const pos = [], col = [], cg = new THREE.Color(COL.grid), ca = new THREE.Color(COL.axis), G = GRID_M;
+  const zf = (f ? f.base : 0) + 0.002, step = f ? f.cell : 1;
+  const seg = (ax, ay, az, bx, by, bz, c) => { pos.push(ax, ay, az, bx, by, bz); col.push(c.r, c.g, c.b, c.r, c.g, c.b); };
+  for (let k = -G; k <= G; k++) for (const along of [0, 1]) {   // along 0: the line x = k (runs in y); 1: the line y = k
+    const c = k === 0 ? ca : cg, P = (u, v) => along ? [v, u] : [u, v];
+    const [lo, hi] = along ? [fy0, fy1] : [fx0, fx1], [a0, a1] = along ? [fx0, fx1] : [fy0, fy1];
+    const inside = f && k > lo && k < hi && a1 > -G && a0 < G;
+    if (!inside) { seg(...P(k, -G), zf, ...P(k, G), zf, c); continue; }
+    const b0 = Math.max(-G, a0), b1 = Math.min(G, a1);
+    if (b0 > -G) seg(...P(k, -G), zf, ...P(k, b0), zf, c);
+    if (b1 < G) seg(...P(k, b1), zf, ...P(k, G), zf, c);
+    const n = Math.max(1, Math.ceil((b1 - b0) / step));
+    for (let i = 0; i < n; i++) {
+      const [px, py] = P(k, b0 + (b1 - b0) * i / n), [qx, qy] = P(k, b0 + (b1 - b0) * (i + 1) / n);
+      seg(px, py, heightAt(px, py) + 0.01, qx, qy, heightAt(qx, qy) + 0.01, c);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  v3.grid.geometry.dispose(); v3.grid.geometry = g;
 }
 
 function sync3dMap() {
@@ -1227,7 +1186,7 @@ function openDrawer(open) {
 $("menu").onclick = () => openDrawer(true);
 $("close").onclick = $("scrim").onclick = () => openDrawer(false);
 for (const b of document.querySelectorAll("[data-cmd]")) b.onclick = () => cmd(b.dataset.cmd);
-$("legend").innerHTML = [[CLS.wall.color, "wall"], [CLS.low.color, "low edge"], [CLS.post.color, "post"], ["#4fb2ff", "outline"], ["#d9ff6e", "trail"]]
+$("legend").innerHTML = [[CLS.wall.color, "wall"], [CLS.low.color, "low edge"], [CLS.post.color, "post"], [COL.outline, "outline"], [COL.trail, "trail"]]
   .map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join("");
 for (const k of ["fields", "rays", "truth"]) {
   const el = $("o-" + k); el.checked = !!prefs[k];
