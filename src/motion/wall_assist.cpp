@@ -1085,7 +1085,11 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
           float kt = copysignf((1.0f - cosf(a)) / fabsf(off), a);
           if (kt * k >= 0.0f && fabsf(kt) > fabsf(k)) k = kt;
         }
-        steer(k, pivot, lin, fabsf(k) < 0.4f ? lin : TOF_WALL_MAX_SPEED, &v, &w);   // user speed until it curves
+        // User speed until it curves, and while the follow line is still far (HIL approach_45 2026-11-02: 6 s of
+        // ALIGN at the following speed from 1.1 m off); down to the following speed over the last TOF_ALIGN_SLOW_OFF
+        float far = fminf(1.0f, fmaxf(0.0f, (fabsf(off) - TOF_ALIGN_DONE_DIST) / TOF_ALIGN_SLOW_OFF));
+        float cap = fabsf(k) < 0.4f ? lin : TOF_WALL_MAX_SPEED + far * fmaxf(0.0f, lin - TOF_WALL_MAX_SPEED);
+        steer(k, pivot, lin, cap, &v, &w);
       }
     }
 
@@ -1344,8 +1348,9 @@ void wall_assist_print_status() {
                        l[s].x_max, open[s] ? ", open space ahead" : "");
   SerialDebug.printf("[WALL] ahead %s: %.2f m from the axle, %+.0f deg, %d inliers\r\n",
                      a.valid ? "valid" : "none ", a.dist, a.angle * 180.0f / M_PI, a.inliers);
-  uint32_t n, mean_us, max_us;
-  planner_stats(&n, &mean_us, &max_us);
-  SerialDebug.printf("[WALL] planner: %lu plans, %lu us mean, %lu us max\r\n", (unsigned long)n, (unsigned long)mean_us,
-                     (unsigned long)max_us);
+  PlanStats ps;
+  planner_stats(&ps);
+  SerialDebug.printf("[WALL] planner: %lu plans, %lu us mean, %lu us max; per plan %lu poses, %lu points, %lu dist mean, %lu dist max\r\n",
+                     (unsigned long)ps.n, (unsigned long)ps.mean_us, (unsigned long)ps.max_us, (unsigned long)ps.poses,
+                     (unsigned long)ps.pts, (unsigned long)ps.dist, (unsigned long)ps.dist_max);
 }

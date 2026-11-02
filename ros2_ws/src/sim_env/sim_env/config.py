@@ -36,9 +36,14 @@ def resolve(path, base_dir):
     """Expand ``~``/env vars and ``package://<pkg>/...``; make relative paths absolute."""
     path = os.path.expandvars(os.path.expanduser(path))
     if path.startswith('package://'):
-        from ament_index_python.packages import get_package_share_directory
         pkg, _, rest = path[len('package://'):].partition('/')
-        return os.path.join(get_package_share_directory(pkg), rest)
+        try:
+            from ament_index_python.packages import get_package_share_directory
+            return os.path.join(get_package_share_directory(pkg), rest)
+        except ImportError:
+            # No ROS (tools/wall_bench): the package's source folder, laid out like its share folder
+            src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', pkg, rest)
+            return os.path.normpath(src)
     return path if os.path.isabs(path) else os.path.normpath(os.path.join(base_dir, path))
 
 

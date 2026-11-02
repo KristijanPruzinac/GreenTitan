@@ -489,8 +489,7 @@ def run(name, seed=0, world=None, plot=None, slip=0.0, terrain='flat', plot_fail
            'log': [(t, s) for t, s in r.log if '[WALL]' in s]}
     pl = [s for _, s in r.log if '[WALL] planner:' in s]
     if pl:
-        n, mean, mx = (int(x) for x in re.findall(r'(\d+) (?:plans|us)', pl[-1]))
-        res['planner'] = {'n': n, 'mean_us': mean, 'max_us': mx}
+        res['planner'] = {k: int(v) for v, k in re.findall(r'(\d+) (plans|us mean|us max|poses|points|dist mean|dist max)', pl[-1])}
     if plot and not (plot_failed_only and res['pass']):
         fails = ', '.join(f'{c}: {d}' for c, ok, d in checks if not ok)
         bench.plot(r, m, plot, f'{name} seed {seed}: ' + ('PASS' if res['pass'] else 'FAIL ' + fails))

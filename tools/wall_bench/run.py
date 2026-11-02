@@ -38,6 +38,8 @@ def main():
     for c, ok, d in res['checks']:
         print(f"  {'ok  ' if ok else 'FAIL'} {c:9s} {d}")
     bench.print_metrics(res['metrics'])
+    if 'planner' in res:
+        print('  planner ' + ', '.join(f'{k} {v}' for k, v in res['planner'].items()))
 
 
 if __name__ == '__main__':

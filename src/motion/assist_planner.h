@@ -18,6 +18,10 @@
 #define PLAN_FINE_DT 0.05f        // s per step for the first PLAN_FINE_STEPS (2.3 cm of travel at 0.45 m/s) ...
 #define PLAN_FINE_STEPS 12
 #define PLAN_COARSE_DT 0.15f      // ... then coarser
+#define PLAN_CLEAR_EVERY 3        // fine steps per clearance (comfort) check (0.15 s) ...
+#define PLAN_CLEAR_EVERY_COARSE 1 // ... and coarse ones (each); between, a pose is checked only where a point may come
+                                  // too close by now (the last check's nearest point less the travel since)
+#define PLAN_SKIP_REACH 0.10f     // m beyond the clearance those in-between checks look (how far they let it skip)
 #define PLAN_WHEEL_ACCEL 0.35f    // m/s^2 per wheel: motor_task's ramp (MOTOR_ACCELERATION at the wheel)
 #define PLAN_SOFT_DECEL 0.06f     // m/s^2 at the wheels: the score's braking (the guard's is TOF_GUARD_DECEL)
 #define PLAN_COMFORT 0.30f       // m, body clearance below which a rollout is scored down ...
@@ -74,6 +78,8 @@ void planner_set_obstacles(const float* mx, const float* my, const bool* use, in
 PlanResult planner_plan(const PlanRequest& rq, float w_exact, PlanResult* exact);
 // A turn on the spot at rate w: its admissible scale and clearance
 PlanResult planner_turn(const PlanRequest& rq, float w);
-void planner_stats(uint32_t* n, uint32_t* mean_us, uint32_t* max_us);   // cost of planner_plan since boot
+// Cost of planner_plan since boot: time (micros(), so it includes other tasks running meanwhile) and work per plan
+struct PlanStats { uint32_t n, mean_us, max_us, poses, pts, dist, dist_max; };
+void planner_stats(PlanStats* st);
 
 #endif
