@@ -583,6 +583,21 @@ void gps_topic_callback(dds_callback_context_t* context) {
             }
         }
     }
+    // Parked: the EKF gets yaw only as gyro changes, so nothing held its absolute yaw, and GPS
+    // position and velocity noise leaked into it (HIL 2026-11-02: +-5 deg over 4 min parked with the
+    // gyro yaw steady to 0.03 deg). While imu_task finds the mower still and the heading is known,
+    // the yaw from the moment it stopped is sent back as a measurement; it is released at the first
+    // block that is not still (driving, or a push).
+    static bool holding = false;
+    static double held_yaw = 0.0;
+    if (yaw_var >= 1e6 && HEADING_CONFIRMED && imu_still()) {
+        if (!holding) held_yaw = fused_yaw_for_twist;
+        holding = true;
+        yaw_meas = held_yaw;
+        yaw_var = GPS_STILL_YAW_VAR;
+    } else {
+        holding = false;
+    }
     gps_msg.pose.covariance[35] = yaw_var;
     double half = yaw_meas * 0.5;
     gps_msg.pose.pose.orientation.x = 0.0;

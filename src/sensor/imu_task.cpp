@@ -108,6 +108,9 @@ static double blk_t0 = 0.0, blk_yaw0 = 0.0, blk_sum = 0.0, blk_sum_sq = 0.0;
 static int blk_n = 0;
 static double win_sum = 0.0, win_t = 0.0;
 static int win_n = 0;
+static volatile bool still_now = false;                    // the last block was still
+
+bool imu_still() { return still_now; }
 
 // Returns the yaw to keep: blk_yaw0 when a still block ends, else yaw unchanged
 static double imu_still_step(double now, double prev_t, double raw_z, double yaw_before, double yaw){
@@ -117,6 +120,7 @@ static double imu_still_step(double now, double prev_t, double raw_z, double yaw
   bool gate = now - still_wheels_t >= IMU_STILL_SETTLE &&
               millis() - gps_speed_ms < 500 && gps_speed < IMU_STILL_GPS_SPEED;
   if (!gate) {
+    still_now = false;
     blk_n = 0;
     win_n = 0; win_sum = win_t = 0.0;
     return yaw;
@@ -133,6 +137,7 @@ static double imu_still_step(double now, double prev_t, double raw_z, double yaw
   // 2026-11-02, a boot calibration 0.26 deg/s off was not relearnt for 3 min under IMU_STILL_RATE
   double max_rate = now - still_wheels_t >= IMU_STILL_PARKED ? IMU_STILL_PARKED_RATE : IMU_STILL_RATE;
   bool still = fabs(mean - gyro_z_offset) < max_rate && sd < IMU_CALIBRATION_MAX_STD;
+  still_now = still;
   double keep = yaw;
   if (still) {
     keep = blk_yaw0;   // the yaw holds over the block

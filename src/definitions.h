@@ -408,6 +408,7 @@ typedef struct {
 #define GPS_YAW_RELOCK                    10     // GPS yaws in a row outside the gate (2 s of driving): fuse the next anyway
 #define GPS_YAW_CONFIRM                   5      // GPS yaws in a row inside the gate (~1 s of driving): the heading counts as known
 #define GPS_YAW_CONFIRM_DEG               15.0   // ... and each within this of the EKF yaw
+#define GPS_STILL_YAW_VAR                 3e-4   // rad^2 ((1 deg)^2): parked with the heading known, gps/odom holds the yaw from the stop
 #define MOTION_POSE_TIMEOUT_MS            500    // stop driving if /fused_pose (10 Hz) goes quiet
 #define MOTION_STALL_DIST                0.10f  // m: driving forward but moved less than this ...
 #define MOTION_STALL_TIME_MS              4000   // ... for this long = stalled (obstacle signal)
