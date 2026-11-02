@@ -46,7 +46,19 @@ static float yaw;
 static float linear_vel;
 static float rotation_vel;
 
-static int mode = WAITING; // WAITING, MOVING, MOTION_PAUSE
+static int mode = WAITING; // WAITING, MOVING, MOVING_REVERSE, MOTION_PAUSE
+
+// Speed cap for the queued path (docking approach): 0 = the path's own profile
+static float speed_cap = 0.0f;
+
+// Reverse line follower (MOVING_REVERSE, docking): the axle backs along the line rev_a -> rev_b.
+// Closed loop on the fused pose: slip and bumps bend any "straight" drive, so the heading command is
+// the line heading plus a pure-pursuit style cross-track correction, never an open heading hold.
+static double rev_ax, rev_ay, rev_ux, rev_uy, rev_len;
+static float  rev_speed;
+static bool   rev_gyro_heading = false;   // heading = rev_yaw0 + gyro turn since the start
+static float  rev_yaw0;
+static double rev_gyro0;
 
 static bool     teleport_active   = false;
 static uint32_t teleport_deadline = 0;
@@ -126,6 +138,7 @@ static void start_turn() {
 // Stop the wheels and drop the path; also drops queued messages (a real stop)
 static void motion_stop() {
     mode = WAITING;
+    speed_cap = 0.0f;
     path.clear();
     point_requested = false;
     publish_motor(MOTOR_STOP, 0.0f, 0.0f);
@@ -157,13 +170,90 @@ static void motion_add_point(double px, double py, uint8_t tool, int8_t edge) {
     request_point();
 }
 
+static void reverse_start(const motion_command_t* c) {
+    if (!imu_ready()) {
+        SerialDebug.printf("[MOTION] Gyro not calibrated, not driving\r\n");
+        return;
+    }
+    path.clear();
+    point_requested = false;
+    speed_cap = 0.0f;
+    rev_ax = c->start_x;
+    rev_ay = c->start_y;
+    double dx = c->end_x - c->start_x, dy = c->end_y - c->start_y;
+    rev_len = hypot(dx, dy);
+    if (rev_len < 0.01) {
+        signal_controller(SIGNAL_MOTION_DONE);
+        return;
+    }
+    rev_ux = dx / rev_len;
+    rev_uy = dy / rev_len;
+    rev_speed = c->speed > 0.0f ? fminf(c->speed, MOTION_REVERSE_SPEED_MAX) : MOTION_REVERSE_SPEED_MAX;
+    rev_gyro_heading = !isnan(c->start_yaw) && imu_yaw_now(&rev_gyro0);
+    rev_yaw0 = c->start_yaw;
+    mode = MOVING_REVERSE;
+    stall_anchor_set = false;
+    last_pose_ms = millis();
+    last_speed = 0.0f;
+    SerialDebug.printf("[MOTION] Reverse %.2f m along (%.2f, %.2f) -> (%.2f, %.2f)\r\n",
+                       rev_len, c->start_x, c->start_y, c->end_x, c->end_y);
+}
+
+// One step of the reverse line follower (axle point: stable backing up as well as forward)
+static void reverse_update(uint32_t now_ms) {
+    float h = yaw;
+    double g;
+    if (rev_gyro_heading && imu_yaw_now(&g)) h = normalize_angle(rev_yaw0 + (float)(g - rev_gyro0));
+    double ax = x + GNSS_ANTENNA_BEHIND_AXLE * cos(h);
+    double ay = y + GNSS_ANTENNA_BEHIND_AXLE * sin(h);
+    double px = ax - rev_ax, py = ay - rev_ay;
+    double s = px * rev_ux + py * rev_uy;           // progress along the line
+    double e = -px * rev_uy + py * rev_ux;          // axle left of the line
+    if (s >= rev_len) {
+        SerialDebug.printf("[MOTION] Reverse end at (%.2f, %.2f), %.1f cm off the line\r\n", x, y, e * 100.0);
+        mode = WAITING;
+        publish_motor(MOTOR_STOP, 0.0f, 0.0f);
+        signal_controller(SIGNAL_MOTION_DONE);
+        return;
+    }
+    // Backing up, the axle travels along yaw + pi: aim that direction back at the line
+    float line = atan2f((float)rev_uy, (float)rev_ux);
+    float travel = line - atanf((float)e / MOTION_REVERSE_LOOKAHEAD);
+    float want_yaw = normalize_angle(travel + (float)M_PI);
+    float err = normalize_angle(want_yaw - h);
+    float w = fmaxf(-MAX_ANGULAR_VEL, fminf(MAX_ANGULAR_VEL, MOTION_ROTATE_GAIN * err));
+    float v = 0.0f;
+    if (fabsf(err) < MOTION_REVERSE_MAX_HEADING_ERROR) {   // far off: turn on the spot first
+        float speed = fminf(rev_speed, last_speed + nav_config.accel / MOTION_UPDATE_FREQUENCY);
+        speed = fminf(speed, fmaxf((float)(rev_len - s) * 2.0f, nav_config.v_min));   // ease into the end
+        v = -speed;
+    }
+    last_speed = -v;
+
+    // Stall: backing up but the fused position does not move (a wall behind, wheels spinning)
+    if (!stall_anchor_set || v == 0.0f ||
+        DistanceBetweenPoints(x, y, stall_anchor_x, stall_anchor_y) > MOTION_STALL_DIST) {
+        stall_anchor_set = true;
+        stall_anchor_x = x;
+        stall_anchor_y = y;
+        stall_anchor_ms = now_ms;
+    }
+    if (now_ms - stall_anchor_ms > MOTION_STALL_TIME_MS) {
+        SerialDebug.printf("[MOTION] Stalled reversing at (%.2f, %.2f), stopping\r\n", x, y);
+        motion_stop();
+        signal_controller(SIGNAL_OBSTACLE);
+        return;
+    }
+    publish_motor(MOTOR_MOVE, v, w);
+}
+
 // The poses come 0.1 s apart only on average; the gap report shows how often one is late
 // (HIL 2026-10-29: a third of them, ARCHITECTURE item 26).
 static void pose_updated_callback(dds_callback_context_t* context) {
     fused_pose_data_t* data = (fused_pose_data_t*)context->message_data.data;
 
     uint32_t now_ms = millis();
-    if (mode == MOVING) {
+    if (mode == MOVING || mode == MOVING_REVERSE) {
         uint32_t gap = now_ms - last_pose_ms;
         gap_count++;
         if (gap > MOTION_POSE_GAP_LONG_MS) gap_long++;
@@ -189,6 +279,10 @@ static void pose_updated_callback(dds_callback_context_t* context) {
         SerialDebug.printf("[MOTION] Pose resumed\r\n");
     }
 
+    if (mode == MOVING_REVERSE) {
+        reverse_update(now_ms);
+        return;
+    }
     if (mode != MOVING || !path.active()) return;
 
     // The navigation core works on the wheel axle, the point a diff drive steers directly.
@@ -215,6 +309,7 @@ static void pose_updated_callback(dds_callback_context_t* context) {
         }
         SerialDebug.printf("[MOTION] Path end at (%.2f, %.2f)\r\n", x, y);
         mode = WAITING;
+        speed_cap = 0.0f;
         publish_motor(MOTOR_STOP, 0.0f, 0.0f);
         signal_controller(SIGNAL_MOTION_DONE);
         return;
@@ -236,8 +331,9 @@ static void pose_updated_callback(dds_callback_context_t* context) {
 #endif
         // Planned speed, ramped up no faster than the path acceleration (the wheel ramps then
         // keep the commanded curvature), never below creep speed so the end still closes
+        float v_ref = speed_cap > 0.0f ? fminf(ref.speed, speed_cap) : ref.speed;
         linear_cmd = fmaxf(nav_config.v_min,
-                           fminf(ref.speed, last_speed + nav_config.accel / MOTION_UPDATE_FREQUENCY));
+                           fminf(v_ref, last_speed + nav_config.accel / MOTION_UPDATE_FREQUENCY));
         rotation_cmd = linear_cmd * curvature;
         if (fabsf(rotation_cmd) > MAX_ANGULAR_VEL) {   // keep the curvature, slow down instead
             linear_cmd = MAX_ANGULAR_VEL / fabsf(curvature);
@@ -298,7 +394,11 @@ static void motion_command_callback(dds_callback_context_t* context) {
             return;
         }
 
+        if (!path.active()) speed_cap = data->speed;   // a cap holds for the path it starts
         motion_add_point(data->end_x, data->end_y, data->tool, data->edge);
+    }
+    else if (data->mode == MOVING_REVERSE) {
+        reverse_start(data);
     }
 }
 
@@ -359,7 +459,7 @@ void motion_task(void* parameter) {
 
             // Pose watchdog: without fresh poses the last MOTOR_MOVE would keep running.
             // Stop the wheels but stay in MOVING, so the next pose resumes path following.
-            if (mode == MOVING && !pose_stale && (millis() - last_pose_ms) > MOTION_POSE_TIMEOUT_MS) {
+            if ((mode == MOVING || mode == MOVING_REVERSE) && !pose_stale && (millis() - last_pose_ms) > MOTION_POSE_TIMEOUT_MS) {
                 pose_stale = true;
                 publish_motor(MOTOR_STOP, 0.0f, 0.0f);
                 last_speed = 0.0f;

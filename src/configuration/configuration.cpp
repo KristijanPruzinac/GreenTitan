@@ -1,4 +1,5 @@
 #include "configuration.h"
+#include "../controller/dock.h"
 
 #define PREF_NAMESPACE     "config"
 #define PREF_NAMESPACE_ALG "config_alg"
@@ -94,4 +95,29 @@ FileResult LoadConfiguration() {
     }
 
     return SUCCESS;
+}
+
+#define PREF_NAMESPACE_STATION "station"
+
+FileResult SaveStation() {
+    if (!prefs.begin(PREF_NAMESPACE_STATION, false)) return INIT_FAILED;
+    prefs.putBool  ("SET", DOCK_STATION.set);
+    prefs.putDouble("X",   DOCK_STATION.x);
+    prefs.putDouble("Y",   DOCK_STATION.y);
+    prefs.putFloat ("YAW", DOCK_STATION.yaw);
+    prefs.putUShort("N",   DOCK_STATION.n);
+    prefs.end();
+    return SUCCESS;
+}
+
+void LoadStation() {
+    if (!prefs.begin(PREF_NAMESPACE_STATION, true)) return;
+    if (prefs.isKey("SET")) {
+        DOCK_STATION.set = prefs.getBool  ("SET", false);
+        DOCK_STATION.x   = prefs.getDouble("X",   0.0);
+        DOCK_STATION.y   = prefs.getDouble("Y",   0.0);
+        DOCK_STATION.yaw = prefs.getFloat ("YAW", 0.0f);
+        DOCK_STATION.n   = prefs.getUShort("N",   0);
+    }
+    prefs.end();
 }

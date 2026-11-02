@@ -1,0 +1,45 @@
+// Docking helpers for controller_task (ARCHITECTURE §7 "Docking"): power sensing, the RTK track
+// recorder and heading estimator, and the station pose estimate with outlier gating.
+#ifndef DOCK_H
+#define DOCK_H
+
+#include "Arduino.h"
+#include "../definitions.h"
+
+// ---- Power: contact-plate and pack voltage. Real board: the GPIO34/36 dividers (POWER_ADC_FITTED);
+// HIL: hil/power. Without either, the dock reads 0 V and the battery as unknown.
+void  power_init();
+void  power_poll();                 // read both once (controller tick)
+float power_dock_v();
+bool  power_contact();              // dock_v > DOCK_V_MIN in the last poll
+bool  power_battery_known();
+float power_battery_v();
+int   power_battery_pct();          // 0..100 linear between BATTERY_V_EMPTY and BATTERY_V_FULL, -1 unknown
+
+// ---- Track: base_link positions (EKF, RTK-dominated) with the integrated gyro yaw at each.
+struct dock_sample_t { double x, y; double gyro; };
+void dock_track_reset();
+bool dock_track_add(double x, double y, double gyro);   // false when full
+int  dock_track_count();
+const dock_sample_t& dock_track_at(int i);
+
+// Heading of the mower at sample `ref`, from the track: every segment's direction of travel turned
+// back by the gyro change between it and `ref` (so curves from slip or bumps don't bias it), summed
+// into chords from each sample to `ref`; each chord >= DOCK_MIN_CHORD gives one estimate, `yaw` is
+// their circular mean and `spread_deg` their RMS about it. `reverse`: the track was driven backwards.
+// The positions are base_link; they are moved to the axle with the estimate (2 passes from yaw_guess).
+// Returns false with fewer than 3 estimates. `chord_m`: the longest chord.
+bool dock_track_heading(int ref, bool reverse, float yaw_guess, float* yaw, float* spread_deg, float* chord_m);
+
+// ---- Station estimate (odom; axle at contact + heading into the station). Persisted in NVS.
+struct dock_station_t { bool set; double x, y; float yaw; uint16_t n; };
+extern dock_station_t DOCK_STATION;
+
+enum dock_measure_result { DOCK_MEAS_ACCEPTED, DOCK_MEAS_GATED, DOCK_MEAS_ADOPTED };
+void dock_station_init(double x, double y, float yaw);   // a new station (set station): forget history
+// One measurement from a clean dock: within DOCK_GATE_SIGMAS of the recent ones -> blended in with
+// DOCK_EST_WEIGHT; otherwise held back; DOCK_MOVE_COUNT held-back ones in a row that agree with each
+// other -> their mean is adopted (the station was moved). Logged, never a user message.
+int dock_station_measure(double x, double y, float yaw);
+
+#endif

@@ -54,5 +54,8 @@ extern bool AlgorithmPopulatePathFromString(String& readData);
 FileResult InitConfiguration();
 FileResult SaveConfiguration();
 FileResult LoadConfiguration();
+// Charging station pose (DOCK_STATION, controller/dock.h), own namespace: written after every dock
+FileResult SaveStation();
+void LoadStation();
 
 #endif

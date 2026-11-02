@@ -112,13 +112,18 @@ static void motor_stop() {
   xQueueReset(thread_context.queue); // Clear any pending motor commands to prevent them from executing after a stop command
 }
 
+static volatile bool blade_on = false;
+bool motor_blade_on() { return blade_on; }
+
 static void motor_main_on() {
+  blade_on = true;
   if (SIMULATION_ENABLED) return;
 
   digitalWrite(MOTOR_MAIN, HIGH);
 }
 
 static void motor_main_off() {
+  blade_on = false;
   if (SIMULATION_ENABLED) return;
 
   digitalWrite(MOTOR_MAIN, LOW);

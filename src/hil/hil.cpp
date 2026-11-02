@@ -100,3 +100,24 @@ bool hil_imu_get(hil_imu_sample_t* sample) {
   last_stamp = sample->stamp;
   return true;
 }
+
+static portMUX_TYPE power_mux = portMUX_INITIALIZER_UNLOCKED;
+static float power_dock_v = 0.0f, power_battery_v = 0.0f;
+static uint32_t power_ms = 0;
+
+void hil_power_set(float dock_v, float battery_v) {
+  portENTER_CRITICAL(&power_mux);
+  power_dock_v = dock_v;
+  power_battery_v = battery_v;
+  power_ms = millis();
+  portEXIT_CRITICAL(&power_mux);
+}
+
+bool hil_power_get(float* dock_v, float* battery_v) {
+  portENTER_CRITICAL(&power_mux);
+  uint32_t t = power_ms;
+  *dock_v = power_dock_v;
+  *battery_v = power_battery_v;
+  portEXIT_CRITICAL(&power_mux);
+  return t != 0 && millis() - t < 1000;
+}

@@ -36,4 +36,9 @@ bool hil_imu_get(hil_imu_sample_t* sample);
 void hil_tof_push(const uint8_t* data, size_t len);
 bool hil_tof_get(int sensor, tof_frame_t* frame);
 
+// Contact-plate and pack voltage (V) from hil/power, in place of the two ADC dividers.
+// hil_power_get returns false until the first message and when the last is older than 1 s.
+void hil_power_set(float dock_v, float battery_v);
+bool hil_power_get(float* dock_v, float* battery_v);
+
 #endif

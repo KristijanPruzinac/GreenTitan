@@ -134,6 +134,11 @@ static void gps_read() {
     if ( ubx_parse(gps_read_byte()) ) new_frame = true;
   }
 
+  if (new_frame) {   // RTK solution for the docking moves (bits 6-7 of flags: 0 none, 1 float, 2 fixed)
+    GPS_CARR_SOLN = (pvt.fixType >= 3) ? (uint8_t)(((uint8_t)pvt.flags >> 6) & 3) : 0;
+    GPS_CARR_SOLN_MS = millis();
+  }
+
   //Publish GPS data once per new valid frame
   if (new_frame && pvt.hAcc > 0 && pvt.fixType >= 3) { // 3 = 3D fix, 4 = GNSS+DeadReckoning
     double heading_deg = (double)pvt.heading / 1e5;
