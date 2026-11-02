@@ -78,6 +78,7 @@ typedef struct {
 #define DOCK_SET_MAX_SPREAD_DEG 2.5f   // per-sample heading estimates must agree this well (RMS); straight 1.5 m, 1 cm RTK: 0.55 typ., 2 cm bump jolts: 1.66 p95
 #define DOCK_MEAS_MIN_TRACK 0.8f       // m of approach track for a dock to count as a measurement
 #define DOCK_MIN_CHORD 0.6f            // m, per-sample heading estimates use chords at least this long
+#define DOCK_MAX_DRIFT_DEG 3.0f      // long-chord minus short-chord heading: a sideways slide (rails), not noise (2 cm jolts: 2.5 max)
 #define DOCK_RTK_MAX_AGE_MS 1000       // RTK fixed must have been reported within this
 #define DOCK_RTK_WAIT_MS 60000        // Set station / Home before the RTK fix (boot: float first) waits this long, quietly
 #define DOCK_EST_WEIGHT 0.2f           // weight of one accepted dock measurement in the running estimate
@@ -660,6 +661,7 @@ enum controller_signal {
     SIGNAL_GO_HOME,             // console H: dock now
     SIGNAL_UNDOCK,              // console U: reverse out of the station and stay
     SIGNAL_SET_STATION,         // console S: docked by hand -> measure the station pose
+    SIGNAL_FORGET_STATION,      // console X: no station known (tests; the next hand dock measures it)
 };
 
 typedef struct {

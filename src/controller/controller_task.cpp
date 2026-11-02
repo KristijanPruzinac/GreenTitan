@@ -144,12 +144,15 @@ static void go_to_base() {
     plan_from_here(COVERAGE_HOME, false);
 }
 
+static bool manual_departure();
+
 static void enter_manual_mode() {
     if (robot_state != ROBOT_STATE_IDLE && robot_state != ROBOT_STATE_CHARGING &&
         robot_state != ROBOT_STATE_DOCK_FAILED) {
         SerialDebug.printf("[CTRL] Manual ON rejected: must be IDLE (state=%d)\r\n", robot_state);
         return;
     }
+    if (manual_departure()) return;   // docked, no station yet: measure it on the way out first
 
     SerialDebug.println("[CTRL] Manual mode ON");
 
@@ -242,6 +245,13 @@ static fused_pose_data_t prev_pose;
 static double   prev_gyro = 0.0;
 static bool     prev_pose_ok = false;
 static uint32_t gps_seen_ms = 0;           // last /gps the track sampled
+// The station back-out (DP_SET_BACKOUT): console S, or the first departure with no station known.
+// What comes after it: THEN_VERIFY (S) docks right away to verify; the others go on with the
+// departure and the next dock verifies.
+enum { THEN_VERIFY, THEN_IDLE, THEN_MOW, THEN_MANUAL };
+static int      backout_then = THEN_VERIFY;
+static bool     backout_clean = true;      // RTK fixed all the way out (automatic back-out)
+static bool     undock_meas = false;       // this undock from the station records a measurement
 
 static double st_ux() { return cos(DOCK_STATION.yaw); }
 static double st_uy() { return sin(DOCK_STATION.yaw); }
@@ -267,7 +277,9 @@ static bool rtk_fixed() {
 
 // Set station / Home pressed before the RTK fix (a receiver starts in float after boot) or before
 // the gyro calibration: the request waits quietly, up to DOCK_RTK_WAIT_MS, and runs when both are
-// there. 0 = nothing waiting, else the console key ('S', 'H').
+// there. 0 = nothing waiting, else 'S' (set station), 'H' (home), or 'U' / 'M' (the first departure
+// from a hand dock, undock / mission: it measures the station on the way out; after the wait it
+// leaves unmeasured).
 static char     wait_cmd = 0;
 static uint32_t wait_ms = 0;
 
@@ -386,7 +398,7 @@ static void go_home(bool from_mission, bool resume) {
         return;
     }
     if (!DOCK_STATION.set) {
-        SerialDebug.printf("[DOCK] No station set: dock by hand, then set station (console S)\r\n");
+        SerialDebug.printf("[DOCK] No station set: dock the mower by hand once, it measures the station as it leaves\r\n");
         return;
     }
     resume_after_charge = resume;
@@ -411,8 +423,8 @@ static void docked() {
     SerialDebug.printf("[DOCK] Docked after %d approach(es)\r\n", dock_attempt + 1);
     // The contact pose is the track's last sample: the heading there from the turned-back track
     dock_track_add(contact_pose.x, contact_pose.y, contact_gyro);
-    float yaw, spread, chord;
-    bool ok = dock_track_heading(dock_track_count() - 1, false, contact_pose.yaw, &yaw, &spread, &chord);
+    float yaw, spread, chord, drift;
+    bool ok = dock_track_heading(dock_track_count() - 1, false, contact_pose.yaw, &yaw, &spread, &chord, &drift);
     if (dock_verifying) {
         dock_verifying = false;
         SaveStation();
@@ -424,8 +436,9 @@ static void docked() {
         SerialDebug.printf("[DOCK] Not a measurement (retries, creep or no RTK fix on the approach)\r\n");
         return;
     }
-    if (!ok || chord < DOCK_MEAS_MIN_TRACK || spread > DOCK_SET_MAX_SPREAD_DEG) {
-        SerialDebug.printf("[DOCK] Not a measurement (track %.2f m, spread %.2f deg)\r\n", ok ? chord : 0.0f, ok ? spread : 0.0f);
+    if (!ok || chord < DOCK_MEAS_MIN_TRACK || spread > DOCK_SET_MAX_SPREAD_DEG || fabsf(drift) > DOCK_MAX_DRIFT_DEG) {
+        SerialDebug.printf("[DOCK] Not a measurement (track %.2f m, spread %.2f deg, drift %.2f deg)\r\n",
+                           ok ? chord : 0.0f, ok ? spread : 0.0f, ok ? drift : 0.0f);
         return;
     }
     double cx = contact_pose.x + GNSS_ANTENNA_BEHIND_AXLE * cos(yaw);
@@ -437,7 +450,47 @@ static void docked() {
     log_station();
 }
 
-static void start_undock(bool then_mow) {
+// The station back-out: reverse straight out DOCK_SET_BACKOUT on a gyro heading hold from the parked
+// heading (no position line: the parked EKF yaw may be far off at boot, and a line along it bent the
+// real track by that error; a relock halfway changes nothing), recording the RTK track from the
+// moment the contacts open. The heading at the contact comes from that track turned back by the gyro
+// (dock_track_heading), never from the parked EKF yaw.
+static void begin_backout(const fused_pose_data_t& p, int then) {
+    double sx = p.x + GNSS_ANTENNA_BEHIND_AXLE * cos(p.yaw), sy = p.y + GNSS_ANTENNA_BEHIND_AXLE * sin(p.yaw);
+    double ex = sx - DOCK_SET_BACKOUT * cos(p.yaw), ey = sy - DOCK_SET_BACKOUT * sin(p.yaw);
+    dock_track_reset();
+    set_dropped = false;
+    backout_then = then;
+    backout_clean = true;
+    dock_phase = DP_SET_BACKOUT;
+    phase_ms = millis();
+    if (then == THEN_VERIFY) {
+        set_state(ROBOT_STATE_SETTING_STATION);
+        SerialDebug.printf("[DOCK] Setting station: reversing out %.1f m\r\n", DOCK_SET_BACKOUT);
+    } else {   // the user sees an ordinary undock
+        set_state(ROBOT_STATE_UNDOCKING);
+        SerialDebug.printf("[DOCK] No station yet: measuring it on the way out (%.1f m)\r\n", DOCK_SET_BACKOUT);
+    }
+    motion_stop();
+    motor_main_off();
+    motion_reverse(sx, sy, ex, ey, p.yaw);
+}
+
+// Docked (contacts live), no station known, RTK fixed: the departure starts with the station back-out
+static bool station_unknown_here() { return !DOCK_STATION.set && power_contact(); }
+
+// Take over while docked with no station: the back-out first, then the stick (backout_continue)
+static bool manual_departure() {
+    if (robot_state != ROBOT_STATE_CHARGING || !station_unknown_here() || !rtk_fixed() || !imu_ready()) return false;
+    fused_pose_data_t p;
+    if (!fused_pose_now(&p)) return false;
+    begin_backout(p, THEN_MANUAL);
+    return true;
+}
+
+// `may_wait`: docked with no station and no RTK fix yet, wait quietly for the fix (up to
+// DOCK_RTK_WAIT_MS) so the departure can measure the station; false = go without measuring.
+static void start_undock(bool then_mow, bool may_wait = true) {
     if (robot_state != ROBOT_STATE_CHARGING && robot_state != ROBOT_STATE_DOCK_FAILED && robot_state != ROBOT_STATE_IDLE) {
         SerialDebug.printf("[DOCK] Cannot undock from state %s\r\n", state_name(robot_state));
         return;
@@ -451,6 +504,17 @@ static void start_undock(bool then_mow) {
         SerialDebug.printf("[DOCK] Cannot undock: no pose\r\n");
         return;
     }
+    if (station_unknown_here()) {   // the first departure from a station docked by hand: measure it
+        if (rtk_fixed()) {
+            begin_backout(p, then_mow ? THEN_MOW : THEN_IDLE);
+            return;
+        }
+        if (may_wait) {
+            ready_or_wait(then_mow ? 'M' : 'U');
+            return;
+        }
+        SerialDebug.printf("[DOCK] No RTK fix: the station is measured on a later departure\r\n");
+    }
     mow_after_undock = then_mow;
     double sx, sy, ex, ey;
     float start_yaw = NAN;
@@ -459,11 +523,17 @@ static void start_undock(bool then_mow) {
         st_point(0.0f, 0.0f, &sx, &sy);
         st_point(-DOCK_UNDOCK_DIST, 0.0f, &ex, &ey);
         if (!HEADING_CONFIRMED) start_yaw = DOCK_STATION.yaw;
+        // Every undock from the station is also a measurement of it (an unverified one is not refined)
+        dock_track_reset();
+        set_dropped = false;
+        undock_meas = rtk_fixed() && !dock_verifying;
     } else {
         sx = p.x + GNSS_ANTENNA_BEHIND_AXLE * cos(p.yaw);
         sy = p.y + GNSS_ANTENNA_BEHIND_AXLE * sin(p.yaw);
         ex = sx - DOCK_UNDOCK_DIST * cos(p.yaw);
         ey = sy - DOCK_UNDOCK_DIST * sin(p.yaw);
+        if (!HEADING_CONFIRMED) start_yaw = p.yaw;   // a line along an unconfirmed yaw would curve
+        undock_meas = false;
     }
     motor_main_off();
     dock_phase = DP_UNDOCK;
@@ -471,6 +541,26 @@ static void start_undock(bool then_mow) {
     set_state(ROBOT_STATE_UNDOCKING);
     motion_stop();
     motion_reverse(sx, sy, ex, ey, start_yaw);
+}
+
+// The undock from the station ended: its track, like the set station one, measures the station
+// (gated refinement, dock_station_measure). Quiet: log only.
+static void undock_measure() {
+    undock_meas = false;
+    float yaw, spread = 0.0f, chord = 0.0f, drift = 0.0f;
+    bool ok = set_dropped && dock_track_heading(0, true, DOCK_STATION.yaw, &yaw, &spread, &chord, &drift);
+    if (!ok || chord < DOCK_MEAS_MIN_TRACK || spread > DOCK_SET_MAX_SPREAD_DEG || fabsf(drift) > DOCK_MAX_DRIFT_DEG) {
+        SerialDebug.printf("[DOCK] Undock: not a measurement (track %.2f m, spread %.2f deg, drift %.2f deg)\r\n",
+                           chord, spread, drift);
+        return;
+    }
+    const dock_sample_t& c = dock_track_at(0);
+    double cx = c.x + GNSS_ANTENNA_BEHIND_AXLE * cos(yaw), cy = c.y + GNSS_ANTENNA_BEHIND_AXLE * sin(yaw);
+    SerialDebug.printf("[DOCK] Undock measurement x=%.3f y=%.3f yaw=%.2f (track %.2f m, spread %.2f deg, drift %.2f deg)\r\n",
+                       cx, cy, yaw * RAD_TO_DEG, chord, spread, drift);
+    dock_station_measure(cx, cy, yaw);
+    SaveStation();
+    log_station();
 }
 
 static void undock_done() {
@@ -485,10 +575,9 @@ static void undock_done() {
     set_state(ROBOT_STATE_IDLE);
 }
 
-// Set station (console S): the mower was docked by hand and the contacts are live. It reverses
-// straight out DOCK_SET_BACKOUT on the line follower and records the RTK track; the heading at the
-// contact comes from that track turned back by the gyro (dock_track_heading), never from the parked
-// EKF yaw. RTK fixed is required for the whole move.
+// Set station (console S, a manual redo: the first departure from a hand dock does the same by
+// itself): the contacts are live, the station back-out measures it, then it docks right away to
+// verify. RTK fixed is required for the whole move.
 static void start_set_station() {
     if (robot_state != ROBOT_STATE_IDLE && robot_state != ROBOT_STATE_CHARGING &&
         robot_state != ROBOT_STATE_MANUAL && robot_state != ROBOT_STATE_DOCK_FAILED) {
@@ -506,24 +595,43 @@ static void start_set_station() {
         SerialDebug.printf("[DOCK] Set station rejected: no pose\r\n");
         return;
     }
-    // Straight back on the gyro from the parked heading (a heading hold, no position line): the
-    // parked EKF yaw may be far off at boot, and a line along it bent the real track by that error.
-    // A relock halfway changes nothing. Only the length of the line is used.
-    double sx = p.x + GNSS_ANTENNA_BEHIND_AXLE * cos(p.yaw), sy = p.y + GNSS_ANTENNA_BEHIND_AXLE * sin(p.yaw);
-    double ex = sx - DOCK_SET_BACKOUT * cos(p.yaw), ey = sy - DOCK_SET_BACKOUT * sin(p.yaw);
-    dock_track_reset();
-    set_dropped = false;
-    dock_phase = DP_SET_BACKOUT;
-    phase_ms = millis();
-    set_state(ROBOT_STATE_SETTING_STATION);
-    SerialDebug.printf("[DOCK] Setting station: reversing out %.1f m\r\n", DOCK_SET_BACKOUT);
-    motion_stop();
-    motion_reverse(sx, sy, ex, ey, p.yaw);   // always a gyro heading hold: the measurement wants a straight track
+    begin_backout(p, THEN_VERIFY);
 }
 
-static void set_station_reject(const char* why) {
+// After an automatic station back-out (measured or not): on with the departure it started from
+static void backout_continue(bool blocked) {
+    int then = backout_then;
+    backout_then = THEN_VERIFY;
+    dock_phase = DP_NONE;
+    if (then == THEN_MANUAL) {   // the user wants the stick either way
+        set_state(ROBOT_STATE_IDLE);
+        enter_manual_mode();
+        return;
+    }
+    if (blocked) {
+        SerialDebug.printf("[DOCK] Undock blocked\r\n");
+        set_state(power_contact() ? ROBOT_STATE_CHARGING : ROBOT_STATE_IDLE);
+        return;
+    }
+    if (then == THEN_MOW) {
+        SerialDebug.printf("[DOCK] Out of the station, going on mowing\r\n");
+        set_state(ROBOT_STATE_MOWING);
+        plan_from_here(COVERAGE_MOW, false);
+        return;
+    }
+    set_state(ROBOT_STATE_IDLE);
+}
+
+// `blocked`: the back-out could not finish. Console S: the user message. Automatic: log only, and
+// the departure goes on (the next departure from a hand dock tries again).
+static void set_station_reject(const char* why, bool blocked = false) {
     motion_stop();
     stop_motors();
+    if (backout_then != THEN_VERIFY) {
+        SerialDebug.printf("[DOCK] Station not measured on the way out: %s\r\n", why);
+        backout_continue(blocked);
+        return;
+    }
     dock_phase = DP_NONE;
     set_state(ROBOT_STATE_IDLE);
     SerialDebug.printf("[DOCK] Set station failed: %s\r\n", why);
@@ -531,29 +639,48 @@ static void set_station_reject(const char* why) {
 
 static void set_station_backout_done() {
     if (!set_dropped) { set_station_reject("the contact voltage never dropped"); return; }
-    float yaw, spread, chord;
-    if (!dock_track_heading(0, true, contact_pose.yaw, &yaw, &spread, &chord) || chord < DOCK_SET_MIN_TRACK) {
+    if (!backout_clean) { set_station_reject("no RTK fix on the way out"); return; }
+    float yaw, spread, chord, drift;
+    if (!dock_track_heading(0, true, contact_pose.yaw, &yaw, &spread, &chord, &drift) || chord < DOCK_SET_MIN_TRACK) {
         set_station_reject("too little RTK track behind the station");
         return;
     }
-    if (spread > DOCK_SET_MAX_SPREAD_DEG) {
-        SerialDebug.printf("[DOCK] Heading estimates spread %.2f deg\r\n", spread);
+    if (spread > DOCK_SET_MAX_SPREAD_DEG || fabsf(drift) > DOCK_MAX_DRIFT_DEG) {
+        SerialDebug.printf("[DOCK] Heading estimates spread %.2f deg, drift %.2f deg\r\n", spread, drift);
         set_station_reject("the track and the gyro disagree (slip?): set it again");
         return;
     }
     const dock_sample_t& c = dock_track_at(0);
     double cx = c.x + GNSS_ANTENNA_BEHIND_AXLE * cos(yaw), cy = c.y + GNSS_ANTENNA_BEHIND_AXLE * sin(yaw);
-    SerialDebug.printf("[DOCK] Measured station x=%.3f y=%.3f yaw=%.2f (track %.2f m, spread %.2f deg); verifying\r\n",
-                       cx, cy, yaw * RAD_TO_DEG, chord, spread);
+    bool now_verify = backout_then == THEN_VERIFY;
+    SerialDebug.printf("[DOCK] Measured station x=%.3f y=%.3f yaw=%.2f (track %.2f m, spread %.2f deg, drift %.2f deg); %s\r\n",
+                       cx, cy, yaw * RAD_TO_DEG, chord, spread, drift, now_verify ? "verifying" : "the next dock verifies it");
     dock_backup = DOCK_STATION;
     dock_station_init(cx, cy, yaw);
-    dock_verifying = true;
+    dock_verifying = true;   // in RAM until a dock confirms it (docked() saves it)
+    if (!now_verify) {
+        backout_continue(false);
+        return;
+    }
     dock_attempt = 0;
     resume_after_charge = false;
     route_to_predock();   // standing on the axis about DOCK_SET_BACKOUT out: straight into the approach
 }
 
 static void handle_obstacle();
+
+// Reversing out of the station: the contacts opened between the last tick and this one, so the
+// midpoint is track sample 0 (the station back-out and the undock measurement)
+static void track_contact_drop(bool contact, const fused_pose_data_t& p, double g, bool pose_ok) {
+    if (set_dropped || !prev_contact || contact || !pose_ok || !prev_pose_ok) return;
+    contact_pose = p;
+    contact_pose.x = 0.5 * (p.x + prev_pose.x);
+    contact_pose.y = 0.5 * (p.y + prev_pose.y);
+    contact_gyro = 0.5 * (g + prev_gyro);
+    dock_track_reset();
+    dock_track_add(contact_pose.x, contact_pose.y, contact_gyro);
+    set_dropped = true;
+}
 
 // 50 ms tick: power, contact, track
 static void dock_tick() {
@@ -590,20 +717,20 @@ static void dock_tick() {
             }
             break;
         case DP_SET_BACKOUT:
-            if (!rtk_fixed()) { set_station_reject("no RTK fix: the station needs open sky"); break; }
-            if (now - phase_ms > DOCK_REVERSE_TIMEOUT_MS) { set_station_reject("the back-out did not finish"); break; }
-            if (!set_dropped && prev_contact && !contact && pose_ok && prev_pose_ok) {
-                // Contacts opened between the last tick and this one: the midpoint is sample 0
-                contact_pose = p;
-                contact_pose.x = 0.5 * (p.x + prev_pose.x);
-                contact_pose.y = 0.5 * (p.y + prev_pose.y);
-                contact_gyro = 0.5 * (g + prev_gyro);
-                dock_track_reset();
-                dock_track_add(contact_pose.x, contact_pose.y, contact_gyro);
-                set_dropped = true;
+            if (!rtk_fixed()) {
+                // Console S stops; the automatic one finishes its departure, unmeasured
+                if (backout_then == THEN_VERIFY) { set_station_reject("no RTK fix: the station needs open sky"); break; }
+                backout_clean = false;
             }
+            if (now - phase_ms > DOCK_REVERSE_TIMEOUT_MS) { set_station_reject("the back-out did not finish", true); break; }
+            track_contact_drop(contact, p, g, pose_ok);
             break;
         case DP_UNDOCK:
+            if (undock_meas) {
+                if (!rtk_fixed()) undock_meas = false;
+                else track_contact_drop(contact, p, g, pose_ok);
+            }
+            // fall through
         case DP_BACKOFF:
             // Motion's stall checks should end it; this catches anything they miss
             if (now - phase_ms > DOCK_REVERSE_TIMEOUT_MS) {
@@ -679,7 +806,8 @@ static void dock_tick() {
 
 // A new GPS fix while recording: one track sample (fused base_link + gyro)
 static void dock_gps_sample() {
-    if (dock_phase != DP_APPROACH && !(dock_phase == DP_SET_BACKOUT && set_dropped)) return;
+    bool out = (dock_phase == DP_SET_BACKOUT || (dock_phase == DP_UNDOCK && undock_meas)) && set_dropped;
+    if (dock_phase != DP_APPROACH && !out) return;
     if (!rtk_fixed()) return;   // the approach is then not clean; set station aborts in the tick
     fused_pose_data_t p;
     double g;
@@ -812,7 +940,11 @@ static void handle_motion_done() {
             break;
 
         case ROBOT_STATE_UNDOCKING:
-            if (dock_phase == DP_UNDOCK) undock_done();
+            if (dock_phase == DP_SET_BACKOUT) set_station_backout_done();   // automatic, no station yet
+            else if (dock_phase == DP_UNDOCK) {
+                if (undock_meas) undock_measure();
+                undock_done();
+            }
             break;
 
         case ROBOT_STATE_SETTING_STATION:
@@ -832,8 +964,12 @@ static void handle_obstacle() {
         return;
     }
     if (robot_state == ROBOT_STATE_UNDOCKING) {
+        if (dock_phase == DP_SET_BACKOUT) {
+            set_station_reject("blocked while reversing out", true);
+            return;
+        }
         dock_phase = DP_NONE;
-        mow_after_undock = false;
+        mow_after_undock = undock_meas = false;
         SerialDebug.printf("[DOCK] Undock blocked\r\n");
         set_state(power_contact() ? ROBOT_STATE_CHARGING : ROBOT_STATE_IDLE);
         return;
@@ -870,7 +1006,8 @@ static void stop_mowing() {
         stop_motors();
         if (dock_verifying) { DOCK_STATION = dock_backup; dock_verifying = false; }
         dock_phase = DP_NONE;
-        resume_after_charge = mow_after_undock = false;
+        resume_after_charge = mow_after_undock = undock_meas = false;
+        backout_then = THEN_VERIFY;
         set_state(power_contact() ? ROBOT_STATE_CHARGING : ROBOT_STATE_IDLE);
         return;
     }
@@ -912,7 +1049,7 @@ static void handle_go_home() {
         return;
     }
     if (!DOCK_STATION.set) {
-        SerialDebug.printf("[DOCK] No station set: dock by hand, then set station (console S)\r\n");
+        SerialDebug.printf("[DOCK] No station set: dock the mower by hand once, it measures the station as it leaves\r\n");
         return;
     }
     if (robot_state == ROBOT_STATE_MANUAL) exit_manual_mode();
@@ -920,7 +1057,7 @@ static void handle_go_home() {
     go_home(false, false);
 }
 
-// A parked Set station / Home: run it when RTK fixed and the gyro are there, give up after
+// A parked Set station / Home / departure: run it when RTK fixed and the gyro are there, give up after
 // DOCK_RTK_WAIT_MS with the one message the page shows
 static void wait_tick() {
     if (!wait_cmd) return;
@@ -928,13 +1065,16 @@ static void wait_tick() {
     if (rtk_fixed() && imu_ready()) {
         wait_cmd = 0;
         if (cmd == 'S') start_set_station();
+        else if (cmd == 'U' || cmd == 'M') start_undock(cmd == 'M');
         else handle_go_home();
         return;
     }
     if (millis() - wait_ms < DOCK_RTK_WAIT_MS) return;
     wait_cmd = 0;
     bool rtk = rtk_fixed();
-    if (cmd == 'S') {
+    if (cmd == 'U' || cmd == 'M') {   // a departure goes anyway, unmeasured: quiet
+        start_undock(cmd == 'M', false);
+    } else if (cmd == 'S') {
         if (!rtk) SerialDebug.printf("[DOCK] Set station rejected: no RTK fix: the station needs open sky\r\n");
         else SerialDebug.printf("[DOCK] Set station rejected: gyro not calibrated yet (keep still)\r\n");
     } else {
@@ -1004,6 +1144,16 @@ static void controller_signal_callback(dds_callback_context_t* context) {
             break;
         case SIGNAL_SET_STATION:
             start_set_station();
+            break;
+        case SIGNAL_FORGET_STATION:
+            if (dock_phase != DP_NONE) {
+                SerialDebug.printf("[DOCK] Cannot forget the station while %s\r\n", state_name(robot_state));
+                break;
+            }
+            DOCK_STATION.set = false;
+            dock_verifying = false;
+            SaveStation();
+            log_station();
             break;
         default:
             SerialDebug.printf("[CTRL] Unknown signal: %d\r\n", signal->signal);

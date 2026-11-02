@@ -1,7 +1,7 @@
 """Stepper drive model: step rates (what a controller emits on STEP pins) -> joint speeds.
 
 Covers the drive chain between a controller and the wheel: steps/rev, microstepping, gear
-ratio, direction sign and the controller's own step-rate ceiling. Torque limits (stall) are on
+ratio, direction sign, the controller's own step-rate ceiling and an optional drive slip. Torque limits (stall) are on
 the joint itself (``actuators.max_torque`` in the robot file).
 
 Config::
@@ -11,6 +11,9 @@ Config::
     rate: 100                          # Hz joint command output
     motors:
       - {joint: left_joint, steps_per_rev: 200, microsteps: 1, gear_ratio: 10, sign: 1, max_step_rate: 500}
+
+``slip`` (0..1, default 0) turns the wheel that much slower than its steps (a wheel slipping on grass,
+a geared hub with play): one-sided slip curves a drive the controller thinks is straight.
 """
 import math
 
@@ -41,7 +44,8 @@ class Stepper(DeviceNode):
             cap = float(m.get('max_step_rate', 0)) or math.inf
             steps = max(-cap, min(cap, rate)) if alive else 0.0
             per_rev = float(m.get('steps_per_rev', 200)) * float(m.get('microsteps', 1)) * float(m.get('gear_ratio', 1))
-            pub.publish(Float64(data=float(m.get('sign', 1)) * steps / per_rev * 2 * math.pi))
+            slip = float(m.get('slip', 0.0))
+            pub.publish(Float64(data=float(m.get('sign', 1)) * (1.0 - slip) * steps / per_rev * 2 * math.pi))
 
 
 def main():

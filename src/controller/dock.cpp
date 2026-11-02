@@ -68,13 +68,14 @@ bool dock_track_add(double x, double y, double gyro) {
 int dock_track_count() { return track_n; }
 const dock_sample_t& dock_track_at(int i) { return track[i]; }
 
-bool dock_track_heading(int ref, bool reverse, float yaw_guess, float* yaw, float* spread_deg, float* chord_m) {
+bool dock_track_heading(int ref, bool reverse, float yaw_guess, float* yaw, float* spread_deg, float* chord_m,
+                        float* drift_deg) {
     int n = track_n;
     if (!track || n < 3 || ref < 0 || ref >= n) return false;
     const double g0 = track[ref].gyro;
     const float L = GNSS_ANTENNA_BEHIND_AXLE;
     float est = yaw_guess;
-    float spread = 0.0f, longest = 0.0f;
+    float spread = 0.0f, longest = 0.0f, drift = 0.0f;
     int count = 0;
     for (int pass = 0; pass < 2; pass++) {
         // Turned-back cumulative axle positions: P[k] in the frame of the heading at ref
@@ -99,6 +100,7 @@ bool dock_track_heading(int ref, bool reverse, float yaw_guess, float* yaw, floa
         count = 0;
         longest = 0.0f;
         float* ests = new float[n];
+        float* lens = new float[n];
         for (int k = 0; k < n; k++) {
             if (k == ref) continue;
             double vx = (k < ref) ? rx - cx[k] : cx[k] - rx;
@@ -107,25 +109,32 @@ bool dock_track_heading(int ref, bool reverse, float yaw_guess, float* yaw, floa
             if (len > longest) longest = len;
             if (len < DOCK_MIN_CHORD) continue;
             float h = (float)atan2(vy, vx) + (reverse ? (float)M_PI : 0.0f);
+            lens[count] = len;
             ests[count++] = h;
             sx += cos(h);
             sy += sin(h);
         }
         delete[] cx;
         delete[] cy;
-        if (count < 3) { delete[] ests; return false; }
+        if (count < 3) { delete[] ests; delete[] lens; return false; }
         est = (float)atan2(sy, sx);
-        double ss = 0.0;
+        double ss = 0.0, near_s = 0.0, far_s = 0.0;
+        int near_n = 0, far_n = 0;
+        const float split = 0.5f * (DOCK_MIN_CHORD + longest);
         for (int i = 0; i < count; i++) {
             float d = wrap_pi(ests[i] - est);
             ss += (double)d * d;
+            if (lens[i] < split) { near_s += d; near_n++; } else { far_s += d; far_n++; }
         }
         spread = (float)sqrt(ss / count) * (float)RAD_TO_DEG;
+        drift = (near_n >= 3 && far_n >= 3) ? (float)(far_s / far_n - near_s / near_n) * (float)RAD_TO_DEG : 0.0f;
         delete[] ests;
+        delete[] lens;
     }
     *yaw = est;
     *spread_deg = spread;
     *chord_m = longest;
+    if (drift_deg) *drift_deg = drift;
     return true;
 }
 

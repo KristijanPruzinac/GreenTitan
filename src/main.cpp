@@ -1276,7 +1276,8 @@ void setup() {
     SerialDebug.println("--- Docking ---");
     SerialDebug.println("  H       home now: dock at the station");
     SerialDebug.println("  U       undock (reverse out) and stay");
-    SerialDebug.println("  S       set station (docked by hand, contacts live)");
+    SerialDebug.println("  S       set station again (docked by hand, contacts live; the first departure does it itself)");
+    SerialDebug.println("  X       forget the station");
     SerialDebug.println("  B       power, contacts, station");
     SerialDebug.println("==================================");
     SerialDebug.println("");
@@ -1523,6 +1524,10 @@ void loop() {
                 }
                 else if (c == 'S') {  // Set station: docked by hand, contacts live
                     controller_signal_t signal = { SIGNAL_SET_STATION };
+                    DDS_PUBLISH("/controller/signal", signal);
+                }
+                else if (c == 'X') {  // Forget the station (the next departure from a hand dock measures it)
+                    controller_signal_t signal = { SIGNAL_FORGET_STATION };
                     DDS_PUBLISH("/controller/signal", signal);
                 }
                 else if (c == 'B') {  // Power and station status

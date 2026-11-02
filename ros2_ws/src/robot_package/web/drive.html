@@ -1384,6 +1384,7 @@ function renderStatus() {
   setText("d-station", dk.station ? `${dk.station[0].toFixed(2)}, ${dk.station[1].toFixed(2)} m · ${(dk.station[2] / DEG).toFixed(1)}°` : "not set");
   $("c-dock").querySelector("span").textContent = dk.msg || "";
   $("c-dock").classList.toggle("show", !!dk.msg);
+  $("c-dock").querySelector("button").style.display = (dk.msg || "").startsWith("Couldn't set the station") ? "" : "none";
   setText("pill-s", worst === "bad" ? "" : Math.abs(v) >= 0.02 ? Math.abs(v).toFixed(2) + " m/s" : worst === "warn" ? "weak link" : "");
   setText("d-link", "mower " + ageText(ageEsp) + " · position " + ageText(st.age_pose), worst);
   setText("d-rate", rate.hz == null || st.age_pose == null || st.age_pose > 2 ? "--" : rate.hz.toFixed(1) + " /s");
@@ -1407,6 +1408,9 @@ function renderStatus() {
 const take = {pending: 0};
 function renderDock() {
   const manual = !!(st && st.manual);
+  // Docked with no station yet, Take over first reverses out and measures it: wait for that
+  const leaving = st && st.dock && ["UNDOCKING", "SETTING_STATION"].includes(st.dock.state);
+  if (leaving && take.pending > 0) take.pending = now();
   if (take.pending && (manual === (take.pending > 0) || now() - Math.abs(take.pending) > 4)) {
     if (manual !== (take.pending > 0)) toast("No answer from the mower");
     take.pending = 0;

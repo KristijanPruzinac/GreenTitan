@@ -60,7 +60,7 @@ PUSH_IDLE = 0.25                             # s: push anyway (ages, sim truth) 
 ASSIST_WINDOW = 3.0                          # s after manual starts in which the node switches the assist on
 KEYS = {'manual': 'm', 'status': 'i', 'stop': ' ',
         'capture': 'c', 'outline': 'o', 'point': 'p', 'finish': 'e',   # c o p e: outline capture (console keys)
-        'home': 'H', 'undock': 'U', 'set_station': 'S', 'power': 'B'}   # docking (ARCHITECTURE §7)
+        'home': 'H', 'undock': 'U', 'set_station': 'S', 'forget_station': 'X', 'power': 'B'}   # docking (ARCHITECTURE §7)
 METERS_PER_LAT = 111111.0                    # the firmware's flat-earth conversion (gps_topic_callback)
 
 RE_WALL_STATE = re.compile(r'\[WALL\] (\w+) -> (\w+): (.*)')
@@ -777,8 +777,9 @@ class WebUi(Node):
             self.recording = False
 
     def parse_dock(self, line):
-        """[POWER] / [DOCK] lines -> self.dock. Only a failed dock or a refused set station is shown to the
-        user; retries, measurements and a silently adopted new station pose stay in the log.
+        """[POWER] / [DOCK] lines -> self.dock. Only a failed dock, a refused set station (the manual redo)
+        and Home with no station known are shown to the user; retries, measurements (the automatic one on
+        the first departure from a hand dock too) and a silently adopted new station pose stay in the log.
         The station is logged only when it changes: until it is known, ask (console B) every 10 s."""
         if not self.dock_known and time.monotonic() > self.dock_ask:
             self.dock_ask = time.monotonic() + 10.0
@@ -812,7 +813,7 @@ class WebUi(Node):
         if m:
             d['msg'] = "Couldn't set the station: " + m.group(1).strip()
         elif 'No station set' in line:
-            d['msg'] = 'No station set yet: dock the mower by hand, then "Set station here"'
+            d['msg'] = 'No station yet: dock the mower by hand once. It learns the station when it leaves'
         elif 'Cannot go home: no RTK fix' in line:
             d['msg'] = "Couldn't go home: no RTK fix. The mower needs open sky"
 

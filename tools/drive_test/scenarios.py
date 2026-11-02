@@ -7,7 +7,8 @@ the recorded drive against the sim truth. Stdlib only: drive.py runs on the Wind
 Docking scenarios (dock*) use page actions as steps too (drive.py) and put the charging station at their
 `station` pose: the dock worlds are written in the station's frame, `world NAME` moves the station with its
 pad, shed and bumps there. The board keeps its station estimate in NVS between runs, so run set_station first
-(spawned docked: it measures the station), then the others; dock_nudge moves the station 8 cm / 4 deg.
+(spawned docked, forgets the stored station, the first undock measures it), then the others; dock_nudge moves
+the station 8 cm / 4 deg.
 
     python3 scenarios.py list
     python3 scenarios.py robot NAME > robot.yaml     (mower.yaml with the scenario's spawn, needs ROS)
@@ -51,7 +52,10 @@ SETTLE = {'wait': 12}               # gyro calibration and the first poses (keep
 # The sim GNSS starts in float (fix after ~20 s): Set station / Home wait for it in the firmware
 # (up to 60 s), so their timeouts carry that minute on top of the drive
 HOME =[{'cmd': 'home'}, {'wait_state': 'CHARGING', 'timeout': 240}]
-CYCLE = [{'cmd': 'undock'}, {'wait_state': 'IDLE', 'timeout': 90}] + HOME
+# Undock waits like Home when docked with no station known: the first departure measures it (RTK fix needed)
+CYCLE = [{'cmd': 'undock'}, {'wait_state': 'IDLE', 'timeout': 120}] + HOME
+# Out of the station by hand: turn, then ~3 m away (Home then routes back round to the axis)
+AWAY = [{'manual': True}, (0, 0.5, 4.7), (0.3, 0, 11.0), {'manual': False}]
 
 # Positions in world metres (the world YAML's frame), yaw in radians. The first ~1 m of every drive is free
 # lawn: the heading at boot is a guess until about 2 s of driving.
@@ -179,14 +183,30 @@ SCENARIOS = {
         'steps': [(0.25, 0, 14.0)],
         'checks': {},
     },
-    # Docking (2026-11-02, ARCHITECTURE §7). Spawned docked (30 deg heading error at boot), set station: reverse
-    # 1.5 m over two one-wheel bumps (the back-out curves and slips), measure, verify by docking. Then out, turn,
-    # drive to ~4 m off at an angle and dock from there.
+    # Docking (2026-11-02, ARCHITECTURE §7). The normal flow: docked by hand (spawned docked, 30 deg heading error
+    # at boot), no station known (X forgets the stored one). Undock: the first departure reverses 1.5 m over two
+    # one-wheel bumps (the back-out curves and slips) and measures the station quietly; out, turn, drive to ~4 m
+    # off at an angle, Home: that dock verifies and stores it. No Set station anywhere.
     'set_station': {
         'world': 'dock_bumps', 'station': STATION, 'spawn': at_station(STATION, DOCKED),
+        'steps': [SETTLE, {'cmd': 'forget_station'}, {'wait': 1}] + CYCLE[:2] + AWAY + HOME,
+        'checks': {'station_set': True, 'docks_min': 1, 'no_dock_msgs': True, 'docked_end': True,
+                   'station_err': (2.0, 1.0)},
+    },
+    # The manual redo: Set station (console S) while docked: back out, measure, dock right away to verify.
+    'set_station_manual': {
+        'world': 'dock_bumps', 'station': STATION, 'spawn': at_station(STATION, DOCKED),
         'steps': [SETTLE, {'cmd': 'set_station'}, {'wait_state': 'CHARGING', 'timeout': 240}] + CYCLE[:2] +
-                 [{'manual': True}, (0, 0.5, 4.7), (0.3, 0, 11.0), {'manual': False}] + HOME,
+                 AWAY + HOME,
         'checks': {'station_set': True, 'docks_min': 2, 'no_dock_msgs': True, 'docked_end': True,
+                   'station_err': (2.0, 1.0)},
+    },
+    # The automatic flow with the left wheel slipping 4 % (the drive curves on every straight command): the
+    # back-out curves, the heading estimate is curve-tolerant (chords turned back by the gyro). Flat dock world.
+    'set_station_slip': {
+        'world': 'dock', 'station': STATION, 'spawn': at_station(STATION, DOCKED), 'slip': {'left': 0.04},
+        'steps': [SETTLE, {'cmd': 'forget_station'}, {'wait': 1}] + CYCLE[:2] + AWAY + HOME,
+        'checks': {'station_set': True, 'docks_min': 1, 'no_dock_msgs': True, 'docked_end': True,
                    'station_err': (2.0, 1.0)},
     },
     # From 4 m off the axis, 1.5 m to the side, at boot (a short straight drive confirms the heading first).
@@ -222,7 +242,8 @@ COMMON = {'rtf_min_median': 0.95, 'clearance_min_cm': 8.0, 'phantom_max_m': 0.3}
 
 
 def robot_yaml(name):
-    """mower.yaml with the scenario's spawn (text replace: the file keeps its comments)."""
+    """mower.yaml with the scenario's spawn and its wheel `slip` ({'left': 0.04}: that wheel turns 4 % less than
+    commanded, the stepper device's slip) (text replace: the file keeps its comments)."""
     import os
     import re
     from ament_index_python.packages import get_package_share_directory
@@ -232,6 +253,10 @@ def robot_yaml(name):
     new, n = re.subn(r'spawn:\s*\{[^}]*\}', f'spawn: {{position: [{x}, {y}], yaw: {yaw:.4f}, clearance: 0.01}}', txt)
     if n != 1:
         raise SystemExit(f'spawn line not found once in {path}')
+    for side, slip in (SCENARIOS[name].get('slip') or {}).items():
+        new, n = re.subn(r'(\{joint: ' + side + r'_joint,[^}]*)\}', lambda m: f'{m.group(1)}, slip: {slip}}}', new)
+        if n != 1:
+            raise SystemExit(f'{side}_joint motor line not found once in {path}')
     return new
 
 

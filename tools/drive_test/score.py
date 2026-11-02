@@ -257,8 +257,9 @@ def score(B, world_yaml, res, map_rows=None):
     return tr, ek, ax, ay, faces, objs, ev
 
 
-RE_ST = re.compile(r'\[DOCK\] (Station|Measured station|Dock measurement) x=(-?[\d.]+) y=(-?[\d.]+) yaw=(-?[\d.]+)')
-USER_MSGS = ('[DOCK] Failed', 'Set station rejected', 'Set station failed', 'Cannot go home: no RTK fix')   # what the drive page shows
+RE_ST = re.compile(r'\[DOCK\] (Station|Measured station|Dock measurement|Undock measurement) x=(-?[\d.]+) y=(-?[\d.]+) yaw=(-?[\d.]+)')
+USER_MSGS = ('[DOCK] Failed', 'Set station rejected', 'Set station failed', 'Cannot go home: no RTK fix',
+             'No station set')   # what the drive page shows
 
 
 def dock_score(B, world_yaml, W, res, t0):

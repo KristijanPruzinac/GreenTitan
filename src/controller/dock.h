@@ -29,7 +29,11 @@ const dock_sample_t& dock_track_at(int i);
 // their circular mean and `spread_deg` their RMS about it. `reverse`: the track was driven backwards.
 // The positions are base_link; they are moved to the axle with the estimate (2 passes from yaw_guess).
 // Returns false with fewer than 3 estimates. `chord_m`: the longest chord.
-bool dock_track_heading(int ref, bool reverse, float yaw_guess, float* yaw, float* spread_deg, float* chord_m);
+// Exact on any curve as long as the axle moves along the body (slip along a wheel, bumps: only
+// noise). A sideways slide (the body pushed by the funnel rails while turning) is not: it shows as
+// `drift_deg`, the mean estimate of the long chords minus that of the short ones (0 when too few).
+bool dock_track_heading(int ref, bool reverse, float yaw_guess, float* yaw, float* spread_deg, float* chord_m,
+                        float* drift_deg);
 
 // ---- Station estimate (odom; axle at contact + heading into the station). Persisted in NVS.
 struct dock_station_t { bool set; double x, y; float yaw; uint16_t n; };
