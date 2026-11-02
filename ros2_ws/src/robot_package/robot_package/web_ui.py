@@ -22,8 +22,13 @@ esp/wall_map v1 (Int16MultiArray): [1, n, then per object kind, x0, y0, x1, y1, 
 cm in odom; kind 0 wall, 1 fence, 2 low edge, 3 hedge, 4 post (x0, y0 centre, x1 radius). The page
 shows height classes only: wall (0, 1, 3), low edge (2), post (4).
 
-Only Python stdlib + rclpy: no rosbridge. The page loads three.js (3D view) and aerial imagery tiles
-(placed with the datum) from the internet; offline it falls back to a plain 2D grid.
+Terrain (display only, never fed back): the firmware's "GPS: ... alt=" log line (5 Hz, hMSL) gives the
+antenna height, imu/data's accelerometer (low-passed) the tilt; with the EKF pose they place the mower
+as a rigid body and give the ground height under both drive wheels and both casters, averaged per
+0.25 m cell (Terrain). It goes out about once a second, changed cells only, as mm above the start.
+
+Only Python stdlib + rclpy: no rosbridge. The page loads three.js (3D view) from the internet;
+offline it falls back to the 2D view.
 """
 import collections
 import json
@@ -59,10 +64,89 @@ RE_WALL_STATE = re.compile(r'\[WALL\] (\w+) -> (\w+): (.*)')
 RE_POINT = re.compile(r'\[(?:WALL|DEBUG)\] Point added \((-?\d+), (-?\d+)\) cm( \(corner\))?')
 RE_WEB_FILE = re.compile(r'^/web/[\w-]+\.json$')  # data files next to the page (no paths: nothing else is served)
 RE_DATUM = re.compile(r'(?:Datum published|Datum set to): lat=(-?[\d.]+) lon=(-?[\d.]+)')
+RE_GPS = re.compile(r'GPS: lat=-?[\d.]+ lon=-?[\d.]+ alt=(-?[\d.]+) acc=([\d.]+)')  # gps_task, every fix
+
+CELL = 0.25                                  # m, terrain cell
+CELL_SAMPLES = 40                            # newest ground heights kept per cell
+TERRAIN_PUSH = 1.0                           # s between terrain pushes (changed cells only)
+TERRAIN_ACC = 0.05                           # m: fixes with a worse horizontal accuracy are not used (no RTK fix)
+TILT_TAU = 0.4                               # s, accelerometer low-pass for the tilt
+TILT_MAX = math.radians(30)                  # beyond this (lifted, tipped) no terrain
+# Robot frame (ground under the axle midpoint, x forward, y left; docs/HARDWARE.md §2): the antenna
+# (base_link) and the ground contacts, drive wheel bottoms and trailing caster wheel bottoms
+ANTENNA = (-0.180, 0.0, 0.28)
+CONTACTS = ((0.0, 0.1825), (0.0, -0.1825), (-0.3845, 0.1359), (-0.3845, -0.1359))
 
 
 def _yaw(q):
     return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+
+class Terrain:
+    """Ground height per CELL from the mower's own fixes: the robust mean of the newest heights per cell.
+
+    Each fix is the antenna height; with the tilt (world up in the body frame, from the accelerometer)
+    and the EKF pose the mower is a rigid body on its four contacts, so each contact's ground height is
+    alt + (contact - antenna) . up. RTK's ~2-3 cm vertical noise averages out over a cell's samples."""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.cells = {}        # (i, j) -> deque of heights (m, hMSL)
+        self.value = {}        # (i, j) -> (mm above z0, rev of the last change)
+        self.dirty = set()
+        self.z0 = None         # ground under the axle at the start (hMSL); median of the first fixes
+        self.start = []
+        self.rev = 0
+        self.epoch = getattr(self, 'epoch', 0) + 1   # a new epoch makes the page drop its grid
+
+    def add(self, x, y, yaw, alt, up):
+        """One fix: base_link at x, y (odom), heading yaw, antenna height alt, up = unit world-up in the body frame."""
+        ax, ay, az = ANTENNA
+        if self.z0 is None:
+            self.start.append(alt - (ax * up[0] + ay * up[1] + az * up[2]))
+            if len(self.start) >= 10:
+                self.z0 = sorted(self.start)[len(self.start) // 2]
+        c, s = math.cos(yaw), math.sin(yaw)
+        for cx, cy in CONTACTS:
+            dx, dy = cx - ax, cy - ay
+            z = alt + dx * up[0] + dy * up[1] - az * up[2]
+            key = (math.floor((x + c * dx - s * dy) / CELL), math.floor((y + s * dx + c * dy) / CELL))
+            cell = self.cells.get(key)
+            if cell is None:
+                cell = self.cells[key] = collections.deque(maxlen=CELL_SAMPLES)
+            cell.append(z)
+            self.dirty.add(key)
+
+    @staticmethod
+    def robust(v):
+        """Mean of the samples within 3 robust sigma of the median (an odd fix, a bounce, does not pull)."""
+        v = sorted(v)
+        med = v[len(v) // 2]
+        mad = sorted(abs(a - med) for a in v)[len(v) // 2]
+        lim = 3 * max(0.01, 1.4826 * mad)
+        keep = [a for a in v if abs(a - med) <= lim]
+        return sum(keep) / len(keep)
+
+    def commit(self):
+        """Recompute the changed cells; True when a cell's value (mm) changed."""
+        if self.z0 is None or not self.dirty:
+            return False
+        rev, changed = self.rev + 1, False
+        for key in self.dirty:
+            mm = round((self.robust(self.cells[key]) - self.z0) * 1000)
+            old = self.value.get(key)
+            if old is None or old[0] != mm:
+                self.value[key], changed = (mm, rev), True
+        self.dirty.clear()
+        if changed:
+            self.rev = rev
+        return changed
+
+    def since(self, rev):
+        """Cells changed after rev, as [[i, j, mm], ...]."""
+        return [[k[0], k[1], v[0]] for k, v in self.value.items() if v[1] > rev]
 
 
 def _page_path():
@@ -135,7 +219,10 @@ class WebUi(Node):
         self.seq = 0                                 # bumped on every pushed change
         self.map_rev = self.out_rev = 0
         self.pose_n = 0                              # EKF poses received
-        self.datum = None                            # (lat, lon) of the odom origin: esp/datum or the log
+        self.datum = None                            # (lat, lon) of the odom origin: esp/datum or the log (sim truth)
+        self.terrain = Terrain()
+        self.up = None                               # low-passed accelerometer: world up in the body frame
+        self.t_up = None
         self.assist_due = 0.0                        # monotonic deadline to switch the assist on (manual started)
         self.assist_asked = False
         self.log = collections.deque(maxlen=LOG_LINES)
@@ -176,6 +263,7 @@ class WebUi(Node):
         if self.world:
             self.create_subscription(Odometry, '/sim/greentitan/ground_truth', self.on_truth, qos_profile_sensor_data)
         self.create_timer(1.0 / STICK_HZ, self.tick)
+        self.create_timer(TERRAIN_PUSH, self.on_terrain_tick)
 
     # ------------------------------------------------------------------ ROS in
     def on_log(self, msg):
@@ -207,6 +295,9 @@ class WebUi(Node):
             self.add_point(int(m.group(1)), int(m.group(2)), bool(m.group(3)))
         elif line.startswith('[DEBUG] Point added') and self.pose:  # 'p' at the mower position
             self.add_point(round(self.pose['x'] * 100), round(self.pose['y'] * 100), False)
+        m = RE_GPS.search(line)
+        if m:
+            self.add_fix(float(m.group(1)), float(m.group(2)))
         m = RE_DATUM.search(line)
         if m:
             self.set_datum(float(m.group(1)), float(m.group(2)))
@@ -249,6 +340,20 @@ class WebUi(Node):
         self.outlines[-1].append([x, y, corner])
         self.out_rev += 1
 
+    def add_fix(self, alt, acc):
+        """A GPS fix from the log: terrain under the mower at the latest EKF pose (caller holds the lock)."""
+        now = time.monotonic()
+        if (acc > TERRAIN_ACC or not self.pose or self.up is None
+                or now - self.t_pose > 0.5 or now - self.t_up > 0.5 or self.up[2] < math.cos(TILT_MAX)):
+            return
+        p = self.pose
+        self.terrain.add(p['x'], p['y'], p['yaw'], alt, self.up)
+
+    def on_terrain_tick(self):
+        with self.lock:
+            if self.terrain.commit():
+                self.bump()
+
     def on_datum(self, m):
         with self.lock:
             self.set_datum(m.latitude, m.longitude)
@@ -256,18 +361,12 @@ class WebUi(Node):
 
     def set_datum(self, lat, lon):
         # esp/datum has full precision, a log line 7 decimals (~1 cm); the latest one counts
+        if self.datum and (abs(lat - self.datum[0]) > 1e-6 or abs(lon - self.datum[1]) > 1e-6):
+            self.terrain.reset()  # a new odom origin (not the log line's rounding): the old cells are elsewhere now
         self.datum = (lat, lon)
         if self.world and (lat, lon) != self.world.datum:
             self.world.datum = (lat, lon)
             self.world_rev += 1
-
-    def datum_json(self):
-        """Odom origin for the page's aerial map: [lat, lon, source] or None (caller holds the lock)."""
-        if self.datum:
-            return [self.datum[0], self.datum[1], 'datum']
-        if self.world:  # sim before a datum is seen: the firmware's datum is near the world origin
-            return [self.world.origin['latitude'], self.world.origin['longitude'], 'world']
-        return None
 
     def on_pose(self, m):
         p = m.pose.pose.position
@@ -278,8 +377,24 @@ class WebUi(Node):
                          'v': m.twist.twist.linear.x, 'w': m.twist.twist.angular.z, 'n': self.pose_n}
             self.bump()
 
-    def on_imu(self, _):
-        self.t_imu = time.monotonic()
+    def on_imu(self, m):
+        now = time.monotonic()
+        a = m.linear_acceleration
+        n = math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z)
+        with self.lock:
+            dt = now - self.t_imu if self.t_imu else 1.0
+            self.t_imu = now
+            if not 0.5 * 9.81 < n < 1.5 * 9.81:  # a knock, not gravity
+                return
+            g = (a.x / n, a.y / n, a.z / n)
+            if self.up is None or dt > 1.0:
+                self.up = g
+            else:
+                k = min(1.0, dt / TILT_TAU)
+                u = [self.up[i] + (g[i] - self.up[i]) * k for i in range(3)]
+                n = math.sqrt(sum(v * v for v in u))
+                self.up = (u[0] / n, u[1] / n, u[2] / n)
+            self.t_up = now
 
     def on_truth(self, m):
         p = m.pose.pose.position
@@ -379,10 +494,17 @@ class WebUi(Node):
             'rtf': self.rtf() if truth else None,
             'manual': self.manual, 'assist': self.assist, 'assist_state': self.assist_state,
             'assist_why': self.assist_why, 'recording': self.recording, 'age_map': age(self.t_map),
-            'world_rev': self.world_rev, 'datum': self.datum_json(),
+            'world_rev': self.world_rev, 'tilt': self.tilt(now),
             'held': self.stick is not None, 'notice': self.notice, 'log_id': self.log_id,
             'limits': [MAX_LIN, MAX_REV, MAX_ANG],
         }
+
+    def tilt(self, now):
+        """[roll, pitch] (rad, ROS: roll left side up, pitch nose down) from the accelerometer, or None."""
+        if self.up is None or now - self.t_up > 1.0:
+            return None
+        x, y, z = self.up
+        return [round(math.atan2(y, z), 3), round(math.atan2(-x, math.hypot(y, z)), 3)]
 
     def state(self, since):
         with self.lock:
@@ -393,6 +515,7 @@ class WebUi(Node):
     def stream(self, write, since):
         """Push messages to one /events client until it goes away (write raises)."""
         sent_seq, sent_map, sent_out, sent_log, t_last = -1, -1, -1, since, 0.0
+        sent_ter = (0, 0)  # (epoch, rev) of the terrain this client has
         while True:
             with self.cond:
                 self.cond.wait_for(lambda: self.seq != sent_seq, timeout=PUSH_IDLE)
@@ -402,6 +525,11 @@ class WebUi(Node):
                     msg['map'], sent_map = self.wall_map, self.map_rev
                 if self.out_rev != sent_out:
                     msg['outlines'], sent_out = self.outlines, self.out_rev
+                ter = self.terrain
+                if (ter.epoch, ter.rev) != sent_ter:
+                    rev = sent_ter[1] if ter.epoch == sent_ter[0] else 0
+                    msg['terrain'] = {'epoch': ter.epoch, 'cell': CELL, 'c': ter.since(rev), 'reset': rev == 0}
+                    sent_ter = (ter.epoch, ter.rev)
                 if self.log_id < sent_log:  # the node restarted under a reconnecting page
                     sent_log = 0
                 msg['log'] = [[i, t] for i, t in self.log if i > sent_log]

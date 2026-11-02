@@ -25,6 +25,7 @@ void imu_calibrate();
 bool imu_ready();   // gyro bias calibrated, /imu is being published
 bool imu_yaw_now(double* yaw);            // integrated gyro yaw now (rad, unwrapped, relative); false before calibration
 void imu_set_ground_speed(float speed);   // GPS ground speed (m/s), for the standstill gyro bias
+bool imu_still();                         // the last block of reads was still (standstill gate and gyro), see imu_still_step
 
 void imu_task(void* parameter);
 

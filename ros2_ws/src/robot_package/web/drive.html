@@ -7,8 +7,8 @@
 <title>GreenTitan</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%233fd17a'/%3E%3C/svg%3E">
 <!-- Mower page served by robot_package/web_ui.py (docs/ARCHITECTURE.md §10). One file. The state is pushed by the node
-     (/events, server-sent events); the 3D view (default) loads three.js from cdnjs, both views load aerial imagery tiles
-     placed with the datum. Offline the page falls back to the 2D view on a plain grid. -->
+     (/events, server-sent events); the 3D view (default) loads three.js from cdnjs. The ground is a lawn made in the page
+     (no downloads), shaped by the terrain the mower measured. Offline the page falls back to the 2D view. -->
 <style>
 :root {
   --glass: rgba(17, 21, 19, .74); --glass2: rgba(17, 21, 19, .97); --edge: rgba(255, 255, 255, .13);
@@ -74,8 +74,6 @@ body.manual #joy { display: block; }
 #knob { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px 0 0 -30px; border-radius: 50%; pointer-events: none;
   background: radial-gradient(circle at 40% 35%, #fff, #d9dfdb); box-shadow: 0 3px 10px rgba(0, 0, 0, .45); }
 #joy.held #knob { background: radial-gradient(circle at 40% 35%, #9ff0c0, var(--accent)); }
-#attr { position: absolute; right: 6px; bottom: 2px; font-size: 10px; color: rgba(255, 255, 255, .8); text-shadow: 0 1px 2px #000;
-  pointer-events: none; padding-bottom: env(safe-area-inset-bottom); }
 
 /* menu drawer */
 #scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .25); display: none; }
@@ -139,7 +137,6 @@ body.touch .hint { display: none; }
     <button id="take">Take over</button>
     <button id="stop">STOP</button>
   </div>
-  <div id="attr"></div>
   <div id="scrim"></div>
   <aside id="drawer" aria-label="Menu">
     <header><h2>GreenTitan</h2><button id="close" class="icon" style="background:none;border:0" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
@@ -150,7 +147,7 @@ body.touch .hint { display: none; }
     <div class="row"><span>Wall assist</span><span id="d-assist">--</span></div>
     <div class="row" id="d-sim-row" style="display:none"><span>Sim speed</span><span id="d-sim">--</span></div>
     <h3>Map</h3>
-    <label class="tg">Aerial imagery<input type="checkbox" id="o-imagery"></label>
+    <div class="row"><span>Terrain</span><span id="d-terrain">--</span></div>
     <label class="tg">Sensor fields<input type="checkbox" id="o-fields"></label>
     <label class="tg">Sensor rays, cut by the mower (3D)<input type="checkbox" id="o-rays"></label>
     <div class="row"><span>Line of sight</span><span id="d-los">--</span></div>
@@ -181,16 +178,12 @@ let SENSORS = [-1, 1].map(s => ({name: s > 0 ? "ToF left" : "ToF right", shape: 
 let MESH = null;                                            // web/mower_v3.json: the real Mower V3 parts (mm, robot frame)
 const TRAIL_S = 180;                                        // trail fades out over this many seconds
 const EXTRAP_MAX = 0.25, SMOOTH_TAU = 0.07;                 // s: pose extrapolation limit, display smoothing
-const M_LAT = 111111.0;                                     // the firmware's flat-earth metres per degree
 // Map objects by height class only (esp/wall_map kinds: 0 wall, 1 fence, 2 low edge, 3 hedge, 4 post; unknown = tall)
 const CLS = {wall: {name: "wall", color: "#ff5a3c", thick: 0.10}, low: {name: "low edge", color: "#ffc531", thick: 0.05},
              post: {name: "post", color: "#c48dff"}};
 const clsOf = kind => kind === 2 ? CLS.low : kind === 4 ? CLS.post : CLS.wall;
 const ASSIST_TEXT = {ALIGN: "Lining up with the wall", LOCKED: "Following the wall", CORNER: "Inner corner",
                      PIVOT: "Turning at the corner", OUTER: "Rounding the end"};
-// Aerial imagery (Esri World Imagery, CORS enabled; the 3D ground texture needs it)
-const TILE_URL = (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
-const TILE_ATTR = "Imagery © Esri, Maxar, Earthstar Geographics";
 const THREE_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
 
 const $ = id => document.getElementById(id);
@@ -201,10 +194,10 @@ let W = 0, H = 0, DPR = 1;
 let view = {x: 0, y: 0, s: 60, follow: true};               // 2D centre (m, odom), px per m
 let st = null, lastMsg = 0, logId = 0, worldRev = -1, world = [];
 let mapObjs = [], outlines = [], logLines = [], trail = [];
-let dirty = true;                                           // redraw needed (new state, input, tile)
+let dirty = true;                                           // redraw needed (new state, input, terrain)
 
 // per-viewer preferences (browser storage may be missing: defaults then)
-const prefs = {mode: "3d", imagery: true, fields: false, rays: false, truth: false};
+const prefs = {mode: "3d", fields: false, rays: false, truth: false};
 try { Object.assign(prefs, JSON.parse(localStorage.getItem("gt.prefs") || "{}")); } catch (e) {}
 if (/^#(2d|3d)$/.test(location.hash)) prefs.mode = location.hash.slice(1);   // a link may pick the view
 const savePrefs = () => { try { localStorage.setItem("gt.prefs", JSON.stringify(prefs)); } catch (e) {} };
@@ -243,7 +236,7 @@ function onState(m) {
   logId = Math.max(logId, m.log_id);
   if (m.world_rev !== worldRev) loadWorld(m.world_rev);
   if (m.pose && m.pose.n !== pose.n) newPose(m.pose, m.age_pose || 0);
-  if (m.datum && (!datum || m.datum[0] !== datum[0] || m.datum[1] !== datum[1])) setDatum(m.datum);
+  if (m.terrain) onTerrain(m.terrain);
   if (first || now() - tStatus > 0.2) renderStatus();
   renderDock();
 }
@@ -289,45 +282,112 @@ function updateDisp() {                                     // returns true when
   return moved;
 }
 
-// ---- geography: odom metres <-> lat/lon (the firmware's flat earth at the datum) <-> web mercator tiles ----
-let datum = null;                                           // [lat, lon, source]
-function setDatum(d) { datum = d; v3.groundKey = null; dirty = true; renderAttr(); }
-const lonOf = x => datum[1] + x / (M_LAT * Math.cos(datum[0] * DEG)), latOf = y => datum[0] + y / M_LAT;
-const xOfLon = lon => (lon - datum[1]) * M_LAT * Math.cos(datum[0] * DEG), yOfLat = lat => (lat - datum[0]) * M_LAT;
-const tileX = (lon, z) => (lon + 180) / 360 * 2 ** z;
-const tileY = (lat, z) => (1 - Math.log(Math.tan(lat * DEG) + 1 / Math.cos(lat * DEG)) / Math.PI) / 2 * 2 ** z;
-const lonOfTile = (x, z) => x / 2 ** z * 360 - 180;
-const latOfTile = (y, z) => Math.atan(Math.sinh(Math.PI * (1 - 2 * y / 2 ** z))) / DEG;
+// ---- terrain: ground heights the mower measured (web_ui Terrain: 0.25 m cells, mm above the start) ----
+// The cells are spread into a smooth field on the same grid: a fine blur (0.25 m) where the cells are dense, a wide one
+// (1 m) to bridge gaps between tracks, and the field fades to flat within ~3 m of the last data, at the median height
+// (fading to the start height instead put a rim round a lawn on a slope). Display only.
+const TER = {cells: new Map(), epoch: 0, rev: 0, built: -1, t: -9, field: null, cell: 0.25};
+const T_MARGIN = 18, T_SF = 1, T_SW = 4;                    // cells: field margin around the data, fine and wide sigma
+function onTerrain(m) {
+  if (m.reset || m.epoch !== TER.epoch) TER.cells.clear();
+  TER.epoch = m.epoch; TER.cell = m.cell || 0.25;
+  for (const [i, j, mm] of m.c) TER.cells.set(i + "," + j, [i, j, mm / 1000]);
+  TER.rev++; dirty = true;
+}
+function blur(a, nx, ny, sig) {                             // separable Gaussian, peak weight 1, out to 4 sigma
+  const R = Math.ceil(4 * sig), k = [];
+  for (let d = -R; d <= R; d++) k.push(Math.exp(-d * d / (2 * sig * sig)));
+  const t = new Float32Array(nx * ny), o = new Float32Array(nx * ny);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    let s = 0;
+    for (let d = Math.max(-R, -i); d <= R && i + d < nx; d++) s += a[j * nx + i + d] * k[d + R];
+    t[j * nx + i] = s;
+  }
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    let s = 0;
+    for (let d = Math.max(-R, -j); d <= R && j + d < ny; d++) s += t[(j + d) * nx + i] * k[d + R];
+    o[j * nx + i] = s;
+  }
+  return o;
+}
+function buildField() {                                     // true when the field changed; at most once a second
+  if (TER.built === TER.rev || now() - TER.t < 1) { if (TER.built !== TER.rev) dirty = true; return false; }
+  TER.built = TER.rev; TER.t = now();
+  if (!TER.cells.size) { TER.field = null; $("d-terrain").textContent = "flat (no data yet)"; return true; }
+  let i0 = Infinity, i1 = -Infinity, j0 = Infinity, j1 = -Infinity;
+  for (const [i, j] of TER.cells.values()) { i0 = Math.min(i0, i); i1 = Math.max(i1, i); j0 = Math.min(j0, j); j1 = Math.max(j1, j); }
+  i0 -= T_MARGIN; j0 -= T_MARGIN;
+  const nx = Math.min(480, i1 - i0 + 1 + T_MARGIN), ny = Math.min(480, j1 - j0 + 1 + T_MARGIN), n = nx * ny;
+  const v = new Float32Array(n), c = new Float32Array(n);
+  for (const [i, j, h] of TER.cells.values()) {
+    const x = i - i0, y = j - j0;
+    if (x >= 0 && y >= 0 && x < nx && y < ny) { v[y * nx + x] = h; c[y * nx + x] = 1; }
+  }
+  const vf = blur(v, nx, ny, T_SF), cf = blur(c, nx, ny, T_SF), vw = blur(v, nx, ny, T_SW), cw = blur(c, nx, ny, T_SW);
+  const hs = [...TER.cells.values()].map(c => c[2]).sort((p, q) => p - q), base = hs[hs.length >> 1];
+  const h = new Float32Array(n).fill(base), sure = new Float32Array(n);
+  let lo = Infinity, hi = -Infinity;
+  for (let k = 0; k < n; k++) {
+    if (cw[k] < 1e-4) continue;
+    const a = cf[k] / (cf[k] + 0.3), hf = cf[k] > 1e-4 ? vf[k] / cf[k] : 0, hw = vw[k] / cw[k];
+    const q = Math.min(1, Math.max(0, (cw[k] - 0.02) / 0.98)), conf = q * q * (3 - 2 * q);   // fades out off the data
+    h[k] = base + conf * (a * hf + (1 - a) * hw - base);
+    sure[k] = Math.min(1, cf[k]);                           // measured here (not bridged or faded): the 2D hillshade
+    lo = Math.min(lo, h[k]); hi = Math.max(hi, h[k]);
+  }
+  TER.field = {i0, j0, nx, ny, h, sure, base, cell: TER.cell, lo, hi, rev: TER.rev, shade: null};
+  const cm = v => (v > 0 ? "+" : "") + Math.round(v * 100);
+  $("d-terrain").textContent = `${TER.cells.size} cells, ${cm(lo)} to ${cm(hi)} cm from the start`;
+  return true;
+}
+function heightAt(x, y) {                                   // the field, bilinear between cell centres; flat outside
+  const f = TER.field;
+  if (!f) return 0;
+  const u = x / f.cell - 0.5 - f.i0, w = y / f.cell - 0.5 - f.j0, i = Math.floor(u), j = Math.floor(w);
+  if (i < 0 || j < 0 || i >= f.nx - 1 || j >= f.ny - 1) return f.base;
+  const a = u - i, b = w - j, k = j * f.nx + i;
+  return (f.h[k] * (1 - a) + f.h[k + 1] * a) * (1 - b) + (f.h[k + f.nx] * (1 - a) + f.h[k + f.nx + 1] * a) * b;
+}
 
-const tiles = new Map();
-let tileMaxZ = 19, tilesOk = 0, tilesBad = 0;
-const probe = document.createElement("canvas"); probe.width = probe.height = 256;
-function isPlaceholder(img) {                               // Esri's grey "Map data not yet available" tile
-  try {
-    const c = probe.getContext("2d", {willReadFrequently: true}); c.drawImage(img, 0, 0);
-    const px = [[2, 2], [253, 2], [2, 253], [253, 253], [128, 20]].map(([x, y]) => c.getImageData(x, y, 1, 1).data);
-    return px.every(d => Math.abs(d[0] - d[1]) < 6 && Math.abs(d[1] - d[2]) < 6 && d[0] > 170 && d[0] < 235 && Math.abs(d[0] - px[0][0]) < 5);
-  } catch (e) { return false; }
-}
-function tile(z, x, y) {
-  const k = z + "/" + x + "/" + y;
-  let t = tiles.get(k);
-  if (t) return t;
-  t = {img: new Image(), ok: false, bad: false, z};
-  t.img.crossOrigin = "anonymous";
-  t.img.onload = () => {
-    if (isPlaceholder(t.img)) { t.bad = true; if (z <= tileMaxZ) { tileMaxZ = z - 1; v3.groundKey = null; } }
-    else { t.ok = true; tilesOk++; renderAttr(); }
-    dirty = true;
+// ---- lawn: one tileable grass texture drawn in the page (blades seen from above), shared by both views ----
+const GRASS_M = 1.6;                                        // m per texture tile
+function makeGrass() {
+  const N = 512, c = document.createElement("canvas"); c.width = c.height = N;
+  const g = c.getContext("2d");
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  g.fillStyle = "#517539"; g.fillRect(0, 0, N, N);
+  const wrapDo = (x, y, r, f) => {                          // at x, y and at the wrapped copies near an edge: seamless
+    for (const ox of [0, -N, N]) for (const oy of [0, -N, N])
+      if (x + ox > -r && x + ox < N + r && y + oy > -r && y + oy < N + r) f(x + ox, y + oy);
   };
-  t.img.onerror = () => { t.bad = true; tilesBad++; tiles.delete(k); setTimeout(() => dirty = true, 5000); };   // retried later
-  t.img.src = TILE_URL(z, x, y);
-  tiles.set(k, t);
-  if (tiles.size > 400) for (const [key, v] of tiles) { if (tiles.size <= 300) break; if (v.z !== z) tiles.delete(key); }
-  return t;
+  for (let k = 0; k < 260; k++) {                           // soft clumps
+    const x = rnd() * N, y = rnd() * N, r = 10 + rnd() * 34, l = 28 + rnd() * 14;
+    g.fillStyle = `hsla(${88 + rnd() * 16}, 32%, ${l}%, .16)`;
+    wrapDo(x, y, r, (a, b) => { g.beginPath(); g.arc(a, b, r, 0, 2 * Math.PI); g.fill(); });
+  }
+  g.lineCap = "round";
+  for (let k = 0; k < 14000; k++) {                         // blades: short strokes in every direction
+    const x = rnd() * N, y = rnd() * N, a = rnd() * Math.PI * 2, len = 3 + rnd() * 8;
+    const l = 25 + rnd() * 20, dx = Math.cos(a) * len, dy = Math.sin(a) * len;
+    g.strokeStyle = `hsl(${80 + rnd() * 22}, ${28 + rnd() * 14}%, ${l}%)`; g.lineWidth = 0.9 + rnd() * 1.1;
+    wrapDo(x, y, len, (p, q) => { g.beginPath(); g.moveTo(p, q); g.lineTo(p + dx, q + dy); g.stroke(); });
+  }
+  const levels = [c];                                       // halved copies: the 2D view's mip levels
+  while (levels[levels.length - 1].width > 16) {
+    const s = levels[levels.length - 1], d = document.createElement("canvas"); d.width = d.height = s.width / 2;
+    const dg = d.getContext("2d"); dg.imageSmoothingQuality = "high"; dg.drawImage(s, 0, 0, d.width, d.height); levels.push(d);
+  }
+  const px = levels[levels.length - 1].getContext("2d").getImageData(0, 0, 16, 16).data;
+  const mean = [0, 0, 0];
+  for (let k = 0; k < px.length; k += 4) for (let q = 0; q < 3; q++) mean[q] += px[k + q] / (px.length / 4);
+  const tone = document.createElement("canvas"); tone.width = tone.height = 32;   // large calm patches (2D)
+  const tg = tone.getContext("2d"), td = tg.createImageData(32, 32);
+  for (let k = 0; k < td.data.length; k += 4) { const v = 128 + (rnd() - 0.5) * 70; td.data[k] = td.data[k + 1] = td.data[k + 2] = v; td.data[k + 3] = 255; }
+  tg.putImageData(td, 0, 0);
+  return {canvas: c, levels, mean, tone, patterns: new Map()};
 }
-const imageryOn = () => prefs.imagery && datum;
-function renderAttr() { $("attr").textContent = imageryOn() && tilesOk ? TILE_ATTR : ""; }
+const GRASS = makeGrass();
 
 // ---- 2D view: north up, odom frame ----
 function resize() {
@@ -349,38 +409,85 @@ function pathPoly(p, close) {
   if (close) ctx.closePath();
 }
 
-function drawTiles() {                                      // true when any imagery was drawn
-  if (!imageryOn()) return false;
-  const lat0 = datum[0], mpp0 = 156543.034 * Math.cos(lat0 * DEG);   // m per tile pixel at zoom 0
-  const z = Math.max(1, Math.min(tileMaxZ, Math.ceil(Math.log2(mpp0 * view.s * DPR / 1.4))));
-  const x0 = Math.floor(tileX(lonOf(wx(0)), z)), x1 = Math.floor(tileX(lonOf(wx(W)), z));
-  const y0 = Math.floor(tileY(latOf(wy(0)), z)), y1 = Math.floor(tileY(latOf(wy(H)), z));
-  if ((x1 - x0 + 1) * (y1 - y0 + 1) > 80) return false;
-  let any = false;
-  ctx.imageSmoothingEnabled = true;
-  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
-    const a = Math.floor(sx(xOfLon(lonOfTile(tx, z)))), b = Math.floor(sy(yOfLat(latOfTile(ty, z))));
-    const c = Math.ceil(sx(xOfLon(lonOfTile(tx + 1, z)))), d = Math.ceil(sy(yOfLat(latOfTile(ty + 1, z))));
-    const t = tile(z, tx, ty);
-    if (t.ok) { ctx.drawImage(t.img, a, b, c - a, d - b); any = true; continue; }
-    for (let k = 1; k <= 6 && z - k >= 1; k++) {            // not loaded yet: a loaded parent, cropped
-      const p = tiles.get((z - k) + "/" + (tx >> k) + "/" + (ty >> k));
-      if (!p || !p.ok) continue;
-      const n = 256 >> k;
-      ctx.drawImage(p.img, (tx - ((tx >> k) << k)) * n, (ty - ((ty >> k) << k)) * n, n, n, a, b, c - a, d - b);
-      any = true; break;
-    }
+// The lawn: the grass texture at the mip level that matches the zoom (anchored to odom, so it moves with the map),
+// large calm tone patches, the terrain as a soft hillshade, and a veil that keeps the overlays readable.
+function grassPattern(level) {
+  let p = GRASS.patterns.get(level);
+  if (!p) { p = ctx.createPattern(GRASS.levels[level], "repeat"); GRASS.patterns.set(level, p); }
+  return p;
+}
+function drawLawn() {
+  const [r, g, b] = GRASS.mean, tile = GRASS_M * view.s * DPR;   // texture tile in device pixels
+  ctx.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`; ctx.fillRect(0, 0, W, H);
+  if (tile >= 12) {
+    let level = 0;
+    while (level < GRASS.levels.length - 1 && GRASS.levels[level + 1].width >= tile) level++;
+    const p = grassPattern(level), n = GRASS.levels[level].width;
+    p.setTransform(new DOMMatrix().translate(sx(0), sy(0)).scale(GRASS_M * view.s / n));
+    ctx.globalAlpha = Math.min(1, (tile - 12) / 24);        // fades into the mean colour, no shimmer
+    ctx.fillStyle = p; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
   }
-  return any;
+  const tp = grassPattern.tone || (grassPattern.tone = ctx.createPattern(GRASS.tone, "repeat"));
+  tp.setTransform(new DOMMatrix().translate(sx(0), sy(0)).scale(14 * view.s / 32));   // 14 m per tone tile
+  ctx.globalCompositeOperation = "soft-light"; ctx.globalAlpha = 0.5; ctx.imageSmoothingEnabled = true;
+  ctx.fillStyle = tp; ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+  drawHillshade();
+  ctx.fillStyle = "rgba(16,26,18,.30)"; ctx.fillRect(0, 0, W, H);
+}
+function drawHillshade() {                                  // light from the north-west, slopes exaggerated 4x
+  const f = TER.field;
+  if (!f) return;
+  if (!f.shade) {
+    const c = document.createElement("canvas"); c.width = f.nx; c.height = f.ny;
+    const g = c.getContext("2d"), d = g.createImageData(f.nx, f.ny), H0 = f.h;
+    for (let j = 0; j < f.ny; j++) for (let i = 0; i < f.nx; i++) {
+      const k = j * f.nx + i, gx = (H0[k + (i < f.nx - 1 ? 1 : 0)] - H0[k - (i > 0 ? 1 : 0)]) / (2 * f.cell);
+      const gy = (H0[k + (j < f.ny - 1 ? f.nx : 0)] - H0[k - (j > 0 ? f.nx : 0)]) / (2 * f.cell);
+      const s = Math.max(-1, Math.min(1, 4 * (gx * 0.7 - gy * 0.7))) * f.sure[k];   // > 0: facing away from the light
+      const o = ((f.ny - 1 - j) * f.nx + i) * 4;            // row 0 = north
+      d.data[o] = d.data[o + 1] = d.data[o + 2] = s > 0 ? 0 : 255; d.data[o + 3] = Math.abs(s) * 150;
+    }
+    g.putImageData(d, 0, 0); f.shade = c;
+  }
+  const x0 = (f.i0 + 0.5) * f.cell, y1 = (f.j0 + f.ny - 0.5) * f.cell;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(f.shade, sx(x0 - f.cell / 2), sy(y1 + f.cell / 2), f.nx * f.cell * view.s, f.ny * f.cell * view.s);
 }
 
-function drawGrid() {
-  let step = 1;
-  while (step * view.s < 28) step *= step === 1 ? 5 : 2;   // 1, 5, 10, 20 m
-  const x0 = Math.floor(wx(0) / step) * step, x1 = wx(W), y0 = Math.floor(wy(H) / step) * step, y1 = wy(0);
-  ctx.lineWidth = 1;
-  for (let x = x0; x <= x1; x += step) { ctx.strokeStyle = Math.abs(x) < 1e-6 ? "#5b6a5f" : "#2f3832"; ctx.beginPath(); ctx.moveTo(sx(x), 0); ctx.lineTo(sx(x), H); ctx.stroke(); }
-  for (let y = y0; y <= y1; y += step) { ctx.strokeStyle = Math.abs(y) < 1e-6 ? "#5b6a5f" : "#2f3832"; ctx.beginPath(); ctx.moveTo(0, sy(y)); ctx.lineTo(W, sy(y)); ctx.stroke(); }
+// The real mower from above: the Mower V3 parts drawn once into a picture (1 px per mm, painter's order by height,
+// lit from above), then placed at the pose. Until the mesh loads, or when smaller than TOP_MIN px, the plain silhouette.
+const TOP_MIN = 34;
+let topView = null;
+function buildTopView() {
+  if (!MESH || topView) return;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const p of MESH.parts) for (let i = 0; i < p.pos.length; i += 3) {
+    x0 = Math.min(x0, p.pos[i]); x1 = Math.max(x1, p.pos[i]); y0 = Math.min(y0, p.pos[i + 1]); y1 = Math.max(y1, p.pos[i + 1]);
+  }
+  const pad = 8, c = document.createElement("canvas");
+  c.width = Math.ceil(x1 - x0) + 2 * pad; c.height = Math.ceil(y1 - y0) + 2 * pad;
+  const g = c.getContext("2d"), tris = [];
+  for (const p of MESH.parts) {
+    const kind = p.kind === "caster" && /Wheel\/Wheel/.test(p.name) ? "tyre" : p.kind, col = (PART_MAT[kind] || PART_MAT.frame)[0];
+    const rgb = [col >> 16 & 255, col >> 8 & 255, col & 255], P = p.pos, I = p.idx;
+    for (let t = 0; t < I.length; t += 3) {
+      const a = I[t] * 3, b = I[t + 1] * 3, d = I[t + 2] * 3;
+      const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[d] - P[a], vy = P[d + 1] - P[a + 1], vz = P[d + 2] - P[a + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, nl = Math.hypot(nx, ny, nz) || 1;
+      const lit = 0.55 + 0.45 * Math.abs(nz / nl) + 0.12 * (-nx + ny) / nl;   // top faces bright, sides by the light
+      tris.push([Math.max(P[a + 2], P[b + 2], P[d + 2]), [P[a], P[a + 1], P[b], P[b + 1], P[d], P[d + 1]], rgb.map(v => Math.min(255, v * lit) | 0)]);
+    }
+  }
+  tris.sort((p, q) => p[0] - q[0]);
+  const X = x => x - x0 + pad, Y = y => y1 - y + pad;       // robot +y (left) up in the picture
+  g.lineJoin = "round"; g.lineWidth = 0.8;
+  for (const [, q, [r, gg, b]] of tris) {
+    g.fillStyle = g.strokeStyle = `rgb(${r},${gg},${b})`;
+    g.beginPath(); g.moveTo(X(q[0]), Y(q[1])); g.lineTo(X(q[2]), Y(q[3])); g.lineTo(X(q[4]), Y(q[5])); g.closePath(); g.fill(); g.stroke();
+  }
+  topView = {c, ox: X(0), oy: Y(0)};                        // the robot origin (axle midpoint) in the picture
+  dirty = true;
 }
 
 function drawScale() {
@@ -474,12 +581,22 @@ function drawMower(p) {                                     // p: axle pose
   }
   const big = Math.max(1, 14 / ((FRONT + REAR) * view.s));  // zoomed out: keep the mower visible (>= 14 px long)
   const sc = pts => pts.map(([u, v]) => [u * big, v * big]);
-  ctx.shadowColor = "rgba(0,0,0,.45)"; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2;
+  buildTopView();
+  const real = topView && (FRONT + REAR) * view.s >= TOP_MIN;
+  ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 10; ctx.shadowOffsetY = 2;
   pathPoly(bodyPoly(x, y, yaw, sc(FOOT)), true);
-  ctx.fillStyle = "#f4f7f5"; ctx.fill(); ctx.shadowColor = "transparent";
-  ctx.strokeStyle = "#1c2420"; ctx.lineWidth = 1.5; ctx.stroke();
+  if (real) {                                               // a dark plate under the open frame keeps its outline readable
+    ctx.fillStyle = "rgba(14,20,16,.42)"; ctx.fill(); ctx.shadowColor = "transparent";
+    ctx.save(); ctx.translate(sx(x), sy(y)); ctx.rotate(-yaw); ctx.scale(view.s / 1000, view.s / 1000);
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(topView.c, -topView.ox, -topView.oy); ctx.restore();
+  } else {
+    ctx.fillStyle = "#f4f7f5"; ctx.fill(); ctx.shadowColor = "transparent";
+    ctx.strokeStyle = "#1c2420"; ctx.lineWidth = 1.5; ctx.stroke();
+  }
   pathPoly(bodyPoly(x, y, yaw, sc(ARROW)), true);           // heading (front = drive wheels)
-  ctx.fillStyle = "#22a85a"; ctx.fill();
+  ctx.fillStyle = "#2fc76c"; ctx.fill();
+  if (real) { ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 1.5; ctx.stroke(); }
 }
 
 function drawTruth(p) {
@@ -490,8 +607,7 @@ function drawTruth(p) {
 function draw2d() {
   if (view.follow && pose.disp) [view.x, view.y] = [pose.disp.x, pose.disp.y];
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.fillStyle = "#1a201c"; ctx.fillRect(0, 0, W, H);
-  if (!drawTiles()) drawGrid();
+  drawLawn();
   if (prefs.truth && world.length) drawWorld();
   drawMap();
   drawOutlines();
@@ -503,6 +619,7 @@ function draw2d() {
 }
 
 function frame() {
+  if (buildField()) dirty = true;
   const moved = updateDisp();
   if (moved && view.follow) dirty = true;
   if (moved || dirty) {
@@ -544,12 +661,13 @@ cv.addEventListener("pointerup", lift); cv.addEventListener("pointercancel", lif
 cv.addEventListener("wheel", e => { e.preventDefault(); zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * 0.0015)); }, {passive: false});
 
 // ---- 3D view (default): three.js r128, odom frame, metres, z up ----
-// Meshes are built once and moved; map, world, outlines and the aerial ground are rebuilt only when they change.
+// Meshes are built once and moved; map, world, outlines and the terrain are rebuilt only when they change. Everything on
+// the ground sits on the terrain field (heightAt); the mower stands on it, tilted by the accelerometer (st.tilt).
 const BODY_Z0 = 0.05, BODY_Z1 = 0.29;                       // body box height (sim mower.yaml cover envelope)
 const WHEEL_R = 0.075;                                      // drive wheel radius (box mower until the mesh loads)
-const SKY = 0xb9cfdc, GROUND = 0x34482f;
+const SKY = 0xc4d6df;
 const v3 = {on: false, loading: false, ready: false, mapKey: null, worldKey: null, outKey: null, groundKey: null, trailN: -1,
-            cam: {az: -Math.PI / 2, el: 0.95, d: 8, tx: 0, ty: 0}, pending: []};
+            cam: {az: -Math.PI / 2, el: 0.95, d: 8, tx: 0, ty: 0}, tilt: [0, 0]};
 
 function load3d() {
   if (window.THREE) return Promise.resolve();
@@ -598,18 +716,18 @@ function init3d() {
   r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   r.setClearColor(SKY);
   const scene = new T.Scene();
-  scene.fog = new T.Fog(SKY, 70, 260);
+  scene.fog = new T.Fog(SKY, 60, 240);
   const cam3 = new T.PerspectiveCamera(50, 1, 0.05, 600);
   cam3.up.set(0, 0, 1);
   scene.add(new T.HemisphereLight(0xffffff, 0x6d7d66, 0.85));
   const sun = new T.DirectionalLight(0xffffff, 0.55); sun.position.set(-3, -5, 8); scene.add(sun);
-  // ground: a plain field everywhere, the aerial texture on top around the datum, a faint grid while there is no imagery
-  const field = new T.Mesh(new T.PlaneGeometry(2000, 2000), new T.MeshBasicMaterial({color: GROUND}));
-  field.position.z = -0.02; scene.add(field);
-  const grid = new T.GridHelper(100, 100, 0x6f8468, 0x4b5d46);
-  grid.rotation.x = Math.PI / 2; grid.position.z = -0.01; scene.add(grid);
-  const ground = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({color: 0xffffff}));
-  ground.visible = false; ground.position.z = -0.005; scene.add(ground);
+  // ground: the flat lawn everywhere, the measured terrain (sync3dGround) on top where the mower drove
+  v3.r = r;
+  const lawn = grassMaterial();
+  const field = new T.Mesh(new T.PlaneGeometry(1200, 1200), lawn);
+  scene.add(field); v3.lawn = field;
+  const ground = new T.Mesh(new T.PlaneGeometry(1, 1), lawn);
+  ground.visible = false; ground.frustumCulled = false; scene.add(ground);
 
   const box = new T.BoxGeometry(1, 1, 1), cyl = new T.CylinderGeometry(1, 1, 1, 20);
   cyl.rotateX(Math.PI / 2);                                   // axis along z
@@ -643,7 +761,7 @@ function init3d() {
   trailMesh.frustumCulled = false; scene.add(trailMesh);
 
   Object.assign(v3, {r, scene, cam3, box, cyl, clsMat, greyMat, greyEdge, blueMat, mower, boxBody, model, arrow3: am, fields, rays,
-    truth, trailGeo, grid, ground,
+    truth, trailGeo, ground,
     mapG: group(), worldG: group(), outG: group(), dot: new T.CircleGeometry(0.03, 12), bigDot: new T.CircleGeometry(0.05, 12)});
   for (const g of [box, cyl, v3.dot, v3.bigDot]) g.userData.shared = true;
   r.domElement.style.display = "none";
@@ -747,36 +865,76 @@ function clearGroup(g) {                                    // frees the group's
   for (const c of [...g.children]) { g.remove(c); if (c.geometry && !c.geometry.userData.shared) c.geometry.dispose(); }
 }
 
-// aerial ground: 5 x 5 tiles at the deepest zoom with imagery, centred on the datum, drawn into one texture as they load
+// ground: the terrain field as a mesh, one vertex per cell centre; outside it the flat lawn (same material, so no seam)
 function sync3dGround() {
-  const on = imageryOn(), key = on ? datum[0] + "," + datum[1] + "," + tileMaxZ : "off";
-  if (key !== v3.groundKey) {
-    v3.groundKey = key; v3.pending = [];
-    const g = v3.ground;
-    if (g.material.map) { g.material.map.dispose(); g.material.map = null; }
-    g.visible = false; v3.grid.visible = true;
-    if (on) {
-      const z = Math.min(tileMaxZ, 19), N = 5, cx = Math.floor(tileX(datum[1], z)) - 2, cy = Math.floor(tileY(datum[0], z)) - 2;
-      const x0 = xOfLon(lonOfTile(cx, z)), x1 = xOfLon(lonOfTile(cx + N, z));
-      const yN = yOfLat(latOfTile(cy, z)), yS = yOfLat(latOfTile(cy + N, z));
-      const can = document.createElement("canvas"); can.width = can.height = 256 * N;
-      const tex = new THREE.CanvasTexture(can);
-      tex.anisotropy = v3.r.capabilities.getMaxAnisotropy();
-      g.geometry.dispose(); g.geometry = new THREE.PlaneGeometry(x1 - x0, yN - yS);
-      g.position.set((x0 + x1) / 2, (yN + yS) / 2, -0.005);
-      g.material.map = tex; g.material.needsUpdate = true;
-      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) v3.pending.push({t: tile(z, cx + i, cy + j), i, j, can, tex});
-    }
+  const f = TER.field, key = f ? f.rev : null;
+  if (key === v3.groundKey) return;
+  v3.groundKey = key;
+  const m = v3.ground;
+  m.visible = !!f;
+  // the flat lawn around it, with a hole where the field is (the field's edge is at the base height)
+  const L = v3.lawn, x0 = f ? (f.i0 + 0.5) * f.cell : 0, y0 = f ? (f.j0 + 0.5) * f.cell : 0;
+  const x1 = f ? x0 + (f.nx - 1) * f.cell : 0, y1 = f ? y0 + (f.ny - 1) * f.cell : 0, hole = f ? [x0, y0, x1, y1].join() : "";
+  if (L.userData.hole !== hole) {
+    const R = 600, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, s = new THREE.Shape();
+    s.moveTo(cx - R, cy - R); s.lineTo(cx + R, cy - R); s.lineTo(cx + R, cy + R); s.lineTo(cx - R, cy + R); s.closePath();
+    if (f) { const h = new THREE.Path(); h.moveTo(x0, y0); h.lineTo(x0, y1); h.lineTo(x1, y1); h.lineTo(x1, y0); h.closePath(); s.holes.push(h); }
+    L.geometry.dispose(); L.geometry = new THREE.ShapeGeometry(s); L.userData.hole = hole;
   }
-  if (!v3.pending.length) return;
-  v3.pending = v3.pending.filter(p => {
-    if (p.t.bad) return false;
-    if (!p.t.ok) return true;
-    try { p.can.getContext("2d").drawImage(p.t.img, p.i * 256, p.j * 256); p.tex.needsUpdate = true; } catch (e) { return false; }
-    v3.ground.visible = true; v3.grid.visible = false;
-    return false;
+  L.position.z = f ? f.base : 0;
+  if (!f) return;
+  if (!m.geometry.userData.dims || m.geometry.userData.dims !== f.nx + "x" + f.ny) {
+    m.geometry.dispose();
+    const g = new THREE.BufferGeometry(), idx = [];
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(f.nx * f.ny * 3), 3));
+    for (let j = 0; j < f.ny - 1; j++) for (let i = 0; i < f.nx - 1; i++) {
+      const k = j * f.nx + i;
+      idx.push(k, k + 1, k + f.nx, k + 1, k + f.nx + 1, k + f.nx);
+    }
+    g.setIndex(idx); g.userData.dims = f.nx + "x" + f.ny;
+    m.geometry = g;
+  }
+  const g = m.geometry, pos = g.attributes.position.array;
+  for (let j = 0; j < f.ny; j++) for (let i = 0; i < f.nx; i++) {
+    const k = j * f.nx + i;
+    pos[3 * k] = (f.i0 + i + 0.5) * f.cell; pos[3 * k + 1] = (f.j0 + j + 0.5) * f.cell; pos[3 * k + 2] = f.h[k];
+  }
+  g.attributes.position.needsUpdate = true; g.computeVertexNormals(); g.computeBoundingSphere();
+  v3.mapKey = v3.outKey = v3.trailN = null;                 // they sit on the ground: lift them again
+}
+
+// Lawn shader: the grass texture twice (two scales, turned, so it does not visibly repeat), large soft tone patches
+// that fade out before they get too small to resolve, light from the sun on the terrain's slopes, and fog.
+// Mipmaps and anisotropy keep the far grass calm; the near grass is 3 mm per texel.
+function grassMaterial() {
+  const T = THREE, tex = new T.CanvasTexture(GRASS.canvas);
+  tex.wrapS = tex.wrapT = T.RepeatWrapping; tex.anisotropy = v3.r.capabilities.getMaxAnisotropy();
+  tex.minFilter = T.LinearMipmapLinearFilter; tex.generateMipmaps = true;
+  return new T.ShaderMaterial({
+    uniforms: {grass: {value: tex}, sun: {value: new T.Vector3(-0.35, -0.5, 0.8).normalize()},
+               fogC: {value: new T.Color(SKY)}, fogR: {value: new T.Vector2(60, 240)}, tileM: {value: GRASS_M}},
+    extensions: {derivatives: true},
+    vertexShader: `varying vec3 vW; varying vec3 vN; varying float vD;
+      void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal);
+        vec4 mv = viewMatrix * w; vD = -mv.z; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform sampler2D grass; uniform vec3 sun; uniform vec3 fogC; uniform vec2 fogR; uniform float tileM;
+      varying vec3 vW; varying vec3 vN; varying float vD;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }
+      void main() {
+        vec2 p = vW.xy;
+        vec3 a = texture2D(grass, p / tileM).rgb;
+        vec3 b = texture2D(grass, mat2(0.8, -0.6, 0.6, 0.8) * p / (tileM * 0.37) + 0.31).rgb;
+        vec3 c = mix(a, b, 0.38);
+        float fw = length(fwidth(p));                       // m per pixel here
+        float t = (vnoise(p / 2.6) - 0.5) * (1.0 - smoothstep(0.08, 0.3, fw)) + (vnoise(p / 9.0 + 5.3) - 0.5) * (1.0 - smoothstep(0.3, 1.2, fw));
+        c *= 1.0 + 0.16 * t;
+        vec3 n = normalize(vN);
+        c *= 0.6 + 0.5 * max(dot(n, sun), 0.0);
+        gl_FragColor = vec4(mix(c, fogC, smoothstep(fogR.x, fogR.y, vD)), 1.0);
+      }`,
   });
-  if (v3.pending.length) dirty = true;                      // keep checking while tiles load
 }
 
 function sync3dMap() {
@@ -787,10 +945,11 @@ function sync3dMap() {
     const c = clsOf(kind), h = Math.max(0.02, hc / 100), m = new THREE.Mesh(c === CLS.post ? v3.cyl : v3.box, v3.clsMat.get(c));
     if (c === CLS.post) {
       const r = Math.max(0.02, x1 / 100);
-      m.scale.set(r, r, h); m.position.set(x0 / 100, y0 / 100, h / 2);
+      m.scale.set(r, r, h); m.position.set(x0 / 100, y0 / 100, heightAt(x0 / 100, y0 / 100) + h / 2);
     } else {
       const th = c.thick, l = Math.hypot(x1 - x0, y1 - y0) / 100;
-      m.scale.set(l + th, th, h); m.position.set((x0 + x1) / 200, (y0 + y1) / 200, h / 2);
+      const cx = (x0 + x1) / 200, cy = (y0 + y1) / 200;
+      m.scale.set(l + th, th, h); m.position.set(cx, cy, heightAt(cx, cy) + h / 2);
       m.rotation.z = Math.atan2(y1 - y0, x1 - x0);
     }
     v3.mapG.add(m);
@@ -816,13 +975,13 @@ function sync3dWorld() {
   }
 }
 
-// a ground ribbon (half width hw) along segments [[ax, ay, bx, by]], into a position array from index 0
+// a ribbon (half width hw) z above the ground along segments [[ax, ay, bx, by]], into a position array from index 0
 function ribbon(pos, segs, hw, z) {
   let k = 0;
   for (const [ax, ay, bx, by] of segs) {
     const l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l * hw, ny = (bx - ax) / l * hw;
     for (const [x, y] of [[ax + nx, ay + ny], [ax - nx, ay - ny], [bx + nx, by + ny], [bx + nx, by + ny], [ax - nx, ay - ny], [bx - nx, by - ny]]) {
-      pos[k] = x; pos[k + 1] = y; pos[k + 2] = z; k += 3;
+      pos[k] = x; pos[k + 1] = y; pos[k + 2] = heightAt(x, y) + z; k += 3;
     }
   }
   return k / 3;
@@ -835,14 +994,18 @@ function sync3dOutlines() {
   for (const o of outlines) {
     if (o.length > 1) {
       const segs = [];
-      for (let i = 1; i < o.length; i++) segs.push([o[i - 1][0] / 100, o[i - 1][1] / 100, o[i][0] / 100, o[i][1] / 100]);
+      for (let i = 1; i < o.length; i++) {                  // in pieces of <= 0.2 m, so the line follows the terrain
+        const [ax, ay] = o[i - 1], [bx, by] = o[i], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 20));
+        for (let k = 0; k < n; k++) segs.push([(ax + (bx - ax) * k / n) / 100, (ay + (by - ay) * k / n) / 100,
+                                              (ax + (bx - ax) * (k + 1) / n) / 100, (ay + (by - ay) * (k + 1) / n) / 100]);
+      }
       const pos = new Float32Array(segs.length * 18); ribbon(pos, segs, 0.015, 0.015);
       const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
       v3.outG.add(new THREE.Mesh(g, v3.blueMat));
     }
     for (const [x, y, corner] of o) {
       const d = new THREE.Mesh(corner ? v3.bigDot : v3.dot, v3.blueMat);
-      d.position.set(x / 100, y / 100, 0.02); v3.outG.add(d);
+      d.position.set(x / 100, y / 100, heightAt(x / 100, y / 100) + 0.02); v3.outG.add(d);
     }
   }
 }
@@ -865,15 +1028,21 @@ function render3d() {
   sync3dGround(); sync3dMap(); sync3dWorld(); sync3dOutlines(); sync3dTrail();
   const p = pose.disp;
   v3.mower.visible = !!p; v3.fields.visible = prefs.fields; v3.rays.visible = prefs.rays;
-  if (p) { v3.mower.position.set(p.x, p.y, 0); v3.mower.rotation.z = p.yaw; }
+  if (p) {                                                  // on the terrain, tilted as the accelerometer says
+    const tl = st && st.tilt, k = 1 - Math.exp(-Math.min(0.1, now() - (v3.tiltT || 0)) / 0.15);
+    v3.tiltT = now();
+    if (tl) v3.tilt = [v3.tilt[0] + (tl[0] - v3.tilt[0]) * k, v3.tilt[1] + (tl[1] - v3.tilt[1]) * k];
+    v3.mower.position.set(p.x, p.y, heightAt(p.x, p.y)); v3.mower.rotation.set(v3.tilt[0], v3.tilt[1], p.yaw, "ZYX");
+  }
   const q = prefs.truth && st && st.truth;
   v3.truth.visible = !!q;
-  if (q) { v3.truth.position.set(q.x, q.y, 0); v3.truth.rotation.z = q.yaw; }   // truth = axle midpoint
+  if (q) { v3.truth.position.set(q.x, q.y, heightAt(q.x, q.y)); v3.truth.rotation.z = q.yaw; }   // truth = axle midpoint
   const c = v3.cam;
   if (view.follow && p) [c.tx, c.ty] = [p.x, p.y];
   const ce = Math.cos(c.el);
-  v3.cam3.position.set(c.tx + c.d * ce * Math.cos(c.az), c.ty + c.d * ce * Math.sin(c.az), c.d * Math.sin(c.el));
-  v3.cam3.lookAt(c.tx, c.ty, 0);
+  const tz = heightAt(c.tx, c.ty);
+  v3.cam3.position.set(c.tx + c.d * ce * Math.cos(c.az), c.ty + c.d * ce * Math.sin(c.az), tz + c.d * Math.sin(c.el));
+  v3.cam3.lookAt(c.tx, c.ty, tz);
   v3.r.render(v3.scene, v3.cam3);
 }
 
@@ -1060,9 +1229,9 @@ $("close").onclick = $("scrim").onclick = () => openDrawer(false);
 for (const b of document.querySelectorAll("[data-cmd]")) b.onclick = () => cmd(b.dataset.cmd);
 $("legend").innerHTML = [[CLS.wall.color, "wall"], [CLS.low.color, "low edge"], [CLS.post.color, "post"], ["#4fb2ff", "outline"], ["#d9ff6e", "trail"]]
   .map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join("");
-for (const k of ["imagery", "fields", "rays", "truth"]) {
+for (const k of ["fields", "rays", "truth"]) {
   const el = $("o-" + k); el.checked = !!prefs[k];
-  el.onchange = () => { prefs[k] = el.checked; savePrefs(); renderAttr(); dirty = true; };
+  el.onchange = () => { prefs[k] = el.checked; savePrefs(); dirty = true; };
 }
 
 $("stop").addEventListener("pointerdown", e => { e.preventDefault(); stopAll(); });   // no wait for click on touch

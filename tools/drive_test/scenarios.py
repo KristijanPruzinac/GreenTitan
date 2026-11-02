@@ -33,6 +33,13 @@ SCENARIOS = {
         'steps': [(0.25, 0, 4.0), (0, 0.5, 3.2), (0.25, 0, 2.5), (0, -0.5, 3.2), (0.25, 0, 4.0)],
         'checks': {},
     },
+    # Parked heading (2026-11-02): drive until the heading is confirmed, then stand; afterwards leave the sim
+    # running parked for minutes and compare the EKF yaw with the truth (F:-side yaw_time.py style).
+    'park': {
+        'world': 'course', 'spawn': (0.0, 0.0, 0.0),
+        'steps': [(0.25, 0, 5.0), (0, 0.5, 3.0), (0.25, 0, 3.0)],
+        'checks': {},
+    },
     # Manual drive 2026-11-01, middle wall: drive along the thin wall (wall on the right, 0.5 m off the axle) and
     # keep driving past its free end. The assist must lock, follow at its line and round the end.
     'parallel_thin': {

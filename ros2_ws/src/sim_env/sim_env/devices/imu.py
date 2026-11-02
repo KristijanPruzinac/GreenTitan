@@ -22,6 +22,8 @@ Config::
             scale_error: 0.01, range: 19.6, resolution: 0.000598}             # m/s^2
     vibration: {accel_sigma: 0.0, gyro_sigma: 0.0}
 """
+import time
+
 import numpy as np
 from sensor_msgs.msg import Imu
 
@@ -47,7 +49,8 @@ class Channel:
     def apply(self, ideal, dt, rate, vib_sigma, lpf_alpha):
         white = self.rng.normal(0, float(self.p['noise_density']) * np.sqrt(max(rate, 1.0) / 2), 3)
         vib = self.rng.normal(0, vib_sigma, 3) if vib_sigma > 0 else 0.0
-        y = ideal * self.scale + self.turn_on + self.drift.step(dt) + white + vib
+        self.bias = self.turn_on + self.drift.step(dt)
+        y = ideal * self.scale + self.bias + white + vib
         if lpf_alpha is not None:
             self.lp = y if self.lp is None else self.lp + lpf_alpha * (y - self.lp)
             y = self.lp
@@ -70,6 +73,7 @@ class ImuModel(DeviceNode):
         self.gyro_angle = bool(self.c('gyro_angle', False))
         self.angle = 0.0
         self.prev_wz = None
+        self.prev_wall = 0.0
         self.last = None
         self.last_pub = None
         self.output_period = 1.0 / float(self.c('output_rate', 0)) if self.c('output_rate') else 0.0
@@ -88,9 +92,15 @@ class ImuModel(DeviceNode):
         a = np.array([msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z])
         w = self.gyro.apply(w, dt, rate, float(self.vib.get('gyro_sigma', 0)), alpha)
         a = self.accel.apply(a, dt, rate, float(self.vib.get('accel_sigma', 0)), alpha)
+        # The receiver scales the angle rate by the sim speed (it integrates over wall time). That is
+        # right for the rotation but not for the bias, which a real part shows per wall second: the
+        # bias is integrated over wall time here, so off real time it stays constant at the receiver
+        # (2026-11-02: at 0.87x during startup the boot calibration came out 0.26 deg/s off)
+        wall = time.monotonic()
+        bz = float(self.gyro.bias[2])
         if self.prev_wz is not None:
-            self.angle += 0.5 * (self.prev_wz + float(w[2])) * dt
-        self.prev_wz = float(w[2])
+            self.angle += 0.5 * (self.prev_wz + float(w[2]) - bz) * dt + bz * min(wall - self.prev_wall, 1.0)
+        self.prev_wz, self.prev_wall = float(w[2]) - bz, wall
         if self.last_pub is not None and t - self.last_pub < self.output_period - 1e-6:
             return
         self.last_pub = t
