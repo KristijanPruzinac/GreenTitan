@@ -450,6 +450,8 @@ typedef struct {
 #define IMU_STILL_SETTLE 1.0      // s, wheels stopped this long first (a hint inside the gate, never odometry)
 #define IMU_STILL_BLOCK 0.5       // s, stillness is judged per block of reads; a still block's yaw is taken back
 #define IMU_STILL_RATE 0.003      // rad/s (0.17 deg/s), a block's mean rate (bias removed) below this is still; a turn above it is never held
+#define IMU_STILL_PARKED 5.0      // s, wheels stopped this long: a larger offset is bias, not a turn (a parked mower cannot turn by itself)
+#define IMU_STILL_PARKED_RATE 0.035 // rad/s (2 deg/s), the bias step accepted then (MPU6050 warm-up, a wrong boot calibration)
 #define IMU_STILL_GPS_SPEED 0.10f // m/s, GPS ground speed below this (HIL parked: 0.024 median, 0.068 p99)
 #define IMU_BIAS_WINDOW 4.0       // s of still blocks in a row: their mean becomes the bias
 #define MOTOR_UPDATE_FREQUENCY 1000
