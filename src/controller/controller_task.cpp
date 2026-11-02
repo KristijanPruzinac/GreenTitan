@@ -342,7 +342,7 @@ static void approach_wait_fix() {
     phase_ms = millis();
     fix_since = 0;
     set_state(ROBOT_STATE_DOCKING);
-    SerialDebug.printf("[DOCK] No RTK fix on the approach: waiting (up to %d s)\r\n", DOCK_RTK_WAIT_MS / 1000);
+    SerialDebug.printf("[DOCK] No RTK fix on the approach: waiting (up to %d min)\r\n", DOCK_FIX_WAIT_MS / 60000);
 }
 
 static void start_approach() {
@@ -765,7 +765,7 @@ static void dock_tick() {
             if (!rtk_fixed()) fix_since = 0;
             else if (!fix_since) fix_since = now;
             else if (now - fix_since >= 1000) { approach_resume(); break; }
-            if (now - phase_ms > DOCK_RTK_WAIT_MS) dock_failed("no RTK fix at the station");
+            if (now - phase_ms > DOCK_FIX_WAIT_MS) dock_failed("no RTK fix at the station");
             break;
         case DP_APPROACH:
             if (!rtk_fixed() && !contact) { approach_wait_fix(); break; }

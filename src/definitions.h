@@ -81,6 +81,7 @@ typedef struct {
 #define DOCK_MAX_DRIFT_DEG 3.0f      // long-chord minus short-chord heading: a sideways slide (rails), not noise (2 cm jolts: 2.5 max)
 #define DOCK_RTK_MAX_AGE_MS 1000       // RTK fixed must have been reported within this
 #define DOCK_RTK_WAIT_MS 60000        // Set station / Home before the RTK fix (boot: float first) waits this long, quietly
+#define DOCK_FIX_WAIT_MS 600000       // the approach without RTK fix waits stopped this long, quietly (float episodes by a shed or hedge last minutes)
 #define DOCK_EST_WEIGHT 0.2f           // weight of one accepted dock measurement in the running estimate
 #define DOCK_GATE_SIGMAS 3.0f          // gate: within this many sigma of the recent measurements ...
 #define DOCK_GATE_MIN_POS 0.03f        // m ... but never tighter than this

@@ -51,7 +51,7 @@ DOCKED = 0.02                       # m past the contact point: spawned with the
 SETTLE = {'wait': 12}               # gyro calibration and the first poses (keep still)
 # The sim GNSS starts in float (fix after ~20 s): Set station / Home wait for it in the firmware
 # (up to 60 s), so their timeouts carry that minute on top of the drive
-HOME =[{'cmd': 'home'}, {'wait_state': 'CHARGING', 'timeout': 240}]
+HOME = [{'cmd': 'home'}, {'wait_state': 'CHARGING', 'timeout': 840}]   # incl. up to 10 min of quiet RTK wait on the approach
 # Undock waits like Home when docked with no station known: the first departure measures it (RTK fix needed)
 CYCLE = [{'cmd': 'undock'}, {'wait_state': 'IDLE', 'timeout': 120}] + HOME
 # Out of the station by hand: turn, then ~3 m away (Home then routes back round to the axis)
