@@ -73,6 +73,13 @@ typedef struct {
 #define DOCK_TRIES 3                   // approaches from the pre-dock point, then the recovery
 #define DOCK_RECOVERY_PREDOCK 2.0f     // m, recovery: a fresh, longer straight approach ...
 #define DOCK_SEARCH_LATERAL 0.05f      // m, ... then one slow approach each side, this far off the axis
+#define DOCK_CONTACT_GRACE_MS 500     // the approach line ended without voltage: wait this long for the contacts (they lag the pose)
+#define DOCK_JAM_SHIFT 0.02f           // m, after a stall or pivot in the funnel: the next approach line this far away from the jam side ...
+#define DOCK_JAM_SHIFT_MAX 0.08f       // ... adding up to this (per docking, reset on Home)
+#define DOCK_MOUTH_ALONG 0.70f         // m before the contact: the funnel mouth (rails from here to the throat)
+#define DOCK_PIVOT_ABORT_DEG 10.0f     // in the funnel, yaw off the axis above this = a wheel caught a rail: back out (clean <= 5.6, jams pass 8 at -0.3 m)
+#define DOCK_PIVOT_END_ALONG 0.10f     // m before the contact: the pivot check ends here (the springs turn it up to ~8 deg)
+#define DOCK_JAM_MIN_DEG 5.0f          // a stall with less yaw than this gives no jam side
 #define DOCK_SET_BACKOUT 1.5f          // m, set station: reverse out this far, recording the track
 #define DOCK_SET_MIN_TRACK 1.2f        // m of RTK-fixed track behind the contact point
 #define DOCK_SET_MAX_SPREAD_DEG 2.5f   // per-sample heading estimates must agree this well (RMS); straight 1.5 m, 1 cm RTK: 0.55 typ., 2 cm bump jolts: 1.66 p95

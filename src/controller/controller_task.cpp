@@ -227,6 +227,7 @@ enum dock_phase {
     DP_UNDOCK,       // reversing out of the station
     DP_SET_BACKOUT,  // set station: reversing out, recording the track
     DP_WAIT_FIX,     // approach paused: RTK fix lost (a float pose is off by ~20 cm, the throat leaves 2.5 cm)
+    DP_GRACE,        // the approach line ended without voltage: DOCK_CONTACT_GRACE_MS for the contacts
 };
 
 static int      dock_phase = DP_NONE;
@@ -265,12 +266,37 @@ static void st_point(float along, float lat, double* x, double* y) {
 
 // The approach plan per attempt: DOCK_TRIES normal ones, then the recovery (a fresh, longer straight
 // approach, slow), then one slow approach each side DOCK_SEARCH_LATERAL off the axis.
+// Every line is shifted by dock_jam_bias: a wheel caught a rail (stall or pivot), so the estimate is off
+// towards that side; the next lines keep DOCK_JAM_SHIFT more away from it. Per docking (reset on Home
+// and on a new estimate); retried approaches are no measurements, so it never reaches the estimate.
+static float dock_jam_bias = 0.0f;
 static int dock_attempts_total() { return DOCK_TRIES + 3; }
 static void attempt_plan(int k, float* predock, float* lat, float* speed) {
     *predock = DOCK_PREDOCK_DIST; *lat = 0.0f; *speed = DOCK_APPROACH_SPEED;
     if (k == DOCK_TRIES) { *predock = DOCK_RECOVERY_PREDOCK; *speed = DOCK_SLOW_SPEED; }
     else if (k == DOCK_TRIES + 1) { *lat = DOCK_SEARCH_LATERAL; *speed = DOCK_SLOW_SPEED; }
     else if (k == DOCK_TRIES + 2) { *lat = -DOCK_SEARCH_LATERAL; *speed = DOCK_SLOW_SPEED; }
+    *lat += dock_jam_bias;
+}
+
+// The axle in the station frame (along: + = in, 0 = contact; yaw off the axis, + = turned left)
+static bool dock_axle_frame(float* along, float* dyaw) {
+    fused_pose_data_t p;
+    if (!fused_pose_now(&p)) return false;
+    double ax = p.x + GNSS_ANTENNA_BEHIND_AXLE * cos(p.yaw), ay = p.y + GNSS_ANTENNA_BEHIND_AXLE * sin(p.yaw);
+    *along = (float)((ax - DOCK_STATION.x) * st_ux() + (ay - DOCK_STATION.y) * st_uy());
+    *dyaw = wrap_pi(p.yaw - DOCK_STATION.yaw);
+    return true;
+}
+
+// A jam in the funnel: turned left (+) = the left wheel caught the left rail and braked, the right one
+// pivoted it (HIL 2026-11-02). The next line moves right, and the other way round.
+static void dock_jam_shift(float dyaw) {
+    if (fabsf(dyaw) < DOCK_JAM_MIN_DEG * DEG_TO_RAD) return;
+    dock_jam_bias -= dyaw > 0 ? DOCK_JAM_SHIFT : -DOCK_JAM_SHIFT;
+    dock_jam_bias = constrain(dock_jam_bias, -DOCK_JAM_SHIFT_MAX, DOCK_JAM_SHIFT_MAX);
+    SerialDebug.printf("[DOCK] Jam on the %s rail (yaw %+.1f deg): next lines %+.0f cm off\r\n", dyaw > 0 ? "left" : "right",
+                       dyaw * RAD_TO_DEG, dock_jam_bias * 100.0f);
 }
 
 static bool rtk_fixed() {
@@ -428,6 +454,7 @@ static void approach_failed(const char* why) {
         dock_verifying = true;
         dock_missed_before = dock_attempt;
         dock_attempt = 0;
+        dock_jam_bias = 0.0f;   // learnt against the old estimate
         attempt_plan(0, &pre, &lat, &speed);
     }
     st_point(-pre, lat, &ex, &ey);
@@ -472,6 +499,7 @@ static void go_home(bool from_mission, bool resume) {
     }
     resume_after_charge = resume;
     dock_attempt = dock_missed_before = 0;
+    dock_jam_bias = 0.0f;
     stop_motors();
     motor_main_off();
     if (from_mission && CONFIG_PATH) {
@@ -761,6 +789,7 @@ static void set_station_backout_done() {
         return;
     }
     dock_attempt = dock_missed_before = 0;
+    dock_jam_bias = 0.0f;
     resume_after_charge = false;
     route_to_predock();   // standing on the axis about DOCK_SET_BACKOUT out: straight into the approach
 }
@@ -811,6 +840,29 @@ static void dock_tick() {
                 dock_phase = DP_HOLD;
             } else if (now - phase_ms > DOCK_APPROACH_TIMEOUT_MS) {
                 approach_failed("timeout");
+            } else {
+                // A wheel caught a rail: the other one pivots the mower and the tracker's correction turns
+                // it harder into the rail until the stall check (HIL: 8 deg at 0.3-0.4 m out, 30-50 deg at
+                // the stall). Back out at once; clean approaches stay within 5.6 deg there, the springs at
+                // the contacts turn it up to ~8 deg, past the check's end.
+                float along, dyaw;
+                if (dock_axle_frame(&along, &dyaw) && along > -DOCK_MOUTH_ALONG && along < -DOCK_PIVOT_END_ALONG &&
+                    fabsf(dyaw) > DOCK_PIVOT_ABORT_DEG * DEG_TO_RAD) {
+                    motion_stop();
+                    dock_jam_shift(dyaw);
+                    approach_failed("pivot");
+                }
+            }
+            break;
+        case DP_GRACE:
+            // The contacts lag the pose (HIL: closed 60 ms before the line's end, seen after it). Only
+            // the voltage docks; nothing by DOCK_CONTACT_GRACE_MS = a miss.
+            if (contact) {
+                if (pose_ok) { contact_pose = p; contact_gyro = g; }
+                contact_ms = now;
+                dock_phase = DP_HOLD;
+            } else if (now - phase_ms > DOCK_CONTACT_GRACE_MS) {
+                approach_failed("no contact at the end of the approach");
             }
             break;
         case DP_HOLD:
@@ -1049,8 +1101,10 @@ static void handle_motion_done() {
             break;
 
         case ROBOT_STATE_DOCKING:
-            if (dock_phase == DP_APPROACH) approach_failed("no contact at the end of the approach");
-            else if (dock_phase == DP_BACKOFF) start_approach();
+            if (dock_phase == DP_APPROACH) {   // the tick docks on voltage within the grace, else a miss
+                dock_phase = DP_GRACE;
+                phase_ms = millis();
+            } else if (dock_phase == DP_BACKOFF) start_approach();
             break;
 
         case ROBOT_STATE_UNDOCKING:
@@ -1073,7 +1127,11 @@ static void handle_motion_done() {
 static void handle_obstacle() {
     // Motion has already stopped and dropped its path
     if (robot_state == ROBOT_STATE_DOCKING) {
-        if (dock_phase == DP_APPROACH) approach_failed("stalled");
+        if (dock_phase == DP_APPROACH) {
+            float along, dyaw;
+            if (dock_axle_frame(&along, &dyaw) && along > -DOCK_MOUTH_ALONG) dock_jam_shift(dyaw);
+            approach_failed("stalled");
+        }
         else if (dock_phase == DP_BACKOFF) dock_failed("could not back off");
         return;
     }
