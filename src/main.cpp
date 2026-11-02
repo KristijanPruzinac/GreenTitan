@@ -75,6 +75,7 @@ volatile bool     MANUAL_MOTORS_STOPPED = true;
 
 volatile bool     HEADING_CONFIRMED     = false;
 volatile uint32_t HEADING_EPOCH         = 0;
+volatile bool     TOF_MAP_HOLD          = false;
 volatile uint8_t  GPS_CARR_SOLN         = 0;
 volatile uint32_t GPS_CARR_SOLN_MS      = 0;
 

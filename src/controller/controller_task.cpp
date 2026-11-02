@@ -226,6 +226,7 @@ enum dock_phase {
     DP_BACKOFF,      // reversing to the next approach's pre-dock point
     DP_UNDOCK,       // reversing out of the station
     DP_SET_BACKOUT,  // set station: reversing out, recording the track
+    DP_WAIT_FIX,     // approach paused: RTK fix lost (a float pose is off by ~20 cm, the throat leaves 2.5 cm)
 };
 
 static int      dock_phase = DP_NONE;
@@ -328,7 +329,22 @@ static void dock_failed(const char* why) {
     SerialDebug.printf("[DOCK] Failed (%s): Couldn't dock. Check the station is clear, or set it again\r\n", why);
 }
 
+static uint32_t fix_since = 0;   // DP_WAIT_FIX: RTK fixed again since (0 = not)
+
+// No RTK fix on the approach: stop where it is and wait (the float pose steered the mower into a rail in
+// HIL 2026-11-02, then it pushed on one wheel until the stall check). Resumes in the tick.
+static void approach_wait_fix() {
+    motion_stop();
+    approach_clean = false;
+    dock_phase = DP_WAIT_FIX;
+    phase_ms = millis();
+    fix_since = 0;
+    set_state(ROBOT_STATE_DOCKING);
+    SerialDebug.printf("[DOCK] No RTK fix on the approach: waiting (up to %d s)\r\n", DOCK_RTK_WAIT_MS / 1000);
+}
+
 static void start_approach() {
+    if (!rtk_fixed()) { approach_wait_fix(); return; }
     float pre, lat, speed;
     attempt_plan(dock_attempt, &pre, &lat, &speed);
     lat += dock_tof_centring();
@@ -389,6 +405,30 @@ static void approach_failed(const char* why) {
     dock_phase = DP_BACKOFF;
     phase_ms = millis();
     motion_reverse(sx, sy, ex, ey, NAN);
+}
+
+// RTK fixed again after DP_WAIT_FIX: the same attempt again. Already in the funnel: straight back out
+// along the axis to its pre-dock point first (the back-off's end starts the approach); else via the route.
+static void approach_resume() {
+    float pre, lat, speed;
+    attempt_plan(dock_attempt, &pre, &lat, &speed);
+    SerialDebug.printf("[DOCK] RTK fixed again: approach %d once more\r\n", dock_attempt + 1);
+    fused_pose_data_t p;
+    if (fused_pose_now(&p)) {
+        double ax = p.x + GNSS_ANTENNA_BEHIND_AXLE * cos(p.yaw), ay = p.y + GNSS_ANTENNA_BEHIND_AXLE * sin(p.yaw);
+        double along = (ax - DOCK_STATION.x) * st_ux() + (ay - DOCK_STATION.y) * st_uy();
+        if (along > -pre + 0.3) {
+            double sx, sy, ex, ey;
+            st_point(0.0f, lat, &sx, &sy);
+            st_point(-pre, lat, &ex, &ey);
+            dock_phase = DP_BACKOFF;
+            phase_ms = millis();
+            motion_stop();
+            motion_reverse(sx, sy, ex, ey, NAN);
+            return;
+        }
+    }
+    route_to_predock();
 }
 
 // Home now: through the lawn if a mission was running and a plan exists, then to the station
@@ -692,8 +732,20 @@ static void dock_tick() {
     bool pose_ok = fused_pose_now(&p) && imu_yaw_now(&g);
 
     switch (dock_phase) {
+        case DP_WAIT_FIX:
+            if (contact) {   // stopped right on the plates
+                if (pose_ok) { contact_pose = p; contact_gyro = g; }
+                contact_ms = now;
+                dock_phase = DP_HOLD;
+                break;
+            }
+            if (!rtk_fixed()) fix_since = 0;
+            else if (!fix_since) fix_since = now;
+            else if (now - fix_since >= 1000) { approach_resume(); break; }
+            if (now - phase_ms > DOCK_RTK_WAIT_MS) dock_failed("no RTK fix at the station");
+            break;
         case DP_APPROACH:
-            if (!rtk_fixed()) approach_clean = false;
+            if (!rtk_fixed() && !contact) { approach_wait_fix(); break; }
             if (contact) {
                 motion_stop();   // the moment it touches
                 if (pose_ok) { contact_pose = p; contact_gyro = g; }
@@ -797,6 +849,10 @@ static void dock_tick() {
         last_contact = contact;
         last_status_ms = now;
     }
+
+    // At the station the ToF map takes nothing (TOF_MAP_HOLD, definitions.h)
+    TOF_MAP_HOLD = robot_state == ROBOT_STATE_DOCKING || robot_state == ROBOT_STATE_CHARGING ||
+                   robot_state == ROBOT_STATE_UNDOCKING || robot_state == ROBOT_STATE_SETTING_STATION;
 
     prev_contact = contact;
     prev_pose = p;

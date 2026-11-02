@@ -240,7 +240,7 @@ static void add_frame(int s, const tof_frame_t& f) {
     if (zones[k].flags & (TOF_ZONE_HIGH | TOF_ZONE_FACE)) memory_add(zones[k], f.t_ms);
   // Not with the boot heading: standing at boot the guess wanders by degrees, and every frame stamped a narrow
   // object (a wall end) at another bearing until the smear became a confirmed line across the view (HIL 2026-11-01)
-  if (map_ok && HEADING_CONFIRMED) tof_map_frame(rays[s], f, fp, zones, f.t_ms);
+  if (map_ok && HEADING_CONFIRMED && !TOF_MAP_HOLD) tof_map_frame(rays[s], f, fp, zones, f.t_ms);
 }
 
 // ---------------------------------------------------------------- DDS

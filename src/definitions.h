@@ -581,6 +581,10 @@ extern volatile uint8_t  GPS_CARR_SOLN;      // NAV-PVT carrSoln of the last fix
 extern volatile uint32_t GPS_CARR_SOLN_MS;   // millis() of that fix
 extern volatile bool     HEADING_CONFIRMED;
 extern volatile uint32_t HEADING_EPOCH;
+// Docking, docked, undocking, setting the station (controller_task): the ToF map takes no points. At the station
+// the zones that straddle the back block's corners and the wall behind it (closer than the sensor's target
+// separation) read in between and stamped phantom lines across the gap (HIL 2026-11-02); the station is known.
+extern volatile bool     TOF_MAP_HOLD;
 
 enum motor_instruction {
   MOTOR_STOP,
