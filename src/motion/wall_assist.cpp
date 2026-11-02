@@ -793,13 +793,7 @@ static void drive_free(float lin, float ang, float dt, float* v, float* w) {
   int lean = fabsf(ang) > 0.15f ? (ang > 0.0f ? 1 : -1) : (last_turn != 0 ? last_turn : 1);
   if (detour && detour_side != 0) { rq.side = detour_side; rq.w_side = TOF_PLAN_SIDE; }
   else { rq.side = lean; rq.w_side = 0.25f * TOF_PLAN_SIDE; }
-  PlanResult exact;
-  PlanResult best = planner_plan(rq, ang, &exact);
-#ifdef PLAN_DEBUG
-  SerialDebug.printf("[WALL] dbg p %.2f %.2f %.0f v0 %.2f ex %.2f %.2f %.2f best ok%d v %.2f k %.2f sc %.2f so %.2f cl %.2f s %.2f\r\n",
-                     rq.x0, rq.y0, rq.th0 * 57.3f, rq.v0, exact.scale, exact.soft, exact.clear, best.ok, best.v, best.kappa, best.scale, best.soft, best.clear, best.score);
-#endif
-
+  PlanResult exact = planner_exact(rq, ang);
   if (!pivoting && exact.scale >= 0.999f && exact.clear >= PLAN_EXACT_CLEAR && (!detour || fabsf(err) < TOF_PLAN_BACK_ON)) {
     if (detour) SerialDebug.printf("[WALL] Detour over: back on the heading held (%.0f deg)\r\n", intent_yaw * 180.0f / M_PI);
     detour = backing = false;
@@ -807,6 +801,12 @@ static void drive_free(float lin, float ang, float dt, float* v, float* w) {
     *v = lin; *w = ang;
     return;
   }
+  PlanResult best = planner_best(rq);   // only now: the stick's own way is taken as it is above
+#ifdef PLAN_DEBUG
+  SerialDebug.printf("[WALL] dbg p %.2f %.2f %.0f v0 %.2f ex %.2f %.2f %.2f best ok%d v %.2f k %.2f sc %.2f so %.2f cl %.2f s %.2f\r\n",
+                     rq.x0, rq.y0, rq.th0 * 57.3f, rq.v0, exact.scale, exact.soft, exact.clear, best.ok, best.v, best.kappa, best.scale, best.soft, best.clear, best.score);
+#endif
+
   if (!detour) {
     detour = true;
     detour_side = 0;
@@ -881,15 +881,16 @@ static void drive_follow(float ang, float dt, float* v, float* w) {
   rq.kappa_ref = *w / *v;
   rq.w_dev = TOF_PLAN_FOLLOW_DEV;
   rq.horizon = PLAN_FOLLOW_HORIZON;   // the pursuit changes its curvature: its arc held long would curl into the wall
-  PlanResult exact;
-  PlanResult best = planner_plan(rq, *w, &exact);
+  PlanResult exact = planner_exact(rq, *w);
+  // The state's path, slowed where it must (the corner logic counts on it); only where that path stops, the
+  // planner's nearest admissible arc
+  if (exact.v >= TOF_PLAN_MIN_GO) { *v = exact.v; *w = exact.w; return; }
+  PlanResult best = planner_best(rq);
 #ifdef PLAN_DEBUG
   SerialDebug.printf("[WALL] dbgf %s cmd %.2f %.2f ex v %.2f sc %.2f cl %.2f best v %.2f k %.2f cl %.2f n %d %d\r\n", state_name[state], *v, *w,
                      exact.v, exact.scale, exact.clear, best.v, best.kappa, best.clear, rn, sn);
 #endif
-  // The state's path, slowed where it must (the corner logic counts on it); only where that path stops, the
-  // planner's nearest admissible arc
-  if (exact.v >= TOF_PLAN_MIN_GO || !best.ok || best.v <= exact.v) { *v = exact.v; *w = exact.w; }
+  if (!best.ok || best.v <= exact.v) { *v = exact.v; *w = exact.w; }
   else { *v = best.v; *w = best.w; }
 }
 
@@ -1085,11 +1086,7 @@ void wall_assist_update(const TofPose& pose_in, bool new_frame) {
           float kt = copysignf((1.0f - cosf(a)) / fabsf(off), a);
           if (kt * k >= 0.0f && fabsf(kt) > fabsf(k)) k = kt;
         }
-        // User speed until it curves, and while the follow line is still far (HIL approach_45 2026-11-02: 6 s of
-        // ALIGN at the following speed from 1.1 m off); down to the following speed over the last TOF_ALIGN_SLOW_OFF
-        float far = fminf(1.0f, fmaxf(0.0f, (fabsf(off) - TOF_ALIGN_DONE_DIST) / TOF_ALIGN_SLOW_OFF));
-        float cap = fabsf(k) < 0.4f ? lin : TOF_WALL_MAX_SPEED + far * fmaxf(0.0f, lin - TOF_WALL_MAX_SPEED);
-        steer(k, pivot, lin, cap, &v, &w);
+        steer(k, pivot, lin, fabsf(k) < 0.4f ? lin : TOF_WALL_MAX_SPEED, &v, &w);   // user speed until it curves
       }
     }
 

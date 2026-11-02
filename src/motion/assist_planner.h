@@ -26,11 +26,11 @@
 #define PLAN_SOFT_DECEL 0.06f     // m/s^2 at the wheels: the score's braking (the guard's is TOF_GUARD_DECEL)
 #define PLAN_COMFORT 0.30f       // m, body clearance below which a rollout is scored down ...
 #define PLAN_EXACT_CLEAR 0.20f    // m: the stick is taken as it is when its rollout keeps this much, at full speed
-#define PLAN_CELL 0.20f           // m, bucket grid over the obstacle points
+#define PLAN_CELL 0.10f           // m, bucket grid over the obstacle points (a pose scans each row as one span)
 #define PLAN_GRID_X0 -2.0f        // m, grid extent in the obstacle frame
 #define PLAN_GRID_Y0 -2.2f
-#define PLAN_GRID_NX 22
-#define PLAN_GRID_NY 22
+#define PLAN_GRID_NX 44
+#define PLAN_GRID_NY 44
 #define PLAN_MAX_POINTS (TOF_MEMORY_POINTS + TOF_SOLID_POINTS)
 #define PLAN_CURVATURES 13
 
@@ -74,11 +74,13 @@ bool planner_init();   // heap; false: out of memory
 // Obstacle points: memory points (mx, my; each counts once, TOF_SWEEP_MIN_POINTS of them stop a command) and solid
 // samples (sx, sy; one stops it). The arrays are read until the next call.
 void planner_set_obstacles(const float* mx, const float* my, const bool* use, int mn, const float* sx, const float* sy, int sn);
-// Best candidate for rq (curvatures, plus kappa_ref itself); *exact: (lin, w_exact) as asked, unscored
-PlanResult planner_plan(const PlanRequest& rq, float w_exact, PlanResult* exact);
+// (rq.lin, w) as asked, unscored; it also takes rq's points for planner_best
+PlanResult planner_exact(const PlanRequest& rq, float w);
+// Best candidate for rq (curvatures, plus kappa_ref itself), after planner_exact(rq): only where that isn't taken
+PlanResult planner_best(const PlanRequest& rq);
 // A turn on the spot at rate w: its admissible scale and clearance
 PlanResult planner_turn(const PlanRequest& rq, float w);
-// Cost of planner_plan since boot: time (micros(), so it includes other tasks running meanwhile) and work per plan
+// Cost of the plans (planner_exact and planner_best) since boot: time (micros(), so it includes other tasks running meanwhile) and work per plan
 struct PlanStats { uint32_t n, mean_us, max_us, poses, pts, dist, dist_max; };
 void planner_stats(PlanStats* st);
 
