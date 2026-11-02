@@ -13,6 +13,7 @@
 #include "../definitions.h"
 
 #define PLAN_HORIZON 3.0f         // s rolled out (1.35 m at 0.45 m/s: room for a 90 deg turn off a wall ahead)
+#define PLAN_FOLLOW_HORIZON 1.2f  // s, following: the state's command checked this far (it changes its curvature)
 #define PLAN_TURN_CAP 1.5708f     // rad: FREE, a forward arc's rollout goes on straight this far off the heading held
 #define PLAN_FINE_DT 0.05f        // s per step for the first PLAN_FINE_STEPS (2.3 cm of travel at 0.45 m/s) ...
 #define PLAN_FINE_STEPS 12
@@ -46,6 +47,7 @@ struct PlanRequest {
   float head_ref;       // intended heading in the obstacle frame (rad), scored with w_head
   float w_head;
   float max_off;        // rad: candidates ending further off head_ref are left out (0: none)
+  float horizon;        // s rolled out (0: PLAN_HORIZON)
   float turn_cap;       // rad: a rollout's arc goes straight this far off head_ref, or on reaching it (0: none)
   int side;             // +1 left / -1 right: go round on this side (scored with w_side), 0 none
   float w_side;
@@ -72,6 +74,6 @@ void planner_set_obstacles(const float* mx, const float* my, const bool* use, in
 PlanResult planner_plan(const PlanRequest& rq, float w_exact, PlanResult* exact);
 // A turn on the spot at rate w: its admissible scale and clearance
 PlanResult planner_turn(const PlanRequest& rq, float w);
-uint32_t planner_last_us();   // cost of the last planner_plan (us)
+void planner_stats(uint32_t* n, uint32_t* mean_us, uint32_t* max_us);   // cost of planner_plan since boot
 
 #endif

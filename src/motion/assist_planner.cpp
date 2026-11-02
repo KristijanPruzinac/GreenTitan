@@ -17,7 +17,13 @@ static int pmn = 0, pn = 0;
 static uint16_t* cell_start = nullptr;   // bucket grid: points of cell c are cell_idx[cell_start[c] .. cell_start[c + 1])
 static uint16_t* cell_idx = nullptr;
 static float* lim = nullptr;             // per point: body clearance it must keep for this request, < 0 ignored
-static uint32_t last_us = 0;
+static uint32_t stat_n = 0, stat_max = 0;
+static uint64_t stat_sum = 0;
+#ifndef PLAN_CLOCK_US
+#define PLAN_CLOCK_US() micros()
+#else
+uint32_t PLAN_CLOCK_US();   // the wall bench: the host's clock (its micros() is simulated time)
+#endif
 static float r_tail = 0.0f, body_r = 0.0f;
 
 bool planner_init() {
@@ -120,7 +126,8 @@ static PlanResult eval(const PlanRequest& rq, float vc, float wc) {
   if (rq.turn_cap > 0.0f && fabsf(vc) > 1e-3f && fabsf(wc) > 1e-3f)
     stop_off = sw * angle_diff(rq.head_ref, rq.th0) < -0.05f ? 0.0f : rq.turn_cap;
   bool hit = false;
-  for (int i = 0; t < PLAN_HORIZON - 1e-4f; i++) {
+  const float horizon = rq.horizon > 0.0f ? rq.horizon : PLAN_HORIZON;
+  for (int i = 0; t < horizon - 1e-4f; i++) {
     if (stop_off < 1e8f && sw * angle_diff(rq.head_ref, th) >= stop_off) { lt = rt = vc; stop_off = 1e9f; }
     float dt = i < PLAN_FINE_STEPS ? PLAN_FINE_DT : PLAN_COARSE_DT, dv = PLAN_WHEEL_ACCEL * dt;
     l += fmaxf(-dv, fminf(dv, lt - l));
@@ -167,7 +174,7 @@ static float score(const PlanRequest& rq, PlanResult& c) {
 }
 
 PlanResult planner_plan(const PlanRequest& rq, float w_exact, PlanResult* exact) {
-  uint32_t t0 = micros();
+  uint32_t t0 = PLAN_CLOCK_US();
   prepare(rq);
   if (exact) *exact = eval(rq, rq.lin, w_exact);
   PlanResult best = {};
@@ -180,12 +187,14 @@ PlanResult planner_plan(const PlanRequest& rq, float w_exact, PlanResult* exact)
     if (!c.ok) continue;
     c.kappa = k;
     c.score = score(rq, c);
-    static int dbg_n = 0;
-    if (exact && exact->clear < 0.2f && dbg_n < 600) { dbg_n++;
-      SerialDebug.printf("[WALL] cand k %.2f v %.2f sc %.2f so %.2f cl %.2f th %.2f s %.2f\r\n", k, c.v, c.scale, c.soft, c.clear, c.end_th, c.score); }
+#ifdef PLAN_DEBUG
+    SerialDebug.printf("[WALL] cand k %.2f v %.2f sc %.2f so %.2f cl %.2f th %.2f s %.2f\r\n", k, c.v, c.scale, c.soft, c.clear, c.end_th, c.score);
+#endif
     if (c.score > best.score) best = c;
   }
-  last_us = micros() - t0;
+  uint32_t us = PLAN_CLOCK_US() - t0;
+  stat_n++; stat_sum += us;
+  if (us > stat_max) stat_max = us;
   return best;
 }
 
@@ -196,4 +205,8 @@ PlanResult planner_turn(const PlanRequest& rq, float w) {
   return c;
 }
 
-uint32_t planner_last_us() { return last_us; }
+void planner_stats(uint32_t* n, uint32_t* mean_us, uint32_t* max_us) {
+  *n = stat_n;
+  *mean_us = stat_n ? (uint32_t)(stat_sum / stat_n) : 0;
+  *max_us = stat_max;
+}

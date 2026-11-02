@@ -261,6 +261,15 @@ static void pose_callback(dds_callback_context_t* context) {
   pose = { x, y, d->yaw, d->vx, d->omega, now, true };
 }
 
+// Each tick: the EKF pose projected to now (fused_pose_now: gyro yaw and EKF velocity since it arrived, 2026-11-02),
+// not the 10 Hz /fused_pose as it was up to 100 ms ago. Stale or none: the last one stays (and times out)
+static void pose_refresh() {
+  fused_pose_data_t d;
+  if (!fused_pose_now(&d)) return;
+  double x = d.x + GNSS_ANTENNA_BEHIND_AXLE * cos(d.yaw), y = d.y + GNSS_ANTENNA_BEHIND_AXLE * sin(d.yaw);
+  pose = { x, y, d.yaw, d.vx, d.omega, millis(), true };
+}
+
 static void imu_callback(dds_callback_context_t* context) {
   IMU_data_t* d = (IMU_data_t*)context->message_data.data;
   tilt_roll = d->roll;
@@ -334,6 +343,7 @@ void tof_task(void* parameter) {
                 tof_map_pose_jump();
                 SerialDebug.printf("[TOF] Heading confirmed: point memory cleared\r\n");
               }
+              pose_refresh();
               bool new_frame = false;
               tof_frame_t f;
               for (int s = 0; s < 2; s++) {

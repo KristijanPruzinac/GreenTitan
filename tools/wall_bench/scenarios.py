@@ -12,6 +12,7 @@ Checks: safe     no contact, body clearance >= bench.PASS_CLEARANCE all run long
 """
 import math
 import os
+import re
 
 import bench
 
@@ -476,12 +477,21 @@ def run(name, seed=0, world=None, plot=None, slip=0.0, terrain='flat', plot_fail
     finally:
         if os.path.isfile(os.path.join(bench.REPO, 'src/sensor/tof_map.h')):
             maps = r.map_objects()
+        try:
+            r.key('i')   # status, with the planner's cost
+            r.idle(0.05)
+        except Exception:
+            pass
         r.close()
     m = bench.metrics(r, maps)
     checks = evaluate(r, m, sc['checks'])
     res = {'name': name, 'seed': seed, 'world': world or sc['world'], 'pass': all(ok for _, ok, _ in checks),
            'checks': checks, 'metrics': {k: v for k, v in m.items() if not k.startswith('_')}, 'sim_s': r.t,
            'log': [(t, s) for t, s in r.log if '[WALL]' in s]}
+    pl = [s for _, s in r.log if '[WALL] planner:' in s]
+    if pl:
+        n, mean, mx = (int(x) for x in re.findall(r'(\d+) (?:plans|us)', pl[-1]))
+        res['planner'] = {'n': n, 'mean_us': mean, 'max_us': mx}
     if plot and not (plot_failed_only and res['pass']):
         fails = ', '.join(f'{c}: {d}' for c, ok, d in checks if not ok)
         bench.plot(r, m, plot, f'{name} seed {seed}: ' + ('PASS' if res['pass'] else 'FAIL ' + fails))
