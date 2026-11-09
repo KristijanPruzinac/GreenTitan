@@ -23,7 +23,7 @@ Rules:
 - Update in place. Delete statements that are no longer true; don't append "update:" paragraphs.
 - When a code change alters behaviour described in the docs, update the doc in the same change.
 - Date decisions as `YYYY-MM-DD`. Mark proposals as **proposed** until the user decides.
-- Existing files that stay where they are: `README.md` (public front page, keep it short), `tools/android/README.md` (phone provisioning how-to), and the generated reports in `outputs/` that the CAD scripts write.
+- Existing files that stay where they are: `README.md` (public front page, keep it short), and `tools/android/README.md` (phone provisioning how-to).
 - This repo is public. Personal data (orders, inventory, e-mail, home paths) doesn't belong here.
 
 ## Repo map
@@ -58,8 +58,6 @@ ros2_ws/build|install|log   colcon output (gitignored)
 tools/android/           phone provisioning (adb debloat, Termux, camera over adb)
 tools/drive_test/        HIL drive tests: scripted stick drives (scenarios.py, drive.py) and a scorer against the sim truth (score.py)
 tools/wall_bench/        wall-assist bench: the real ToF task + wall assist (g++, shims) against a numpy world and plant, scenario suite
-cad/                     Python scripts that drive Fusion 360 / render studies (roof, canopy, cowl, ...)
-outputs/                 generated CAD exports/renders (mostly gitignored)
 lib/tinympc/             vendored TinyMPC solver (MIT), patched for the ESP32 (float, no stdout)
 lib/clipper2/            vendored Clipper2 polygon library (BSL-1.0), needs C++17
 platformio.ini           board, libs (incl. ESP-DDS, micro_ros_platformio jazzy), DDS limits

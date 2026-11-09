@@ -1,1 +1,0 @@
-gtspineb={'__name__':'greentitan_spine_b'};exec(open('C:/Users/kikom/Documents/GitHub/GreenTitan/cad/spine_b/fusion_present_concept.py').read(),gtspineb);_gtspineb_result=gtspineb['present']()

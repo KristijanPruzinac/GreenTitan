@@ -1,1 +1,0 @@
-_gtspineb_archive=gtspineb['archive_and_verify']()

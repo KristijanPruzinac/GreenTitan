@@ -1,1 +1,0 @@
-exec(open('C:/Users/kikom/Documents/GitHub/GreenTitan/cad/roof_reset/fusion_save_once.py').read(),{'__name__':'greentitan_roof_save','gtroofreset':gtroofreset})

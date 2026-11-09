@@ -1,1 +1,0 @@
-gtcowl={'__name__':'greentitan_cowl'};exec(open('C:/Users/kikom/Documents/GitHub/GreenTitan/cad/cowl/fusion_present_concept.py').read(),gtcowl);_gtcowl_result=gtcowl['present']()

@@ -11,7 +11,7 @@ The physical mower: mechanics, electronics, sensors, the phone, CAD and print ru
 - Blade motor: MY1016-type DC motor, switched by a relay.
 - The GNSS antenna sits directly **above the blade motor**, at Fusion world (61.8, 266.1). The software treats that point as `base_link`.
 - Battery: Einhell 18 V Power X-Change pack in a printed holder. The Einhell adapter is the mating surface: it mounts under the battery with its rails along X. The battery model only marks the clearance envelope.
-- The later roof, canopy, cowl and spine studies in `cad/` and `outputs/` were explorations, and most were rejected. **They are not the baseline.**
+- Being replaced by a clean-slate redesign (2026-11-09, §6).
 
 ## 2. Drive train
 
@@ -116,11 +116,12 @@ Cover (in progress):
 - Built natively in Fusion as planar B-rep. Two attempts designed in Blender/SDF were rejected on looks, so agree on the direction before modelling.
 - Requirements: the phone sail and wet compartment, a radome hatch for the GNSS patch above the blade motor, and the UHF whip inside.
 
-Tooling in `cad/`:
-- Python scripts drive Fusion (`cad/common/send_fusion_command.py`) and render or check concepts.
-- Studies: roof_reset, canopy, cowl, spine_b, packaging_b_review.
-- Generated files go to `outputs/`, mostly gitignored.
-- Fusion gotchas:
+Clean-slate redesign (2026-11-09): the mechanical design starts from scratch. The old studies in `cad/` and `outputs/` (roof_reset, canopy, cowl, spine_b, packaging_b_review) and the Fusion scripts were removed. Only these parts carry over:
+- **Frame base:** 2020 aluminium extrusion (lengths free), 2020 corner brackets (90° owned now, any angle allowed), 2020 drop-in T-nuts and screws.
+- **Electronics and drive:** ESP32 devboard, C94-M8P with its UHF whip, ANN-MS patch antenna (5 m RG174, Ø100 ground plane), MPU6050, 2× VL53L8CX, 2× 23HS32-4004S + 2× MG23-G10-D8 (interfaces in §2), 2× DM542T, MY1016 blade motor, single-channel relay module, waterproof buck → 5 V, USB-C OTG splitter, Einhell 18 V pack + adapter, Galaxy A12 (§3, §5).
+- Not carried over: wheels, casters, blade and holder, cover, all printed parts.
+
+Fusion gotchas:
   - Positions that aren't captured revert on timeline operations.
   - Nested STEP sub-occurrences drift. Flatten STEP imports to one component, set the transform, then add a snapshot.
 

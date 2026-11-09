@@ -1,1 +1,0 @@
-exec(open('C:/Users/kikom/Documents/GitHub/GreenTitan/cad/roof_reset/fusion_close_rejected_cowl.py').read(),{'__name__':'greentitan_close_rejected'})

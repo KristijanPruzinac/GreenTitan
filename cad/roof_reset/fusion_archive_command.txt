@@ -1,1 +1,0 @@
-_gtroofreset_archive=gtroofreset['archive_and_verify']()
