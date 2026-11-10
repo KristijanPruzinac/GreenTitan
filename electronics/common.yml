@@ -97,7 +97,7 @@ parts:
     image: {src: img/bld510b.jpg, height: 110}
     hide_disconnected_pins: true
     pinlabels: [SV, SIG GND, V+, GND, MA, MB, MC, HALL +5V, HA, HB, HC, HALL GND]
-    notes: "Owned unit is V2.4x or V3.0 (maker page): it runs with EN open, so EN is not the run signal. Run = 5 V on SV, stop = SV under 0.3 V (manual); top speed set with the R-SL pot. EN, F/R, BK, PG, ALM unused. MA=U, MB=V, MC=W"
+    notes: "Owned unit is V2.4x or V3.0 (maker page): it runs with EN open, so EN is not the run signal. Run = 5 V on SV, stop = SV under 0.3 V (manual 4.1); a 1 kOhm resistor across SV and GND in the terminal block holds SV at 0 V if the wire breaks; top speed set with the R-SL pot. EN, F/R, BK, PG, ALM unused. MA=U, MB=V, MC=W"
   - &BLADE
     bgcolor_title: "#bfe8bf"
     type: 57BLR90-24-01 brushless motor, 24 V 220 W

@@ -51,7 +51,7 @@ links:
   - [BUCK, USBC, power, "5 V, lever splices"]
   - [carrier, DRV_L, ["PUL+", "PUL-", "DIR+", "DIR-", "ENA+", "ENA-"], "owned 6-core cable"]
   - [carrier, DRV_R, ["PUL+", "PUL-", "DIR+", "DIR-", "ENA+", "ENA-"], "owned 6-core cable"]
-  - [carrier, BLD, [SV, GND], "5 V on SV = run, 2 wires:"]
+  - [carrier, BLD, [SV, GND], "5 V on SV = run; 1 kOhm SV-GND at the driver:"]
   - [DRV_L, MOT_L, ["A+=#222222", "A-=#388e3c", "B+=#d32f2f", "B-=#1976d2"], "bare leads", true]
   - [DRV_R, MOT_R, ["A+=#222222", "A-=#388e3c", "B+=#d32f2f", "B-=#1976d2"], "bare leads", true]
   - [BLD, BLADE, ["U=#ef6c00", "V=#388e3c", "W=#6d4c41", "5V=#d32f2f", "GND=#222222", "HA=#f9a825", "HB=#bdbdbd", "HC=#1976d2"], "bare leads, MA=U MB=V MC=W", true]
