@@ -1,4 +1,5 @@
-"""Exo: the buildable concept.
+"""Exo: the buildable concept.  This is the layout study; the model with the real parts is
+cad/exo (CadQuery), and this script is not kept in step with it.
 A plain box of 2020 on 90 degree brackets carries everything.  Two printed tubs hang between
 the rails and hold the parts, two lids close them, a fascia at the front holds the phone, the
 ToF sensors and the charge contact.  The blade deck with its motor bolts on from below.

@@ -60,9 +60,12 @@ tools/drive_test/        HIL drive tests: scripted stick drives (scenarios.py, d
 tools/wall_bench/        wall-assist bench: the real ToF task + wall assist (g++, shims) against a numpy world and plant, scenario suite
 electronics/             parts map (WireViz): common.yml defines every part and its pins once; signals.yml, drive.yml, power.yml
                          are the sheets; wiring.yml + wiring.py draw wiring.svg (parts as photos joined by cables); render.sh writes all the .svg; img/ holds the part photos
-cad/concepts/            Blender concept models for the clean-slate redesign (lib.py helpers, one script per concept; renders gitignored)
-cad/exo/                 CadQuery model of the Exo mower, started 2026-11-10: dims.py (every shared number, the frame, what is assumed
-                         about unmeasured parts), util.py (solids, clash / bed size / overhang / frame-slot checks); the parts are not modelled yet
+cad/concepts/            Blender concept models for the clean-slate redesign (lib.py helpers, one script per concept; renders gitignored);
+                         exo.py was the layout study for cad/exo and is not kept in step with it
+cad/exo/                 CadQuery model of the Exo mower (2026-11-10): dims.py (every shared number, the frame, what is assumed
+                         about unmeasured parts), util.py (solids and check helpers), bought.py (frame and bought parts as solids),
+                         tubs.py, wheel.py, deck.py, lids.py, fascia.py (the ten printed parts), build.py (builds all, checks clashes /
+                         bed size / overhangs / assembly paths / frame slots, exports STEP and STL to out/), view.py (Blender renders)
 lib/tinympc/             vendored TinyMPC solver (MIT), patched for the ESP32 (float, no stdout)
 lib/clipper2/            vendored Clipper2 polygon library (BSL-1.0), needs C++17
 platformio.ini           board, libs (incl. ESP-DDS, micro_ros_platformio jazzy), DDS limits
@@ -103,6 +106,8 @@ Without firmware: `hil.launch.py robot:=<share>/config/mower_teleop.yaml agent:=
 HIL drive tests (scripted manual drives through the drive page, scored against the sim truth): `tools/drive_test` (ARCHITECTURE §11).
 Wall-assist bench (WSL/Linux, g++ + numpy, no ROS, no board): `python3 tools/wall_bench/run_all.py --seeds 3` (all scenarios, pass/fail table) or `python3 tools/wall_bench/run.py --scenario inner_90 --plot /tmp/x.png` (ARCHITECTURE §11).
 
+Exo CAD model (Python with `cadquery`, HARDWARE §6): `cd cad/exo && python build.py` builds every part and runs the fit, print and assembly checks; `--export` also writes STEP and STL to `out/`; `blender -b --python view.py -- hero top` renders the export (`--open` without the lids, `--printed` only the printed parts). After any change to a part or a number in `dims.py`, `build.py` must end with `OK`.
+
 There are no automated tests. The `test/` folders only hold the PlatformIO and ament templates.
 
 ## Hard constraints (don't re-argue these)
@@ -133,5 +138,6 @@ There are no automated tests. The `test/` folders only hold the PlatformIO and a
 - **Product direction** (2026-11-02): manual 0.45 m/s / 0.9 rad/s with the wall assist always on as shared control (sampling arc planner, the stick is the intent; on-board planner timing still being cut down), map kinds wall / low / post, ToF mounts crossed at 45° (**proposed**). Drive page: 3D by default with the mower mesh in 2D and 3D, a generic grass floor shaped by the RTK height and the tilt (aerial imagery dropped: too blurry), Take over and 2D/3D only (ARCHITECTURE §10).
 - **Docking** (2026-11-02, HIL: automatic set station, a moved station, 20 dock cycles all pass without a user message; the estimate may sit inside the throat play, accepted): go home, approach on the station axis with retries, a recovery and a ±5 cm search, then one "Couldn't dock" message; the station is learned by itself: docked by hand once, the first departure (mission, Leave station, Take over) reverses out 1.5 m on a gyro heading hold and measures it over RTK (heading from the gyro-turned-back track: exact on curves, a spread and a drift check catch sideways slides), the next dock verifies and stores it (Set station stays as a manual redo); every clean dock and undock refines the estimate, a moved station is adopted silently as the mean of 3 agreeing measurements (2 after a retried or failed dock, never 1: one measurement's yaw is the funnel play, ~3° sd), and a failed approach series tries once more on the held-back mean (one measurement stays a RAM candidate until a second agrees); undock by a closed-loop reverse line follower. Sim station and battery (`power` device, power block on `hil/tof`), dock worlds, a per-wheel slip in the stepper device, and seven drive tests (ARCHITECTURE §7, §11). Contact and pack dividers not fitted on the mower.
 - **Not implemented:** battery and dock voltage on the real mower (dividers not fitted), rain sensor, obstacle sensing in missions (obstacles are serial-triggered only), reverse driving beyond straight docking lines, camera use.
+- **Exo redesign** (2026-11-10, **proposed**): the clean-slate mechanical design on a 2020 frame is modelled in CadQuery (`cad/exo`): ten printed parts, all checked by `build.py` for clashes, bed size, printing without supports, assembly paths and frame slots. The sizes of parts not measured yet are assumptions (`dims.ASSUMED`), the stepper shafts have to be cut to 16 mm, there is no wiring in it, and nothing is printed (HARDWARE §6).
 - **In progress:** the Mower V3 rebuild with 10:1 gearboxes, the cover design, and moving the ROS 2 host to the phone (stack runs on the A12; real ESP32 link untested).
 - Next work items: `docs/ARCHITECTURE.md` → Known issues / Planned direction, and `docs/HARDWARE.md` → Open items.

@@ -158,6 +158,7 @@ POGO_Z = 192               # charge contact: its boss stays under the lid's eave
 POGO_L, POGO_D = 12, 14    # its body
 
 ASSUMED = {
+    "23HS32-4004S steppers": "82 long with nothing standing out at the tail; shafts cut from 21 to 16",
     "57BLR90-24-01 blade motor": "flange 57 square x 6 with 4 holes for M5 on 47.14, shaft 8 x 21, "
                                  "83 long over the flange, round body",
     "BLD-510B": "same case and base slots as the DM542T (118 x 75.5 x 34, slots 112 apart)",

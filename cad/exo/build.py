@@ -5,7 +5,8 @@
     python build.py tub_front   only the bought parts and the named modules (quick, while changing one)
 
 Checks: nothing runs through anything else, every printed part fits the bed and prints without
-supports, every frame bolt sits on a free slot with plastic around it."""
+supports, every part with a way off (Part.off) gets past its neighbours on it, every frame bolt
+sits on a free slot with plastic around it.  Then the fasteners, the size, the mass and balance."""
 import importlib
 import json
 import math
@@ -144,8 +145,23 @@ def check(parts):
     for what in sorted(count):
         print("  %3d  %s" % (count[what], what))
 
-    kg = sum(p.kg if p.kind != "printed" else vol(p.shape) * PETG for p in parts)
-    print("\n== mass %.1f kg" % kg)
+    kg = mx = mz = 0
+    lo, hi = [1e9] * 3, [-1e9] * 3
+    group = {}
+    for p in parts:
+        m = p.kg if p.kind != "printed" else vol(p.shape) * PETG
+        c = p.shape.val().Center()
+        kg, mx, mz = kg + m, mx + m * c.x, mz + m * c.z
+        group[p.kind] = group.get(p.kind, 0) + m
+        for i, (a, b) in enumerate(bounds(p.shape)):
+            lo[i], hi[i] = min(lo[i], a), max(hi[i], b)
+    cx, cz = mx / kg, mz / kg
+    print("\n== size %.0f long (%.0f ahead of the axle, %.0f behind), %.0f wide, %.0f high" % (
+        hi[0] - lo[0], hi[0], -lo[0], hi[1] - lo[1], hi[2]))
+    print("== mass %.1f kg (%s), no cables or screws, printed parts solid" % (
+        kg, ", ".join("%s %.1f" % (k, v) for k, v in sorted(group.items()))))
+    print("   centre %.0f mm behind the axle, %.0f up: %.0f %% on the casters, tips onto its nose at %.0f deg" % (
+        -cx, cz, 100 * cx / (CASTER[0] - CASTER_TRAIL), math.degrees(math.atan2(-cx, cz))))
     return ok
 
 
