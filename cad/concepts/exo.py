@@ -255,18 +255,15 @@ def electronics():
     for s in (1, -1):
         driver("dm542t", (67.75, s * 71, f + 59), (75.5, 34, 118), (0, 1))
     rbox("buck", (68, 0, f + 11), (64, 57, 22), "rubber", 2, kg=0.2)
-    # IMU on the axle midpoint (the turning centre), on two bosses of the tub floor under the steppers
-    for y in (-8, 8):
-        box("imu_boss", (0, y, f + 3), (6, 6, 6), "body", 0.5)
-    box("imu", (0, 0, f + 7), (15, 20, 2), "blue", 0)
 
-    # --- rear tub: battery, blade driver, and the quiet end: carrier board (ESP32) and GNSS
+    # --- rear tub: battery, blade driver, and the quiet end: carrier board (ESP32, IMU) and GNSS
     cx, cy = -164.5, 2
     rbox("carrier", (cx, cy, f + 9), (65, 100, 1.6), "pcb", 0, kg=0.08)
     for dx in (-12.7, 12.7):
         box("esp32_socket", (cx + dx, cy + 22, f + 14.3), (2.5, 38, 9), "rubber", 0)
     box("esp32", (cx, cy + 22, f + 19.6), (28, 52, 1.6), "rubber", 0)
     box("esp32_can", (cx, cy + 10, f + 22), (16, 18, 3.2), "alu", 0.5)
+    box("imu", (cx - 18, cy - 34, f + 11), (15, 20, 2), "blue", 0)
     box("ina226", (cx + 18, cy - 34, f + 11), (15, 20, 2), "blue", 0)
     box("buffer", (cx, cy - 16, f + 12), (8, 26, 4.5), "rubber", 0)
     for y in (4, 26):
