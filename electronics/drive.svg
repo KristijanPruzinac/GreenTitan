@@ -19,7 +19,7 @@
 <polygon fill="none" stroke="black" points="0,-931.5 0,-954.5 654,-954.5 654,-931.5 0,-931.5"/>
 <text text-anchor="start" x="118" y="-939.3" font-family="arial" font-size="14.00">ESP32 devboard (ESP&#45;WROOM&#45;32, USB&#45;C), socketed on the carrier</text>
 <polygon fill="none" stroke="black" points="654,-931.5 654,-954.5 928,-954.5 928,-931.5 654,-931.5"/>
-<text text-anchor="start" x="772" y="-939.3" font-family="arial" font-size="14.00">25&#45;pin</text>
+<text text-anchor="start" x="772" y="-939.3" font-family="arial" font-size="14.00">23&#45;pin</text>
 <polygon fill="none" stroke="black" points="0,-908.5 0,-931.5 486,-931.5 486,-908.5 0,-908.5"/>
 <text text-anchor="start" x="217.5" y="-916.3" font-family="arial" font-size="14.00">GPIO19</text>
 <polygon fill="none" stroke="black" points="486,-908.5 486,-931.5 928,-931.5 928,-908.5 486,-908.5"/>

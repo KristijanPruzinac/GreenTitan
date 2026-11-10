@@ -10,33 +10,29 @@ connectors:
   ANT_UHF: *ANT_UHF
   J_TOF_FL: *PORT_TOF
   J_TOF_FR: *PORT_TOF
-  J_TOF_3: *PORT_TOF
-  J_TOF_4: *PORT_TOF
   TOF_FL: {<<: *TOF8, type: "VL53L8CX ToF 8x8, front left"}
   TOF_FR: {<<: *TOF8, type: "VL53L8CX ToF 8x8, front right"}
-  TOF_3: *TOF1
-  TOF_4: *TOF1
   J_DEBUG: *PORT_DEBUG
   USB_UART: *USB_UART
+  HUB: *HUB
   PHONE: *PHONE
+  BUCK: *BUCK
 cables:
   T_GNSS: {<<: *trace, wirecount: 2}
   T_IMU: {<<: *trace, wirecount: 2}
   T_INA: {<<: *trace, wirecount: 2}
   T_TOF_FL: {<<: *trace, wirecount: 3}
   T_TOF_FR: {<<: *trace, wirecount: 3}
-  T_TOF_3: {<<: *trace, wirecount: 3}
-  T_TOF_4: {<<: *trace, wirecount: 3}
   T_DEBUG: {<<: *trace, wirecount: 2}
   W_GNSS: {type: 20-way ribbon cable, wirecount: 4}
   W_ANT_GNSS: {type: coax, wirecount: 1}
   W_ANT_UHF: {type: SMA, wirecount: 1}
   W_TOF_FL: {type: 6-core cable, wirecount: 6}
   W_TOF_FR: {type: 6-core cable, wirecount: 6}
-  W_TOF_3: {type: 6-core cable, wirecount: 6}
-  W_TOF_4: {type: 6-core cable, wirecount: 6}
   W_DEBUG: {type: 3-core cable, wirecount: 3}
-  W_USB: {type: USB-C cable, wirecount: 1}
+  W_USB: {type: USB cable, wirecount: 1}
+  W_HUB: {type: "hub lead, 15 cm", wirecount: 1}
+  W_CHG: {type: "5 V to USB-C, to test", wirecount: 1}
 connections:
   - [ESP32: [GPIO17, GPIO16], T_GNSS: [1, 2], J_GNSS: [9 RXD_GNSS, 10 TXD_GNSS]]
   - [J_GNSS: [1 V_BAT 5V, 2 GND, 9 RXD_GNSS, 10 TXD_GNSS], W_GNSS: [1-4], C94: [1 V_BAT, 2 GND, 9 RXD_GNSS, 10 TXD_GNSS]]
@@ -44,14 +40,12 @@ connections:
   - [C94: [SMA UHF], W_ANT_UHF: [1], ANT_UHF: [SMA]]
   - [ESP32: [GPIO21, GPIO22], T_IMU: [1, 2], IMU: [SDA, SCL]]
   - [ESP32: [GPIO21, GPIO22], T_INA: [1, 2], INA226: [SDA, SCL]]
-  - [ESP32: [GPIO25, GPIO23, GPIO4], T_TOF_FL: [1-3], J_TOF_FL: [SDA, SCL, LPn / XSHUT]]
-  - [ESP32: [GPIO25, GPIO23, GPIO14], T_TOF_FR: [1-3], J_TOF_FR: [SDA, SCL, LPn / XSHUT]]
-  - [ESP32: [GPIO25, GPIO23, "free pin A ?"], T_TOF_3: [1-3], J_TOF_3: [SDA, SCL, LPn / XSHUT]]
-  - [ESP32: [GPIO25, GPIO23, "free pin B ?"], T_TOF_4: [1-3], J_TOF_4: [SDA, SCL, LPn / XSHUT]]
+  - [ESP32: [GPIO25, GPIO23, GPIO4], T_TOF_FL: [1-3], J_TOF_FL: [SDA, SCL, LPn]]
+  - [ESP32: [GPIO25, GPIO23, GPIO14], T_TOF_FR: [1-3], J_TOF_FR: [SDA, SCL, LPn]]
   - [J_TOF_FL: [1-6], W_TOF_FL: [1-6], TOF_FL: [1-6]]
   - [J_TOF_FR: [1-6], W_TOF_FR: [1-6], TOF_FR: [1-6]]
-  - [J_TOF_3: [1-6], W_TOF_3: [1-6], TOF_3: [1-6]]
-  - [J_TOF_4: [1-6], W_TOF_4: [1-6], TOF_4: [1-6]]
   - [ESP32: [GPIO13, GPIO27], T_DEBUG: [1, 2], J_DEBUG: [RX, TX]]
   - [J_DEBUG: [RX, TX, GND], W_DEBUG: [1-3], USB_UART: [TX, RX, GND]]
-  - [ESP32: [USB], W_USB: [1], PHONE: [USB-C]]
+  - [ESP32: [USB], W_USB: [1], HUB: [USB data port]]
+  - [HUB: [USB-C plug], W_HUB: [1], PHONE: [USB-C]]
+  - [BUCK: [OUT 5V], W_CHG: [1], HUB: [USB-C PD in]]
