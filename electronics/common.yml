@@ -26,9 +26,10 @@ parts:
     notes: "Only the pins used on this sheet are shown. USB = micro-ROS link (UART0, 921600). Unused: GPIO36 battery ADC, GPIO39 rain, GPIO13/27 debug console (no adapter on the mower). GPIO2 = status LED."
   - &HCT245
     bgcolor_title: "#bcd6ff"
-    type: 74HCT245 buffer at 5 V (3.3 V in, 5 V out)
+    type: 74ACT245 buffer at 5 V (proposed; 3.3 V in, 5 V out, 24 mA)
     image: {src: img/hct245.jpg, height: 80}
-    pinlabels: [A1, A2, A3, A4, A5, B1, B2, B3, B4, B5]
+    pinlabels: [A1, A2, A3, A4, B1, B2, B3, B4]
+    notes: "The DM542T inputs take 7-16 mA; the 74HCT245 is specified to 6 mA, the ACT to 24 mA (same pinout)"
   - &IMU
     bgcolor_title: "#ffe08a"
     type: ICM-42688-P module, on the carrier
@@ -42,15 +43,15 @@ parts:
     pinlabels: [VCC 3V3, GND, SDA, SCL, IN+, IN-]
     notes: pack voltage and current
   - &PORT_PWR {bgcolor_title: "#bcd6ff", type: "carrier port: power in", pinlabels: [5V, GND]}
-  - &PORT_DRV {bgcolor_title: "#bcd6ff", type: "carrier port: stepper driver", pinlabels: [GND, STEP, DIR, ENA]}
-  - &PORT_BLADE {bgcolor_title: "#bcd6ff", type: "carrier port: blade driver", pinlabels: [5V, EN, GND]}
+  - &PORT_DRV {bgcolor_title: "#bcd6ff", type: "carrier port: stepper driver", pinlabels: [PUL+, PUL-, DIR+, DIR-, ENA+, ENA-], notes: "pluggable screw terminal; the minus pins are GND, ENA+ is not driven yet"}
+  - &PORT_BLADE {bgcolor_title: "#bcd6ff", type: "carrier port: blade driver", pinlabels: [EN, GND], notes: "EN switched to GND by a MOSFET on the carrier; pull-down on GPIO18"}
   - &PORT_GNSS
     bgcolor_title: "#bcd6ff"
     type: "carrier port: GNSS"
     subtype: shrouded 2x10 header, 2.54 mm
     pinlabels: [1 V_BAT 5V, 2 GND, 9 RXD_GNSS, 10 TXD_GNSS]
     notes: 20 pins, 4 used. Must also take another RTK board later.
-  - &PORT_TOF {bgcolor_title: "#bcd6ff", type: "carrier port: ToF", pinlabels: [3V3, GND, SDA, SCL, LPn, INT]}
+  - &PORT_TOF {bgcolor_title: "#bcd6ff", type: "carrier port: ToF", subtype: 9-pin JST-XH, pinlabels: [3V3, GND, SDA, SCL, nc, LPn, INT, GND (NCS), GND (SPI_I2C_N)]}
   - &PORT_DOCK {bgcolor_title: "#bcd6ff", type: "carrier port: dock sense", pinlabels: [DOCK+ via divider, GND]}
   - &TOF8
     bgcolor_title: "#bfe8bf"
@@ -58,7 +59,7 @@ parts:
     image: {src: img/tof_8x8.jpg, height: 80}
     hide_disconnected_pins: true
     pinlabels: [VIN, GND, SDA, SCL, MISO, LPn, INT, NCS, SPI_I2C_N]
-    notes: "9 bare holes 2.54 mm + loose pin header. For I2C: NCS and SPI_I2C_N to GND (ST); plug not chosen"
+    notes: "9 bare holes 2.54 mm; a right-angle 9-pin JST-XH header is soldered in. I2C (ST DS14161): NCS and SPI_I2C_N to GND, LPn high, MISO open. Fed 3.3 V; the board has no schematic"
   - &C94
     bgcolor_title: "#bfe8bf"
     type: u-blox C94-M8P RTK board (rover)
@@ -82,8 +83,8 @@ parts:
     type: DM542T stepper driver
     image: {src: img/dm542t.jpg, height: 110}
     hide_disconnected_pins: true
-    pinlabels: [PUL+, DIR+, ENA+, PUL-/DIR-/ENA-, V+, GND, A+, A-, B+, B-]
-    notes: "ENA is not driven by the firmware yet"
+    pinlabels: [PUL+, PUL-, DIR+, DIR-, ENA+, ENA-, V+, GND, A+, A-, B+, B-]
+    notes: "Manual: optocoupler inputs, 270 ohm inside, 4-5 V, 7-16 mA; ENA open = enabled; +V 20-50 V. ENA is not driven by the firmware yet"
   - &STEPPER
     bgcolor_title: "#bfe8bf"
     type: 23HS32-4004S stepper + MG23-G10-D8 gearbox
@@ -96,7 +97,7 @@ parts:
     image: {src: img/bld510b.jpg, height: 110}
     hide_disconnected_pins: true
     pinlabels: [EN, SIG GND, V+, GND, MA, MB, MC, HALL +5V, HA, HB, HC, HALL GND]
-    notes: "plug-in screw terminals (names from the maker photo). Also F/R, BK, SV, PG, ALM, +5V: use ?; EN level ? (manual not read)"
+    notes: "Manual: EN, F/R, BK are contacts to GND. EN to GND = run on hardware V2.0, stop on V2.4 (read the unit). Speed from the built-in pot; F/R, BK, SV, PG, ALM unused. MA=U, MB=V, MC=W"
   - &BLADE
     bgcolor_title: "#bfe8bf"
     type: 57BLR90-24-01 brushless motor, 24 V 220 W
@@ -108,13 +109,13 @@ parts:
     type: 7S3P Li-ion pack with BMS, 25.9 V
     image: {src: img/battery.jpg, height: 110}
     pinlabels: [+, "-"]
-    notes: comes with a 29.4 V 2 A charger
+    notes: "Listing: XT60 discharge lead + DC-jack charge lead, 29.4 V 2 A charger; BMS current not stated"
   - &ESTOP
     bgcolor_title: "#ffe08a"
-    type: E-stop, 22 mm latching, 1 NC
+    type: E-stop, battery-disconnect type (proposed)
     image: {src: img/estop.jpg, height: 80}
     pinlabels: [in, out]
-    notes: "in the + line or on the driver enables ?"
+    notes: "In the + line after the charge joint; must break about 20 A DC (a 22 mm button's contact block is too small)"
   - &PDIST {bgcolor_title: "#bcd6ff", type: power distribution, pinlabels: [+ in, "- in", + drives, + blade, + buck, "- out"]}
   - &BUCK
     bgcolor_title: "#bfe8bf"
@@ -126,5 +127,21 @@ parts:
     type: charge port, 8 mm magnetic pogo connector, front
     image: {src: img/pogo.jpg, height: 80}
     pinlabels: [+, "-"]
-    notes: "no wires or plug: centre solder pin + 2 solder tabs on the shell; which pole is + is not decided"
+    notes: "36 V 10 A (listing). No wires or plug: centre solder pin (+) and 2 solder tabs on the shell (-)"
+  - &ST_POGO
+    bgcolor_title: "#bfe8bf"
+    type: station contact, the other half of the pogo pair
+    image: {src: img/pogo.jpg, height: 80}
+    pinlabels: [+, "-"]
+    notes: "Live all the time at 29.4 V, max 2 A from the charger; under a roof"
+  - &CHARGER
+    bgcolor_title: "#ffe08a"
+    type: 29.4 V 2 A charger (comes with the battery)
+    pinlabels: [+, "-"]
+    notes: "DC barrel plug, size not stated; the station gets the matching DC socket"
+  - &IDEAL_DIODE
+    bgcolor_title: "#ffe08a"
+    type: ideal diode module (proposed)
+    pinlabels: [IN+, OUT+, GND]
+    notes: "Keeps the mower contact dead off the dock, which the dock sense needs"
   - &trace {category: bundle, type: on the carrier board, show_name: false}
