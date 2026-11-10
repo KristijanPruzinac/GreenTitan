@@ -1,0 +1,357 @@
+# GreenTitan parts map (WireViz, https://github.com/wireviz/WireViz).
+# Every part of the redesign as a block with its pins, and what plugs into what.
+# Render:  wireviz -f sp electronics/parts.yml     (writes parts.svg and parts.png)
+# Colours: green = owned, yellow = to buy, blue = on the own carrier board.
+# Pin numbers come from src/definitions.h. Anything marked "?" is not confirmed.
+
+metadata:
+  title: GreenTitan parts map
+  notes: green = owned, yellow = to buy, blue = own carrier board. "?" = not confirmed.
+
+options:
+  bgcolor: WH
+  fontname: arial
+  mini_bom_mode: false
+
+templates:
+  - &owned {bgcolor_title: "#bfe8bf"}
+  - &buy {bgcolor_title: "#ffe08a"}
+  - &pcb {bgcolor_title: "#bcd6ff"}
+  - &trace {category: bundle, type: PCB traces, show_name: false}
+
+connectors:
+  # ---------------------------------------------------------------- controller
+  ESP32:
+    <<: *owned
+    type: ESP32 devboard (ESP-WROOM-32, USB-C), in a socket on the carrier
+    pinlabels: [5V, 3V3, GND, USB,
+                GPIO19, GPIO32, GPIO26, GPIO33, GPIO18,
+                GPIO16, GPIO17, GPIO13, GPIO27,
+                GPIO21, GPIO22,
+                GPIO25, GPIO23, GPIO4, GPIO14,
+                GPIO34, GPIO36, GPIO39, GPIO2]
+    notes: "USB = micro-ROS link (UART0, 921600). GPIO36 battery ADC and GPIO39 rain: unused. GPIO2 status LED."
+
+  # ---------------------------------------------------------------- carrier board
+  HCT245:
+    <<: *pcb
+    type: 74HCT245 buffer at 5 V, DIP-20 in a socket
+    pinlabels: [A1, A2, A3, A4, A5, B1, B2, B3, B4, B5, VCC 5V, GND]
+    notes: 3.3 V in, 5 V out for the driver optocouplers
+  IMU:
+    <<: *buy
+    type: ICM-42688-P module, on headers on the carrier
+    pinlabels: [VCC 3V3, GND, SDA, SCL]
+  INA226:
+    <<: *buy
+    type: INA226 module, on headers on the carrier, 2 mOhm shunt
+    pinlabels: [VCC 3V3, GND, SDA, SCL, IN+, IN-, VBUS]
+    notes: pack voltage and current, same I2C bus as the IMU
+  J_PWR:
+    <<: *pcb
+    type: carrier port, power in
+    subtype: XT30
+    pinlabels: [5V, GND]
+  J_DRV_L:
+    <<: *pcb
+    type: carrier port, drive left
+    subtype: JST-XH 4
+    pinlabels: [5V, STEP, DIR, ENA]
+  J_DRV_R:
+    <<: *pcb
+    type: carrier port, drive right
+    subtype: JST-XH 4
+    pinlabels: [5V, STEP, DIR, ENA]
+  J_BLADE:
+    <<: *pcb
+    type: carrier port, blade
+    subtype: JST-XH 3
+    pinlabels: [5V, EN, GND]
+  J_GNSS:
+    <<: *pcb
+    type: carrier port, GNSS
+    subtype: shrouded 2x10 header, 2.54 mm
+    pinlabels: [1 V_BAT 5V, 2 GND, 9 RXD_GNSS, 10 TXD_GNSS]
+    notes: 20 pins, 4 used. Must also take another RTK board later.
+  J_TOF_L:
+    <<: *pcb
+    type: carrier port, ToF left
+    subtype: JST-XH 6
+    pinlabels: [3V3, GND, SDA, SCL, LPn, INT]
+  J_TOF_R:
+    <<: *pcb
+    type: carrier port, ToF right
+    subtype: JST-XH 6
+    pinlabels: [3V3, GND, SDA, SCL, LPn, INT]
+  J_DEBUG:
+    <<: *pcb
+    type: carrier port, debug console
+    subtype: JST-XH 3
+    pinlabels: [RX, TX, GND]
+  J_DOCK:
+    <<: *pcb
+    type: carrier port, dock sense
+    subtype: JST-XH 2
+    pinlabels: [DOCK+ via divider, GND]
+
+  # ---------------------------------------------------------------- sensors
+  TOF_L:
+    <<: *owned
+    type: VL53L8CX ToF, front left
+    subtype: JST-XH 6 soldered into the header holes
+    pinlabels: [VIN, GND, SDA, SCL, LPn, INT]
+    notes: "pin order ?"
+  TOF_R:
+    <<: *owned
+    type: VL53L8CX ToF, front right
+    subtype: JST-XH 6 soldered into the header holes
+    pinlabels: [VIN, GND, SDA, SCL, LPn, INT]
+    notes: "pin order ?"
+  C94:
+    <<: *owned
+    type: u-blox C94-M8P RTK board (rover)
+    subtype: J8, 2x10 socket
+    pinlabels: [1 V_BAT, 2 GND, 9 RXD_GNSS, 10 TXD_GNSS, SMA GNSS, SMA UHF]
+    notes: 3.3 V UART, 19200. Pin 20 RADIO_OFF left open.
+  ANT_GNSS:
+    <<: *owned
+    type: ANN-MS GNSS patch antenna
+    pinlabels: [SMA]
+  ANT_UHF:
+    <<: *owned
+    type: UHF whip, 165 mm
+    pinlabels: [SMA]
+  USB_UART:
+    <<: *owned
+    type: CP2102 USB-UART adapter (bench only)
+    pinlabels: [TX, RX, GND]
+
+  # ---------------------------------------------------------------- phone
+  OTG:
+    <<: *owned
+    type: USB-C OTG splitter
+    pinlabels: [phone, device, power in]
+  PHONE:
+    <<: *owned
+    type: Galaxy A12 (ROS 2 host)
+    pinlabels: [USB-C]
+
+  # ---------------------------------------------------------------- drive
+  DRV_L:
+    <<: *owned
+    type: DM542T stepper driver, left
+    pinlabels: [PUL+, DIR+, ENA+, PUL-/DIR-/ENA-, V+, GND, A+, A-, B+, B-]
+    notes: "ENA is not driven by the firmware yet"
+  DRV_R:
+    <<: *owned
+    type: DM542T stepper driver, right
+    pinlabels: [PUL+, DIR+, ENA+, PUL-/DIR-/ENA-, V+, GND, A+, A-, B+, B-]
+  MOT_L:
+    <<: *owned
+    type: 23HS32-4004S + MG23-G10-D8 gearbox, left
+    pinlabels: [A+, A-, B+, B-]
+  MOT_R:
+    <<: *owned
+    type: 23HS32-4004S + MG23-G10-D8 gearbox, right
+    pinlabels: [A+, A-, B+, B-]
+
+  # ---------------------------------------------------------------- blade
+  BLD:
+    <<: *owned
+    type: BLD-510B brushless driver
+    pinlabels: [EN, COM, "SV, F/R, BRK", V+, GND, U, V, W, HALL 5V, HA, HB, HC, HALL GND]
+    notes: "speed from its own pot ?; EN level and polarity ?"
+  BLADE:
+    <<: *owned
+    type: 57BLR90-24-01 brushless motor, 24 V 220 W
+    pinlabels: [U, V, W, HALL 5V, HA, HB, HC, HALL GND]
+    notes: "shaft diameter ?; printed disc on a flange coupling (to buy)"
+
+  # ---------------------------------------------------------------- power
+  BATT:
+    <<: *buy
+    type: 7S3P Li-ion pack with BMS, 25.9 V
+    subtype: XT60
+    pinlabels: [+, "-"]
+  ESTOP:
+    <<: *buy
+    type: E-stop, 22 mm latching, 1 NC
+    pinlabels: [in, out]
+    notes: "in the + line or on the driver enables: open"
+  PDIST:
+    <<: *pcb
+    type: power distribution (lever splices)
+    pinlabels: [+ in, "- in", + drives, + blade, + buck, "- out"]
+  BUCK:
+    <<: *owned
+    type: 24 V to 5 V 10 A buck, potted
+    pinlabels: [IN+, IN-, OUT 5V, OUT GND]
+  CHARGE:
+    <<: *owned
+    type: charge port, magnetic pogo 2-pin (front)
+    pinlabels: [+, "-"]
+    notes: "29.4 V 2 A charger comes with the pack"
+
+cables:
+  T_PWR: {<<: *trace, wirecount: 2}
+  T_BUF: {<<: *trace, wirecount: 5}
+  T_DRV_L: {<<: *trace, wirecount: 3}
+  T_DRV_R: {<<: *trace, wirecount: 3}
+  T_BLADE: {<<: *trace, wirecount: 1}
+  T_GNSS: {<<: *trace, wirecount: 2}
+  T_I2C: {<<: *trace, wirecount: 2}
+  T_TOF_L: {<<: *trace, wirecount: 3}
+  T_TOF_R: {<<: *trace, wirecount: 3}
+  T_DEBUG: {<<: *trace, wirecount: 2}
+  T_DOCK: {<<: *trace, wirecount: 1}
+  W_DRV_L: {type: XH cable, wirecount: 4}
+  W_DRV_R: {type: XH cable, wirecount: 4}
+  W_BLADE: {type: XH cable, wirecount: 2}
+  W_GNSS: {type: 20-way ribbon (IDC), wirecount: 4}
+  W_TOF_L: {type: 6-core 24 AWG (owned), wirecount: 6}
+  W_TOF_R: {type: 6-core 24 AWG (owned), wirecount: 6}
+  W_DEBUG: {type: XH cable, wirecount: 3}
+  W_DOCK: {type: 2-core, wirecount: 2}
+  W_ANT_GNSS: {type: RG174 coax, wirecount: 1}
+  W_ANT_UHF: {type: SMA, wirecount: 1}
+  W_USB: {type: USB-C cable, wirecount: 1}
+  W_PHONE: {type: USB-C, wirecount: 1}
+  W_OTG_PWR: {type: USB-C 5 V, wirecount: 1}
+  W_MOT_L: {type: motor leads, wirecount: 4}
+  W_MOT_R: {type: motor leads, wirecount: 4}
+  W_BLD_PH: {type: motor leads, wirecount: 3}
+  W_BLD_HALL: {type: hall leads, wirecount: 5}
+  W_BATT: {type: "battery lead, XT60", wirecount: 2}
+  W_ESTOP: {type: 1.5 mm2, wirecount: 1}
+  W_P_DRV_L: {type: "1.5 mm2, XT30", wirecount: 2}
+  W_P_DRV_R: {type: "1.5 mm2, XT30", wirecount: 2}
+  W_P_BLD: {type: "1.5 mm2, XT30", wirecount: 2}
+  W_P_BUCK: {type: 1 mm2, wirecount: 2}
+  W_5V: {type: "1 mm2, XT30", wirecount: 2}
+  W_SHUNT: {type: via the INA226 shunt, wirecount: 1}
+  W_CHARGE: {type: 1.5 mm2, wirecount: 2}
+
+connections:
+  # stepper signals: ESP32 -> buffer -> port -> driver
+  - - ESP32: [GPIO19, GPIO32, GPIO26, GPIO33, GPIO18]
+    - T_BUF: [1-5]
+    - HCT245: [A1, A2, A3, A4, A5]
+  - - HCT245: [B1, B2]
+    - T_DRV_L: [1, 2]
+    - J_DRV_L: [STEP, DIR]
+  - - HCT245: [B3, B4]
+    - T_DRV_R: [1, 2]
+    - J_DRV_R: [STEP, DIR]
+  - - HCT245: [B5]
+    - T_BLADE: [1]
+    - J_BLADE: [EN]
+  - - J_DRV_L: [5V, STEP, DIR, ENA]
+    - W_DRV_L: [1-4]
+    - DRV_L: [PUL-/DIR-/ENA-, PUL+, DIR+, ENA+]
+  - - J_DRV_R: [5V, STEP, DIR, ENA]
+    - W_DRV_R: [1-4]
+    - DRV_R: [PUL-/DIR-/ENA-, PUL+, DIR+, ENA+]
+  - - J_BLADE: [EN, GND]
+    - W_BLADE: [1, 2]
+    - BLD: [EN, COM]
+  # motors
+  - - DRV_L: [A+, A-, B+, B-]
+    - W_MOT_L: [1-4]
+    - MOT_L: [A+, A-, B+, B-]
+  - - DRV_R: [A+, A-, B+, B-]
+    - W_MOT_R: [1-4]
+    - MOT_R: [A+, A-, B+, B-]
+  - - BLD: [U, V, W]
+    - W_BLD_PH: [1-3]
+    - BLADE: [U, V, W]
+  - - BLD: [HALL 5V, HA, HB, HC, HALL GND]
+    - W_BLD_HALL: [1-5]
+    - BLADE: [HALL 5V, HA, HB, HC, HALL GND]
+  # GNSS
+  - - ESP32: [GPIO17, GPIO16]
+    - T_GNSS: [1, 2]
+    - J_GNSS: [9 RXD_GNSS, 10 TXD_GNSS]
+  - - J_GNSS: [1 V_BAT 5V, 2 GND, 9 RXD_GNSS, 10 TXD_GNSS]
+    - W_GNSS: [1-4]
+    - C94: [1 V_BAT, 2 GND, 9 RXD_GNSS, 10 TXD_GNSS]
+  - - C94: [SMA GNSS]
+    - W_ANT_GNSS: [1]
+    - ANT_GNSS: [SMA]
+  - - C94: [SMA UHF]
+    - W_ANT_UHF: [1]
+    - ANT_UHF: [SMA]
+  # I2C on the carrier: IMU and battery monitor
+  - - ESP32: [GPIO21, GPIO22]
+    - T_I2C: [1, 2]
+    - IMU: [SDA, SCL]
+  - - ESP32: [GPIO21, GPIO22]
+    - T_I2C: [1, 2]
+    - INA226: [SDA, SCL]
+  # ToF
+  - - ESP32: [GPIO25, GPIO23, GPIO4]
+    - T_TOF_L: [1-3]
+    - J_TOF_L: [SDA, SCL, LPn]
+  - - ESP32: [GPIO25, GPIO23, GPIO14]
+    - T_TOF_R: [1-3]
+    - J_TOF_R: [SDA, SCL, LPn]
+  - - J_TOF_L: [3V3, GND, SDA, SCL, LPn, INT]
+    - W_TOF_L: [1-6]
+    - TOF_L: [VIN, GND, SDA, SCL, LPn, INT]
+  - - J_TOF_R: [3V3, GND, SDA, SCL, LPn, INT]
+    - W_TOF_R: [1-6]
+    - TOF_R: [VIN, GND, SDA, SCL, LPn, INT]
+  # debug console
+  - - ESP32: [GPIO13, GPIO27]
+    - T_DEBUG: [1, 2]
+    - J_DEBUG: [RX, TX]
+  - - J_DEBUG: [RX, TX, GND]
+    - W_DEBUG: [1-3]
+    - USB_UART: [TX, RX, GND]
+  # phone link
+  - - ESP32: [USB]
+    - W_USB: [1]
+    - OTG: [device]
+  - - OTG: [phone]
+    - W_PHONE: [1]
+    - PHONE: [USB-C]
+  - - BUCK: [OUT 5V]
+    - W_OTG_PWR: [1]
+    - OTG: [power in]
+  # power
+  - - BATT: [+]
+    - W_ESTOP: [1]
+    - ESTOP: [in]
+  - - ESTOP: [out]
+    - W_SHUNT: [1]
+    - INA226: [IN+]
+  - - INA226: [IN-, GND]
+    - W_BATT: [1, 2]
+    - PDIST: [+ in, "- in"]
+  - - PDIST: [+ drives, "- out"]
+    - W_P_DRV_L: [1, 2]
+    - DRV_L: [V+, GND]
+  - - PDIST: [+ drives, "- out"]
+    - W_P_DRV_R: [1, 2]
+    - DRV_R: [V+, GND]
+  - - PDIST: [+ blade, "- out"]
+    - W_P_BLD: [1, 2]
+    - BLD: [V+, GND]
+  - - PDIST: [+ buck, "- out"]
+    - W_P_BUCK: [1, 2]
+    - BUCK: [IN+, IN-]
+  - - BUCK: [OUT 5V, OUT GND]
+    - W_5V: [1, 2]
+    - J_PWR: [5V, GND]
+  - - J_PWR: [5V, GND]
+    - T_PWR: [1, 2]
+    - ESP32: [5V, GND]
+  # charging and dock sense
+  - - CHARGE: [+, "-"]
+    - W_CHARGE: [1, 2]
+    - BATT: [+, "-"]
+  - - CHARGE: [+, "-"]
+    - W_DOCK: [1, 2]
+    - J_DOCK: [DOCK+ via divider, GND]
+  - - J_DOCK: [DOCK+ via divider]
+    - T_DOCK: [1]
+    - ESP32: [GPIO34]

@@ -28,3 +28,7 @@ ros2_ws/install/
 ros2_ws/log/
 __pycache__/
 cad/concepts/concept_*.blend
+electronics/*.png
+electronics/*.html
+electronics/*.gv
+electronics/*.tsv
