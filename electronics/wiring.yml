@@ -1,0 +1,61 @@
+# Picture of how the parts connect (wiring.py -> wiring.svg). Edit here, then run render.sh.
+# nodes: id: {at: [x, y] centre, size: [w, h], label, img (optional), status: owned | buy | board, on: carrier (drawn on the board)}
+# links: [from, to, wires, label]  wires = signal names (one drawn wire each), or "ribbon" / "usb" / "coax" / "power"
+# Nothing here is a decided connector type; it shows which part connects to which, with how many wires.
+canvas: [1900, 1300]
+carrier: {at: [930, 560], size: [460, 520], label: "Carrier board (own PCB)"}
+nodes:
+  ESP32:    {at: [930, 450],  size: [150, 110], label: ESP32 devboard, img: img/esp32.jpg, status: owned, on: carrier}
+  IMU:      {at: [800, 640],  size: [90, 70],   label: IMU ICM-42688-P, img: img/imu.jpg, status: buy, on: carrier}
+  INA226:   {at: [1060, 640], size: [90, 70],   label: INA226 battery monitor, img: img/ina226.jpg, status: buy, on: carrier}
+  HCT245:   {at: [930, 740],  size: [100, 60],  label: 74HCT245 (5 V signals), img: img/hct245.jpg, status: board, on: carrier}
+
+  TOF_L:    {at: [330, 120],  size: [120, 90],  label: "ToF 8x8, front left", img: img/tof_8x8.jpg, status: owned}
+  TOF_R:    {at: [330, 300],  size: [120, 90],  label: "ToF 8x8, front right", img: img/tof_8x8.jpg, status: owned}
+  C94:      {at: [330, 520],  size: [160, 120], label: C94-M8P RTK board, img: img/c94.jpg, status: owned}
+  ANT_GNSS: {at: [90, 450],   size: [100, 80],  label: GNSS antenna, status: owned}
+  ANT_UHF:  {at: [90, 600],   size: [100, 80],  label: UHF whip, status: owned}
+  DEBUG:    {at: [330, 720],  size: [120, 80],  label: "USB-UART (bench only)", img: img/usb_uart.jpg, status: owned}
+  PHONE:    {at: [110, 900],  size: [110, 170], label: Galaxy A12 phone, status: owned}
+  OTG:      {at: [360, 900],  size: [130, 70],  label: "USB-C OTG adapter (data + charge)", status: buy}
+  USBC:     {at: [360, 1080], size: [130, 60],  label: "USB-C plug, screw terminal", status: buy}
+
+  DRV_L:    {at: [1450, 130], size: [130, 120], label: "DM542T driver, left", img: img/dm542t.jpg, status: owned}
+  DRV_R:    {at: [1450, 400], size: [130, 120], label: "DM542T driver, right", img: img/dm542t.jpg, status: owned}
+  MOT_L:    {at: [1750, 130], size: [150, 120], label: "Stepper + 10:1 gearbox, left", img: img/stepper_gearbox.jpg, status: owned}
+  MOT_R:    {at: [1750, 400], size: [150, 120], label: "Stepper + 10:1 gearbox, right", img: img/stepper_gearbox.jpg, status: owned}
+  BLD:      {at: [1450, 670], size: [130, 120], label: BLD-510B blade driver, img: img/bld510b.jpg, status: owned}
+  BLADE:    {at: [1750, 670], size: [150, 120], label: 57BLR90 blade motor, img: img/blade_motor.jpg, status: owned}
+
+  CHARGE:   {at: [800, 1160], size: [120, 90],  label: "Charge port (magnetic pogo)", img: img/pogo.jpg, status: owned}
+  BATT:     {at: [1050, 1160], size: [160, 110], label: 7S3P battery 25.9 V, img: img/battery.jpg, status: buy}
+  ESTOP:    {at: [1300, 1160], size: [110, 90], label: E-stop, img: img/estop.jpg, status: buy}
+  BUCK:     {at: [1180, 930], size: [130, 90],  label: 24 V to 5 V buck, img: img/buck.jpg, status: owned}
+  DIST:     {at: [1270, 400], size: [50, 700],  label: "24 V", status: board}
+
+links:
+  - [TOF_L, carrier, [3V3, GND, SDA, SCL, LPn, INT], "6 wires"]
+  - [TOF_R, carrier, [3V3, GND, SDA, SCL, LPn, INT], "6 wires"]
+  - [C94, carrier, ribbon, "20-way ribbon (5 V, GND, TX, RX used)"]
+  - [ANT_GNSS, C94, coax, "SMA coax"]
+  - [ANT_UHF, C94, coax, "SMA"]
+  - [DEBUG, carrier, [RX, TX, GND], "3 wires"]
+  - [PHONE, OTG, usb, "plugs in"]
+  - [OTG, carrier, usb, "USB cable to the ESP32 (data)"]
+  - [USBC, OTG, usb, "plugs into charge port"]
+  - [BUCK, USBC, power, "5 V, 2 wires"]
+  - [carrier, DRV_L, [5V, STEP, DIR, ENA], "4 wires"]
+  - [carrier, DRV_R, [5V, STEP, DIR, ENA], "4 wires"]
+  - [carrier, BLD, [EN, GND], "2 wires"]
+  - [DRV_L, MOT_L, [A+, A-, B+, B-], "4 motor wires"]
+  - [DRV_R, MOT_R, [A+, A-, B+, B-], "4 motor wires"]
+  - [BLD, BLADE, [U, V, W, 5V, HA, HB, HC, GND], "3 phase + 5 hall wires"]
+  - [CHARGE, BATT, power, "charge, 2 wires"]
+  - [CHARGE, carrier, [DOCK+, GND], "dock sense, 2 wires"]
+  - [BATT, ESTOP, power, "battery +"]
+  - [ESTOP, DIST, power, "24 V through the INA226 shunt"]
+  - [DIST, DRV_L, power, "24 V"]
+  - [DIST, DRV_R, power, "24 V"]
+  - [DIST, BLD, power, "24 V"]
+  - [DIST, BUCK, power, "24 V"]
+  - [BUCK, carrier, power, "5 V, 2 wires"]

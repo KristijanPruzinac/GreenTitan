@@ -59,7 +59,7 @@ tools/android/           phone provisioning (adb debloat, Termux, camera over ad
 tools/drive_test/        HIL drive tests: scripted stick drives (scenarios.py, drive.py) and a scorer against the sim truth (score.py)
 tools/wall_bench/        wall-assist bench: the real ToF task + wall assist (g++, shims) against a numpy world and plant, scenario suite
 electronics/             parts map (WireViz): common.yml defines every part and its pins once; signals.yml, drive.yml, power.yml
-                         are the sheets; render.sh writes the .svg next to them and overview.svg (parts only, overview.py); img/ holds the part photos
+                         are the sheets; wiring.yml + wiring.py draw wiring.svg (parts as photos joined by cables); render.sh writes all the .svg; img/ holds the part photos
 cad/concepts/            Blender concept models for the clean-slate redesign (lib.py helpers, one script per concept; renders gitignored)
 lib/tinympc/             vendored TinyMPC solver (MIT), patched for the ESP32 (float, no stdout)
 lib/clipper2/            vendored Clipper2 polygon library (BSL-1.0), needs C++17
