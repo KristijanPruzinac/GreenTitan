@@ -61,6 +61,8 @@ tools/wall_bench/        wall-assist bench: the real ToF task + wall assist (g++
 electronics/             parts map (WireViz): common.yml defines every part and its pins once; signals.yml, drive.yml, power.yml
                          are the sheets; wiring.yml + wiring.py draw wiring.svg (parts as photos joined by cables); render.sh writes all the .svg; img/ holds the part photos
 cad/concepts/            Blender concept models for the clean-slate redesign (lib.py helpers, one script per concept; renders gitignored)
+cad/exo/                 CadQuery model of the Exo mower, started 2026-11-10: dims.py (every shared number, the frame, what is assumed
+                         about unmeasured parts), util.py (solids, clash / bed size / overhang / frame-slot checks); the parts are not modelled yet
 lib/tinympc/             vendored TinyMPC solver (MIT), patched for the ESP32 (float, no stdout)
 lib/clipper2/            vendored Clipper2 polygon library (BSL-1.0), needs C++17
 platformio.ini           board, libs (incl. ESP-DDS, micro_ros_platformio jazzy), DDS limits
