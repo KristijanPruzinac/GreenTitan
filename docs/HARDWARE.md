@@ -147,19 +147,17 @@ Buildability rules for the redesign (2026-11-10):
 - **Wiring:** plug connectors throughout, XT60/XT30 for power. No soldered signal joints.
 - New parts come from AliExpress or an EU shop that sells to private buyers, and the user approves each one first.
 
-Parts under review (**proposed**, 2026-11-10; web research, nothing chosen or ordered, prices and fits not verified on the parts):
-- **Battery** (must be ≥ 72 Wh, the Einhell pack's capacity; the Einhell 18 V is below the DM542T minimum and can't be monitored). No ready pack was found with both a data port and a charger.
-  - 8S LiFePO4 25.6 V 6 Ah (TalentCell LF8011): 154 Wh, 150×65×96 mm, 1.4 kg, charger included, 10 A max, voltage-only monitoring (poor for LiFePO4's flat curve), about $118.
-  - 36 V 10S scooter pack, 8–10 Ah: 288–360 Wh, about 190×88×70 mm, 1.9 kg, 42 V charger, voltage-only, about €130 with charger. 42 V is too high for a 24 V blade motor.
-  - 7S Li-ion pack + JBD smart BMS (UART: cells, current, charge state): about €100 + charger, needs the balance leads rewired.
-  - Two Einhell packs in series (36 V, 144 Wh): the packs must come out to charge, so no charging in the dock.
-- **IMU:** Adafruit ISM330DHCX (STEMMA QT plug, I2C), about €20. Gyro bias instability 3°/h and ±0.005 dps/°C; noise as the MPU6050.
-- **Blade unit:** no ready motor-with-blade unit confirmed. Candidate: Ardumower BL57 brushless motor (24 V, 0.54 kg, €21–30) + a brushless driver (€19–33) + a 240 mm three-blade disc (Husqvarna 598 81 44-01, €19) on a hub adapter, about €80–95. Hub fit unknown.
-- **Casters:** the current ones mount on an M10 stem, which doesn't bolt to 2020 and is hard to tighten. Candidate: generic 75 mm rubber swivel casters with a 4-hole plate (about 95 mm high, 32 mm offset). The plate holes (about 55×42) need two parallel 2020 slots.
-- **Wheel hub:** a keyed metal hub for the Ø14 gearbox output shaft (§2), the wheel bolted to its flange. Candidate: Nexus Robot 18014 (stainless, 14 mm bore, key + set screw, about €23 each). Set screws without the key slip.
-- **ESP32 board:** the MKS DLC32 doesn't fit: its STEP outputs sit behind a 74HC595 shift register, which the LEDC step generation can't drive. No ready board with direct-GPIO 5 V step outputs was found. Open: a screw-terminal ESP32 breakout plus a 5 V buffer.
-- **C94-M8P:** stays (spares owned). The receiver has one UART, shared by the radio, the DB9 and the J8 header (3.3 V, RXD/TXD on pins 9/10); the DB9 can disturb the radio link, so the plug goes on J8. Full configuration works over its USB.
-- **E-stop:** 22 mm latching mushroom button, 1 NC, IP65, about €5, 50 mm deep behind the panel.
+Parts under review (**proposed**, 2026-11-10; read from AliExpress listings, nothing chosen or ordered; prices converted from the listing currency and rounded; budget for all new parts about €200):
+- **Battery** (must be ≥ 72 Wh, the Einhell pack's capacity; the Einhell 18 V is below the DM542T minimum and can't be monitored): generic 7S3P 18650 pack, 25.9 V nominal / 29.4 V full, built-in BMS, 29.4 V 2 A charger included, 133×100×67 mm, about €45. The listed "40 Ah" is false; 21 cells give roughly 100–190 Wh depending on the cells. Voltage-only monitoring (ADC divider).
+- **Blade unit**, two candidates:
+  - Brushless cordless-mower motor with Hall sensors: 12–30 V, 2900 rpm no-load at 24 V, 1.7 kg, about €22. Needs a brushless driver of ≥ 500 W (about €10–27) and a blade (a bar, or a robot-mower disc for €19–28); the blade mount on its shaft is unknown.
+  - Brushed 795/895 motor kit: 12–24 V, 5 mm shaft with a threaded adapter, bracket and a 200×30×1.5 mm bar blade, about €38. 10 000–20 000 rpm no-load, far too fast for a 200 mm bar at full voltage (over 100 m/s at the tip), so it would need to run throttled.
+- **IMU:** ICM-42688-P module with I2C, about €5 (header pins to solder).
+- **Casters:** the current ones mount on an M10 stem, which doesn't bolt to 2020 and is hard to tighten. Candidate: stainless swivel casters with a 4-hole plate and a grey rubber wheel. 3 inch: wheel Ø75×32, 105 mm high, plate 95×64, holes 74×45. 2 inch: wheel Ø50×24, 72 mm high, plate 70×51, holes 53×35.
+- **Wheel hub:** aluminium flange coupling for omni wheels, 14 mm bore with keyway and an M5 set screw, flange Ø56.8×6, hub Ø30×20.4, 3×Ø5.2 holes on Ø47.5 and 3 on Ø45, about €13 each. Fits the Ø14 keyed gearbox shaft (§2).
+- **ESP32 board:** the MKS DLC32 doesn't fit: its STEP outputs sit behind a 74HC595 shift register, which the LEDC step generation can't drive. The ready-made DIN-rail ESP32 carriers take IO1/IO3/IO17 for RS485, which are the micro-ROS link and a GNSS pin. Open: a small own carrier board (ESP32 socket, 5 V buffer for STEP/DIR/ENA, one plug per device), or a 38-pin terminal breakout (about €4) plus a level-shifter module.
+- **C94-M8P:** stays (spares owned). Board 75×55 mm; UHF antenna 165 mm long, about 50 g; GNSS antenna about 49×46×16 mm. The receiver has one UART, shared by the radio, the DB9 and the J8 header (3.3 V, RXD/TXD on pins 9/10); the DB9 can disturb the radio link, so the plug goes on J8. Full configuration works over its USB.
+- **E-stop:** 22 mm latching mushroom button, 1 NC, about €2–5.
 
 Fusion gotchas:
   - Positions that aren't captured revert on timeline operations.
