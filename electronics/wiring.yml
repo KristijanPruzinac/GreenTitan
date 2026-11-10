@@ -14,7 +14,7 @@ nodes:
 
   TOF_L:    {at: [330, 120],  size: [120, 90],  label: "ToF 8x8, front left", img: img/tof_8x8.jpg, status: owned, term: ["9 bare holes 2.54 mm + loose pin header: VIN GND SDA SCL MISO LPn INT NCS SPI_I2C_N. I2C: NCS + SPI_I2C_N to GND", true]}
   TOF_R:    {at: [330, 300],  size: [120, 90],  label: "ToF 8x8, front right", img: img/tof_8x8.jpg, status: owned, term: ["9 bare holes 2.54 mm + loose pin header: VIN GND SDA SCL MISO LPn INT NCS SPI_I2C_N. I2C: NCS + SPI_I2C_N to GND", true]}
-  C94:      {at: [330, 520],  size: [160, 120], label: C94-M8P RTK board, img: img/c94.jpg, status: owned, term: ["J8 = 2x10 SOCKET (u-blox guide); the ribbon goes in through a 2x10 pin header with long pins on both sides. Pitch and own board version not checked", false]}
+  C94:      {at: [330, 520],  size: [160, 120], label: C94-M8P RTK board, img: img/c94.jpg, status: owned, term: ["J8 = 2x10 socket, 2.54 mm, with the UART (checked on the owned board); the ribbon goes in through a 2x10 pin header with long pins on both sides", true]}
   ANT_GNSS: {at: [90, 450],   size: [100, 80],  label: GNSS antenna, status: owned, term: ["SMA plug on a fixed cable", true]}
   ANT_UHF:  {at: [90, 600],   size: [100, 80],  label: UHF whip, status: owned, term: ["SMA", true]}
   DEBUG:    {at: [330, 720],  size: [120, 80],  label: "USB-UART (bench only)", img: img/usb_uart.jpg, status: owned, term: ["bought as variants CP2102 and CH9102; pin row not read off the boards", false]}
