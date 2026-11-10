@@ -13,7 +13,7 @@ connectors:
   BLD: *BLD
   BLADE: *BLADE
 cables:
-  T_BUF: {<<: *trace, wirecount: 4}
+  T_BUF: {<<: *trace, wirecount: 5}
   T_DRV_L: {<<: *trace, wirecount: 2}
   T_DRV_R: {<<: *trace, wirecount: 2}
   T_BLADE: {<<: *trace, wirecount: 1}
@@ -25,13 +25,13 @@ cables:
   W_BLD_PH: {type: motor leads, wirecount: 3}
   W_BLD_HALL: {type: hall leads, wirecount: 5}
 connections:
-  - [ESP32: [GPIO19, GPIO32, GPIO26, GPIO33], T_BUF: [1-4], HCT245: [A1, A2, A3, A4]]
+  - [ESP32: [GPIO19, GPIO32, GPIO26, GPIO33, GPIO18], T_BUF: [1-5], HCT245: [A1, A2, A3, A4, A5]]
   - [HCT245: [B1, B2], T_DRV_L: [1, 2], J_DRV_L: [PUL+, DIR+]]
   - [HCT245: [B3, B4], T_DRV_R: [1, 2], J_DRV_R: [PUL+, DIR+]]
-  - [ESP32: [GPIO18], T_BLADE: [1], J_BLADE: [EN]]
+  - [HCT245: [B5], T_BLADE: [1], J_BLADE: [SV]]
   - [J_DRV_L: [1-6], W_DRV_L: [1-6], DRV_L: [PUL+, PUL-, DIR+, DIR-, ENA+, ENA-]]
   - [J_DRV_R: [1-6], W_DRV_R: [1-6], DRV_R: [PUL+, PUL-, DIR+, DIR-, ENA+, ENA-]]
-  - [J_BLADE: [EN, GND], W_BLADE: [1, 2], BLD: [EN, SIG GND]]
+  - [J_BLADE: [SV, GND], W_BLADE: [1, 2], BLD: [SV, SIG GND]]
   - [DRV_L: [A+, A-, B+, B-], W_MOT_L: [1-4], MOT_L: [1-4]]
   - [DRV_R: [A+, A-, B+, B-], W_MOT_R: [1-4], MOT_R: [1-4]]
   - [BLD: [MA, MB, MC], W_BLD_PH: [1-3], BLADE: [U orange, V green, W brown]]

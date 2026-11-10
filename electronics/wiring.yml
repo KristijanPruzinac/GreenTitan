@@ -27,7 +27,7 @@ nodes:
   DRV_R:    {at: [1450, 400], size: [130, 120], label: "DM542T driver, right", img: img/dm542t.jpg, status: owned, term: ["manual: PUL+ PUL- DIR+ DIR- ENA+ ENA- (optos, 5 V, 7-16 mA, ENA open = on); GND +V 20-50 V; A+ A- B+ B-", true]}
   MOT_L:    {at: [1750, 130], size: [150, 120], label: "Stepper + 10:1 gearbox, left", img: img/stepper_gearbox.jpg, status: owned, term: ["4 bare leads AWG20, 300 mm: black A+, green A-, red B+, blue B- (datasheet)", true]}
   MOT_R:    {at: [1750, 400], size: [150, 120], label: "Stepper + 10:1 gearbox, right", img: img/stepper_gearbox.jpg, status: owned, term: ["4 bare leads AWG20, 300 mm: black A+, green A-, red B+, blue B- (datasheet)", true]}
-  BLD:      {at: [1450, 670], size: [130, 120], label: BLD-510B blade driver, img: img/bld510b.jpg, status: owned, term: ["manual: V+ GND / MA MB MC GND HA HB HC +5V / GND F/R EN BK SV PG ALM +5V. EN to GND = run (V2.0) or stop (V2.4)", true]}
+  BLD:      {at: [1450, 670], size: [130, 120], label: BLD-510B blade driver, img: img/bld510b.jpg, status: owned, term: ["manual: V+ GND / MA MB MC GND HA HB HC +5V / GND F/R EN BK SV PG ALM +5V. Owned unit V2.4x or V3.0: runs with EN open; SV under 0.3 V = stop", true]}
   BLADE:    {at: [1750, 670], size: [150, 120], label: 57BLR90 blade motor, img: img/blade_motor.jpg, status: owned, term: ["8 leads 300 mm: U orange, V green, W brown (AWG16); +5V red, GND black, A yellow, B white, C blue (AWG26) (maker drawing)", true]}
 
   CHARGER:  {at: [150, 1250], size: [150, 90],  label: "29.4 V 2 A charger (comes with the battery)", status: buy, term: ["not bought; DC barrel plug, size not stated", false]}
@@ -51,7 +51,7 @@ links:
   - [BUCK, USBC, power, "5 V, lever splices"]
   - [carrier, DRV_L, ["PUL+", "PUL-", "DIR+", "DIR-", "ENA+", "ENA-"], "owned 6-core cable"]
   - [carrier, DRV_R, ["PUL+", "PUL-", "DIR+", "DIR-", "ENA+", "ENA-"], "owned 6-core cable"]
-  - [carrier, BLD, [EN, GND], "EN switched to GND"]
+  - [carrier, BLD, [SV, GND], "5 V on SV = run, 2 wires:"]
   - [DRV_L, MOT_L, ["A+=#222222", "A-=#388e3c", "B+=#d32f2f", "B-=#1976d2"], "bare leads", true]
   - [DRV_R, MOT_R, ["A+=#222222", "A-=#388e3c", "B+=#d32f2f", "B-=#1976d2"], "bare leads", true]
   - [BLD, BLADE, ["U=#ef6c00", "V=#388e3c", "W=#6d4c41", "5V=#d32f2f", "GND=#222222", "HA=#f9a825", "HB=#bdbdbd", "HC=#1976d2"], "bare leads, MA=U MB=V MC=W", true]

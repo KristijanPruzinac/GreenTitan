@@ -28,7 +28,7 @@ parts:
     bgcolor_title: "#bcd6ff"
     type: 74ACT245 buffer at 5 V (proposed; 3.3 V in, 5 V out, 24 mA)
     image: {src: img/hct245.jpg, height: 80}
-    pinlabels: [A1, A2, A3, A4, B1, B2, B3, B4]
+    pinlabels: [A1, A2, A3, A4, A5, B1, B2, B3, B4, B5]
     notes: "The DM542T inputs take 7-16 mA; the 74HCT245 is specified to 6 mA, the ACT to 24 mA (same pinout)"
   - &IMU
     bgcolor_title: "#ffe08a"
@@ -44,7 +44,7 @@ parts:
     notes: pack voltage and current
   - &PORT_PWR {bgcolor_title: "#bcd6ff", type: "carrier port: power in", pinlabels: [5V, GND]}
   - &PORT_DRV {bgcolor_title: "#bcd6ff", type: "carrier port: stepper driver", pinlabels: [PUL+, PUL-, DIR+, DIR-, ENA+, ENA-], notes: "pluggable screw terminal; the minus pins are GND, ENA+ is not driven yet"}
-  - &PORT_BLADE {bgcolor_title: "#bcd6ff", type: "carrier port: blade driver", pinlabels: [EN, GND], notes: "EN switched to GND by a MOSFET on the carrier; pull-down on GPIO18"}
+  - &PORT_BLADE {bgcolor_title: "#bcd6ff", type: "carrier port: blade driver", pinlabels: [SV, GND], notes: "5 V from the buffer = run, 0 V = stop; pull-down on GPIO18"}
   - &PORT_GNSS
     bgcolor_title: "#bcd6ff"
     type: "carrier port: GNSS"
@@ -96,8 +96,8 @@ parts:
     type: BLD-510B brushless driver
     image: {src: img/bld510b.jpg, height: 110}
     hide_disconnected_pins: true
-    pinlabels: [EN, SIG GND, V+, GND, MA, MB, MC, HALL +5V, HA, HB, HC, HALL GND]
-    notes: "Manual: EN, F/R, BK are contacts to GND. EN to GND = run on hardware V2.0, stop on V2.4 (read the unit). Speed from the built-in pot; F/R, BK, SV, PG, ALM unused. MA=U, MB=V, MC=W"
+    pinlabels: [SV, SIG GND, V+, GND, MA, MB, MC, HALL +5V, HA, HB, HC, HALL GND]
+    notes: "Owned unit is V2.4x or V3.0 (maker page): it runs with EN open, so EN is not the run signal. Run = 5 V on SV, stop = SV under 0.3 V (manual); top speed set with the R-SL pot. EN, F/R, BK, PG, ALM unused. MA=U, MB=V, MC=W"
   - &BLADE
     bgcolor_title: "#bfe8bf"
     type: 57BLR90-24-01 brushless motor, 24 V 220 W
