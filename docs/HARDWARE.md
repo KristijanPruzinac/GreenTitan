@@ -62,7 +62,7 @@ Origin: midpoint between the drive wheel centres on the ground, x forward (big-w
 | 2× DM542T + 23HS32 + MG23-G10 | drive | see §2 |
 | Relay module (single channel) | blade motor on/off | GPIO18 |
 | Waterproof DC-DC buck → 5 V | logic and phone power | |
-| Delock 64298 USB-C hub with PD pass-through (owned, decided 2026-11-10) | phone ↔ ESP32 data, phone charging | 100×17×7 mm, 15 cm lead; charging from the mower's 5 V is to test |
+| USB-C OTG adapter, 2-in-1: USB-A data + USB-C charge port (to buy, about €3.50, decided 2026-11-10) | phone ↔ ESP32 data, phone charging | Fed from the 5 V wires through a USB-C plug with a 2-pin screw terminal (to buy, about €0.70) |
 | Einhell 18 V battery | main power | `BATTERY_LEVEL_MIN/MAX` = 16/18 V. The ADC divider isn't defined |
 | Android phone (Galaxy A12) | ROS 2 host, cameras | see §5. Replaces the Raspberry Pi |
 
@@ -98,7 +98,7 @@ Wiring rules (user decisions, 2026-10):
   - **no gyro**, so the MPU6050 stays the yaw-rate source
   - phone GPS isn't used, because the RTK receiver is far better
 - **Mounting:** upright in a "sail" on the cover, with hooded windows for both cameras. The phone isn't waterproof, so it sits in a **sealed wet compartment that drains outside** and never opens into the electronics bay. The windows are drip-proof but unobstructed.
-- **Link:** the owned Delock 64298 USB-C hub (decided 2026-11-10): its lead plugs into the phone, the ESP32 goes on a data port, and the hub's PD input charges the phone while it stays USB host. To test: that the A12 charges through it from the mower's plain 5 V (the hub is specified with a USB PD charger, up to 95 W).
+- **Link** (decided 2026-11-10): a small 2-in-1 USB-C OTG adapter plugs into the phone; the ESP32 goes on its USB-A data port (USB-A to USB-C cable), and the 5 V wires from the buck feed its charge port through a USB-C plug with a 2-pin screw terminal. The owned Delock 64298 hub does the same job but is bulkier (100 mm, 15 cm lead); it stays as the spare.
 - **Open software questions** (ARCHITECTURE §15): running ROS 2 on unrooted Android, USB-serial access from Termux, and a camera pipeline. Expect detection-class vision (TFLite) to be feasible on the Helio P35. Real-time visual SLAM is marginal.
 
 ## 6. CAD, printing and cover rules
@@ -203,4 +203,4 @@ These are what the software must survive:
   - **Station:** no MCU. A 29.4 V CC/CV charger brick, switched onto two spring leaf contacts only while a reed switch (or hall sensor) sees a magnet on the mower (through a relay or MOSFET, not through the reed itself). That way the contacts are dead off the dock: no corrosion, no wet short. Contacts under a roof, copper paste, drain gaps. A funnel from the 8 mm bearings with about ±10 cm and ±10–15° capture after a 1–2 m straight approach. The station stands in open sky: RTK float near walls is the commercial mowers' main docking failure.
   - **Mower:** two wide flat plates (stainless or nickel-plated brass, about 40 × 80 mm), an ideal diode (LM74610/LM74700 module) so the plates are never live from the pack, and an ADC divider on the contact side. Docked = contact voltage above about 25 V for 0.5 s. Charging = BMS current over UART, or the pack voltage rising. The firmware side exists (2026-11-02, ARCHITECTURE §7 Docking: approach, retries, set station, undock by reversing); it assumes the plates 0.12 m ahead of the axle and a funnel like the sim's (rails 8 cm high, throat 2.5 cm wider than the wheels each side).
   - **Check before choosing 7S:** blade motor voltage (MY1016 12/24/36 V), blade relay DC rating (often 30 VDC), the 5 V buck's input range, and the DM542T under-voltage threshold.
-- [ ] Phone link: ROS 2 + agent + EKF run on the A12 (2026-10-30); still to prove: USB serial to the real ESP32 through the Delock hub, and the phone charging through it (ARCHITECTURE §15).
+- [ ] Phone link: ROS 2 + agent + EKF run on the A12 (2026-10-30); still to prove: USB serial to the real ESP32 through the OTG adapter, and the phone charging through it (ARCHITECTURE §15).

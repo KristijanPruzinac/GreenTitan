@@ -70,10 +70,13 @@ parts:
   - &USB_UART {bgcolor_title: "#bfe8bf", type: CP2102 USB-UART adapter (bench only), image: {src: img/usb_uart.jpg, height: 80}, pinlabels: [TX, RX, GND]}
   - &PHONE {bgcolor_title: "#bfe8bf", type: Galaxy A12 (ROS 2 host), pinlabels: [USB-C]}
   - &HUB
-    bgcolor_title: "#bfe8bf"
-    type: Delock 64298 USB-C hub with PD pass-through
-    pinlabels: [USB-C plug, USB data port, USB-C PD in]
-    notes: "100 x 17 x 7 mm, 15 cm lead. Charging the phone from the mower's 5 V through the PD port: to test"
+    bgcolor_title: "#ffe08a"
+    type: USB-C OTG adapter, 2-in-1 (USB-A data + USB-C charge port)
+    pinlabels: [USB-C plug, USB-A data port, USB-C charge in]
+  - &USBC_TERM
+    bgcolor_title: "#ffe08a"
+    type: USB-C plug with 2-pin screw terminal
+    pinlabels: [5V, GND, USB-C plug]
   - &DM542T
     bgcolor_title: "#bfe8bf"
     type: DM542T stepper driver
