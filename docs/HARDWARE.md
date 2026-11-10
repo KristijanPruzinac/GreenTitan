@@ -147,15 +147,19 @@ Buildability rules for the redesign (2026-11-10):
 - **Wiring:** plug connectors throughout, XT60/XT30 for power. No soldered signal joints.
 - New parts come from AliExpress or an EU shop that sells to private buyers, and the user approves each one first.
 
-Parts under review (**proposed**, 2026-11-10, nothing chosen yet):
-- Battery: the Einhell 18 V pack is below the DM542T minimum and can't be monitored. Candidate: a 7S Li-ion pack with a smart BMS (UART) and its own plug-in charger.
-- IMU: a better gyro than the MPU6050 on the same bus.
-- Blade unit: a brushless mower motor with its blade already fitted, replacing the MY1016 and the Ø254 bar.
-- Casters: the current ones mount on an M10 stem, which doesn't bolt to 2020 and is hard to tighten. Candidate: plate-mount casters.
-- Wheel hub: a metal flange hub for the 8 mm gearbox shaft (the DIY coupling doesn't hold).
-- ESP32 board: one with plug connectors and 5 V step/dir outputs for the DM542T, replacing the breakout and the soldered level shifter.
-- C94-M8P: stays (spares owned); find a plug connection for its UART instead of soldered pins.
-- E-stop: to be ordered.
+Parts under review (**proposed**, 2026-11-10; web research, nothing chosen or ordered, prices and fits not verified on the parts):
+- **Battery** (must be ≥ 72 Wh, the Einhell pack's capacity; the Einhell 18 V is below the DM542T minimum and can't be monitored). No ready pack was found with both a data port and a charger.
+  - 8S LiFePO4 25.6 V 6 Ah (TalentCell LF8011): 154 Wh, 150×65×96 mm, 1.4 kg, charger included, 10 A max, voltage-only monitoring (poor for LiFePO4's flat curve), about $118.
+  - 36 V 10S scooter pack, 8–10 Ah: 288–360 Wh, about 190×88×70 mm, 1.9 kg, 42 V charger, voltage-only, about €130 with charger. 42 V is too high for a 24 V blade motor.
+  - 7S Li-ion pack + JBD smart BMS (UART: cells, current, charge state): about €100 + charger, needs the balance leads rewired.
+  - Two Einhell packs in series (36 V, 144 Wh): the packs must come out to charge, so no charging in the dock.
+- **IMU:** Adafruit ISM330DHCX (STEMMA QT plug, I2C), about €20. Gyro bias instability 3°/h and ±0.005 dps/°C; noise as the MPU6050.
+- **Blade unit:** no ready motor-with-blade unit confirmed. Candidate: Ardumower BL57 brushless motor (24 V, 0.54 kg, €21–30) + a brushless driver (€19–33) + a 240 mm three-blade disc (Husqvarna 598 81 44-01, €19) on a hub adapter, about €80–95. Hub fit unknown.
+- **Casters:** the current ones mount on an M10 stem, which doesn't bolt to 2020 and is hard to tighten. Candidate: generic 75 mm rubber swivel casters with a 4-hole plate (about 95 mm high, 32 mm offset). The plate holes (about 55×42) need two parallel 2020 slots.
+- **Wheel hub:** a keyed metal hub for the Ø14 gearbox output shaft (§2), the wheel bolted to its flange. Candidate: Nexus Robot 18014 (stainless, 14 mm bore, key + set screw, about €23 each). Set screws without the key slip.
+- **ESP32 board:** the MKS DLC32 doesn't fit: its STEP outputs sit behind a 74HC595 shift register, which the LEDC step generation can't drive. No ready board with direct-GPIO 5 V step outputs was found. Open: a screw-terminal ESP32 breakout plus a 5 V buffer.
+- **C94-M8P:** stays (spares owned). The receiver has one UART, shared by the radio, the DB9 and the J8 header (3.3 V, RXD/TXD on pins 9/10); the DB9 can disturb the radio link, so the plug goes on J8. Full configuration works over its USB.
+- **E-stop:** 22 mm latching mushroom button, 1 NC, IP65, about €5, 50 mm deep behind the panel.
 
 Fusion gotchas:
   - Positions that aren't captured revert on timeline operations.
