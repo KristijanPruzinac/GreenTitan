@@ -58,7 +58,8 @@ ros2_ws/build|install|log   colcon output (gitignored)
 tools/android/           phone provisioning (adb debloat, Termux, camera over adb)
 tools/drive_test/        HIL drive tests: scripted stick drives (scenarios.py, drive.py) and a scorer against the sim truth (score.py)
 tools/wall_bench/        wall-assist bench: the real ToF task + wall assist (g++, shims) against a numpy world and plant, scenario suite
-electronics/             parts map: parts.yml (WireViz: every part, its pins, what plugs into what) -> parts.svg
+electronics/             parts map (WireViz): common.yml defines every part and its pins once; signals.yml, drive.yml, power.yml
+                         are the sheets; render.sh writes the .svg next to them; img/ holds the part photos
 cad/concepts/            Blender concept models for the clean-slate redesign (lib.py helpers, one script per concept; renders gitignored)
 lib/tinympc/             vendored TinyMPC solver (MIT), patched for the ESP32 (float, no stdout)
 lib/clipper2/            vendored Clipper2 polygon library (BSL-1.0), needs C++17

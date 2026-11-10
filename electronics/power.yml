@@ -1,0 +1,42 @@
+# Sheet 3: battery, charging, power distribution.
+metadata: {title: GreenTitan parts map - power}
+connectors:
+  CHARGE: *CHARGE
+  BATT: *BATT
+  ESTOP: *ESTOP
+  INA226: *INA226
+  PDIST: *PDIST
+  DRV_L: {<<: *DM542T, type: "DM542T stepper driver, left"}
+  DRV_R: {<<: *DM542T, type: "DM542T stepper driver, right"}
+  BLD: *BLD
+  BUCK: *BUCK
+  J_PWR: *PORT_PWR
+  J_DOCK: *PORT_DOCK
+  ESP32: *ESP32
+cables:
+  W_CHARGE: {type: charge lead, wirecount: 2}
+  W_DOCK: {type: 2-core cable, wirecount: 2}
+  W_ESTOP: {type: battery +, wirecount: 1}
+  W_SHUNT: {type: through the shunt, wirecount: 1}
+  W_MAIN: {type: main lead, wirecount: 2}
+  W_P_DRV_L: {type: power lead, wirecount: 2}
+  W_P_DRV_R: {type: power lead, wirecount: 2}
+  W_P_BLD: {type: power lead, wirecount: 2}
+  W_P_BUCK: {type: power lead, wirecount: 2}
+  W_5V: {type: 5 V lead, wirecount: 2}
+  T_PWR: {<<: *trace, wirecount: 2}
+  T_DOCK: {<<: *trace, wirecount: 1}
+connections:
+  - [CHARGE: [+, "-"], W_CHARGE: [1, 2], BATT: [+, "-"]]
+  - [CHARGE: [+, "-"], W_DOCK: [1, 2], J_DOCK: [DOCK+ via divider, GND]]
+  - [J_DOCK: [DOCK+ via divider], T_DOCK: [1], ESP32: [GPIO34]]
+  - [BATT: [+], W_ESTOP: [1], ESTOP: [in]]
+  - [ESTOP: [out], W_SHUNT: [1], INA226: [IN+]]
+  - [INA226: [IN-], W_MAIN: [1], PDIST: [+ in]]
+  - [BATT: ["-"], W_MAIN: [2], PDIST: ["- in"]]
+  - [PDIST: [+ drives, "- out"], W_P_DRV_L: [1, 2], DRV_L: [V+, GND]]
+  - [PDIST: [+ drives, "- out"], W_P_DRV_R: [1, 2], DRV_R: [V+, GND]]
+  - [PDIST: [+ blade, "- out"], W_P_BLD: [1, 2], BLD: [V+, GND]]
+  - [PDIST: [+ buck, "- out"], W_P_BUCK: [1, 2], BUCK: [IN+, IN-]]
+  - [BUCK: [OUT 5V, OUT GND], W_5V: [1, 2], J_PWR: [5V, GND]]
+  - [J_PWR: [5V, GND], T_PWR: [1, 2], ESP32: [5V, GND]]

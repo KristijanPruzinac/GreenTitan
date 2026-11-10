@@ -1,0 +1,38 @@
+# Sheet 2: wheel drive and blade.
+metadata: {title: GreenTitan parts map - drive and blade}
+connectors:
+  ESP32: *ESP32
+  HCT245: *HCT245
+  J_DRV_L: *PORT_DRV
+  J_DRV_R: *PORT_DRV
+  J_BLADE: *PORT_BLADE
+  DRV_L: {<<: *DM542T, type: "DM542T stepper driver, left"}
+  DRV_R: {<<: *DM542T, type: "DM542T stepper driver, right"}
+  MOT_L: {<<: *STEPPER, type: "23HS32-4004S + MG23-G10-D8 gearbox, left"}
+  MOT_R: {<<: *STEPPER, type: "23HS32-4004S + MG23-G10-D8 gearbox, right"}
+  BLD: *BLD
+  BLADE: *BLADE
+cables:
+  T_BUF: {<<: *trace, wirecount: 5}
+  T_DRV_L: {<<: *trace, wirecount: 2}
+  T_DRV_R: {<<: *trace, wirecount: 2}
+  T_BLADE: {<<: *trace, wirecount: 1}
+  W_DRV_L: {type: 4-core cable, wirecount: 4}
+  W_DRV_R: {type: 4-core cable, wirecount: 4}
+  W_BLADE: {type: 2-core cable, wirecount: 2}
+  W_MOT_L: {type: motor leads, wirecount: 4}
+  W_MOT_R: {type: motor leads, wirecount: 4}
+  W_BLD_PH: {type: motor leads, wirecount: 3}
+  W_BLD_HALL: {type: hall leads, wirecount: 5}
+connections:
+  - [ESP32: [GPIO19, GPIO32, GPIO26, GPIO33, GPIO18], T_BUF: [1-5], HCT245: [A1, A2, A3, A4, A5]]
+  - [HCT245: [B1, B2], T_DRV_L: [1, 2], J_DRV_L: [STEP, DIR]]
+  - [HCT245: [B3, B4], T_DRV_R: [1, 2], J_DRV_R: [STEP, DIR]]
+  - [HCT245: [B5], T_BLADE: [1], J_BLADE: [EN]]
+  - [J_DRV_L: [5V, STEP, DIR, ENA], W_DRV_L: [1-4], DRV_L: [PUL-/DIR-/ENA-, PUL+, DIR+, ENA+]]
+  - [J_DRV_R: [5V, STEP, DIR, ENA], W_DRV_R: [1-4], DRV_R: [PUL-/DIR-/ENA-, PUL+, DIR+, ENA+]]
+  - [J_BLADE: [EN, GND], W_BLADE: [1, 2], BLD: [EN, COM]]
+  - [DRV_L: [A+, A-, B+, B-], W_MOT_L: [1-4], MOT_L: [1-4]]
+  - [DRV_R: [A+, A-, B+, B-], W_MOT_R: [1-4], MOT_R: [1-4]]
+  - [BLD: [U, V, W], W_BLD_PH: [1-3], BLADE: [U, V, W]]
+  - [BLD: [HALL 5V, HA, HB, HC, HALL GND], W_BLD_HALL: [1-5], BLADE: [HALL 5V, HA, HB, HC, HALL GND]]

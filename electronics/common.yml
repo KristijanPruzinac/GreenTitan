@@ -1,0 +1,127 @@
+# GreenTitan parts map, shared part definitions (WireViz, https://github.com/wireviz/WireViz).
+# Every electrical part is defined once here; the sheets (signals, drive, power) pick parts and connect them.
+# Render all sheets:  electronics/render.sh
+# Title colour: green = owned, yellow = to buy, blue = on the own carrier board.
+# ESP32 pin numbers come from src/definitions.h. "?" = not confirmed.
+# Connector types and the wiring itself are NOT decided: this map is for keeping track of parts and pins.
+# Photos in img/ are seller listing photos as placeholders (the C94 photo is from the u-blox user guide).
+
+options:
+  bgcolor: WH
+  fontname: arial
+
+parts:
+  - &ESP32
+    bgcolor_title: "#bfe8bf"
+    type: ESP32 devboard (ESP-WROOM-32, USB-C), socketed on the carrier
+    image: {src: img/esp32.jpg, height: 110}
+    hide_disconnected_pins: true
+    pinlabels: [5V, 3V3, GND, USB,
+                GPIO19, GPIO32, GPIO26, GPIO33, GPIO18,
+                GPIO16, GPIO17, GPIO13, GPIO27,
+                GPIO21, GPIO22,
+                GPIO25, GPIO23, GPIO4, GPIO14, "free pin A ?", "free pin B ?",
+                GPIO34, GPIO36, GPIO39, GPIO2]
+    notes: "Only the pins used on this sheet are shown. USB = micro-ROS link (UART0, 921600). Unused: GPIO36 battery ADC, GPIO39 rain. GPIO2 = status LED."
+  - &HCT245
+    bgcolor_title: "#bcd6ff"
+    type: 74HCT245 buffer at 5 V (3.3 V in, 5 V out)
+    image: {src: img/hct245.jpg, height: 80}
+    pinlabels: [A1, A2, A3, A4, A5, B1, B2, B3, B4, B5]
+  - &IMU
+    bgcolor_title: "#ffe08a"
+    type: ICM-42688-P module, on the carrier
+    image: {src: img/imu.jpg, height: 80}
+    pinlabels: [VCC 3V3, GND, SDA, SCL]
+  - &INA226
+    bgcolor_title: "#ffe08a"
+    type: INA226 module, on the carrier, 2 mOhm shunt
+    image: {src: img/ina226.jpg, height: 80}
+    hide_disconnected_pins: true
+    pinlabels: [VCC 3V3, GND, SDA, SCL, IN+, IN-]
+    notes: pack voltage and current
+  - &PORT_PWR {bgcolor_title: "#bcd6ff", type: "carrier port: power in", pinlabels: [5V, GND]}
+  - &PORT_DRV {bgcolor_title: "#bcd6ff", type: "carrier port: stepper driver", pinlabels: [5V, STEP, DIR, ENA]}
+  - &PORT_BLADE {bgcolor_title: "#bcd6ff", type: "carrier port: blade driver", pinlabels: [5V, EN, GND]}
+  - &PORT_GNSS
+    bgcolor_title: "#bcd6ff"
+    type: "carrier port: GNSS"
+    subtype: shrouded 2x10 header, 2.54 mm
+    pinlabels: [1 V_BAT 5V, 2 GND, 9 RXD_GNSS, 10 TXD_GNSS]
+    notes: 20 pins, 4 used. Must also take another RTK board later.
+  - &PORT_TOF {bgcolor_title: "#bcd6ff", type: "carrier port: ToF", pinlabels: [3V3, GND, SDA, SCL, LPn / XSHUT, INT]}
+  - &PORT_DEBUG {bgcolor_title: "#bcd6ff", type: "carrier port: debug console", pinlabels: [RX, TX, GND]}
+  - &PORT_DOCK {bgcolor_title: "#bcd6ff", type: "carrier port: dock sense", pinlabels: [DOCK+ via divider, GND]}
+  - &TOF8
+    bgcolor_title: "#bfe8bf"
+    type: VL53L8CX ToF, 8x8 zones
+    image: {src: img/tof_8x8.jpg, height: 80}
+    pinlabels: [VIN, GND, SDA, SCL, LPn, INT]
+    notes: "bare header holes; pin order ?"
+  - &TOF1
+    bgcolor_title: "#bfe8bf"
+    type: "single-point ToF (VL6180 TOF050C ?)"
+    image: {src: img/tof_single.jpg, height: 80}
+    pinlabels: [VIN, GND, SDA, SCL, XSHUT, INT]
+    notes: "type, position and pin order ?"
+  - &C94
+    bgcolor_title: "#bfe8bf"
+    type: u-blox C94-M8P RTK board (rover)
+    subtype: J8, 2x10 socket
+    image: {src: img/c94.jpg, height: 110}
+    pinlabels: [1 V_BAT, 2 GND, 9 RXD_GNSS, 10 TXD_GNSS, SMA GNSS, SMA UHF]
+    notes: 3.3 V UART, 19200. Pin 20 RADIO_OFF left open.
+  - &ANT_GNSS {bgcolor_title: "#bfe8bf", type: ANN-MS GNSS patch antenna, image: {src: img/ant_gnss.jpg, height: 80}, pinlabels: [SMA]}
+  - &ANT_UHF {bgcolor_title: "#bfe8bf", type: "UHF whip, 165 mm", image: {src: img/ant_uhf.jpg, height: 80}, pinlabels: [SMA]}
+  - &USB_UART {bgcolor_title: "#bfe8bf", type: CP2102 USB-UART adapter (bench only), image: {src: img/usb_uart.jpg, height: 80}, pinlabels: [TX, RX, GND]}
+  - &PHONE {bgcolor_title: "#bfe8bf", type: Galaxy A12 (ROS 2 host), pinlabels: [USB-C], notes: "direct cable to the ESP32; phone charging ?"}
+  - &DM542T
+    bgcolor_title: "#bfe8bf"
+    type: DM542T stepper driver
+    image: {src: img/dm542t.jpg, height: 110}
+    hide_disconnected_pins: true
+    pinlabels: [PUL+, DIR+, ENA+, PUL-/DIR-/ENA-, V+, GND, A+, A-, B+, B-]
+    notes: "ENA is not driven by the firmware yet"
+  - &STEPPER
+    bgcolor_title: "#bfe8bf"
+    type: 23HS32-4004S stepper + MG23-G10-D8 gearbox
+    image: {src: img/stepper_gearbox.jpg, height: 110}
+    pinlabels: [A+, A-, B+, B-]
+  - &BLD
+    bgcolor_title: "#bfe8bf"
+    type: BLD-510B brushless driver
+    image: {src: img/bld510b.jpg, height: 110}
+    hide_disconnected_pins: true
+    pinlabels: [EN, COM, V+, GND, U, V, W, HALL 5V, HA, HB, HC, HALL GND]
+    notes: "also has SV (speed), F/R, BRK: use ?; EN level ?"
+  - &BLADE
+    bgcolor_title: "#bfe8bf"
+    type: 57BLR90-24-01 brushless motor, 24 V 220 W
+    image: {src: img/blade_motor.jpg, height: 110}
+    pinlabels: [U, V, W, HALL 5V, HA, HB, HC, HALL GND]
+    notes: "shaft diameter ?; printed blade disc on a flange coupling (to buy)"
+  - &BATT
+    bgcolor_title: "#ffe08a"
+    type: 7S3P Li-ion pack with BMS, 25.9 V
+    image: {src: img/battery.jpg, height: 110}
+    pinlabels: [+, "-"]
+    notes: comes with a 29.4 V 2 A charger
+  - &ESTOP
+    bgcolor_title: "#ffe08a"
+    type: E-stop, 22 mm latching, 1 NC
+    image: {src: img/estop.jpg, height: 80}
+    pinlabels: [in, out]
+    notes: "in the + line or on the driver enables ?"
+  - &PDIST {bgcolor_title: "#bcd6ff", type: power distribution, pinlabels: [+ in, "- in", + drives, + blade, + buck, "- out"]}
+  - &BUCK
+    bgcolor_title: "#bfe8bf"
+    type: 24 V to 5 V 10 A buck, potted
+    image: {src: img/buck.jpg, height: 80}
+    pinlabels: [IN+, IN-, OUT 5V, OUT GND]
+  - &CHARGE
+    bgcolor_title: "#bfe8bf"
+    type: charge port, magnetic pogo 2-pin, front
+    image: {src: img/pogo.jpg, height: 80}
+    pinlabels: [+, "-"]
+  - &trace {category: bundle, type: on the carrier board, show_name: false}
+
