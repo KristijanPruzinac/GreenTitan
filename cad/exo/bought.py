@@ -126,6 +126,9 @@ def electronics():
     zm = PHONE_Z0 + ph / 2
     parts.append(Part("otg", box(px1 - pt / 2 - 5, px1 - pt / 2 + 5, PHONE_Y0 - 46, PHONE_Y0, zm - 11, zm + 11),
                       "rubber", "bought", 0.02))
+    x, y, a = TOF
+    board = rotz(box(-1.6, 0, -6.5, 6.5, -9, 9), -a).translate((x, y, ZH))
+    _lr(parts, "tof", board, "pcb", 0.002)
     parts.append(Part("pogo", rod((XS - 6, 0, POGO_Z), (XS + 6, 0, POGO_Z), 7), "brass", "bought", 0.01))
     return parts
 

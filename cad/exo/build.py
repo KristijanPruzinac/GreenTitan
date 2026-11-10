@@ -17,7 +17,7 @@ from dims import *
 from util import *
 import bought
 
-MODULES = ["tubs"]
+MODULES = ["tubs", "wheel", "deck", "lids", "fascia"]
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 BRIDGE = 30          # longest flat bridge, mm
 ROOF = 8             # widest sloping or round overhang, mm: the roof of a screw hole
@@ -63,6 +63,22 @@ def check(parts):
         print("  %-22s x %-22s %10.1f mm3" % (a, b, v))
     print("  none" if not bad else "  %d pairs" % len(bad))
     ok &= not bad
+
+    print("\n== closer than 1 mm without touching (printed part to bought part)")
+    near = 0
+    for p in parts:
+        if p.kind != "printed":
+            continue
+        A = bounds(p.shape)
+        for q in parts:
+            B = bounds(q.shape)
+            if q.kind == "printed" or any(A[i][1] < B[i][0] - 1 or B[i][1] < A[i][0] - 1 for i in range(3)):
+                continue
+            dist = p.shape.val().distance(q.shape.val())
+            if 0.02 < dist < 1.0:
+                print("  %-22s - %-22s %.2f mm" % (p.name, q.name, dist))
+                near += 1
+    print("  none" if not near else "  %d pairs: fine where a part is meant to sit close" % near)
 
     print("\n== printed parts            bed mm          turn  grams  overhangs")
     grams = 0

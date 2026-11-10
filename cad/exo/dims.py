@@ -140,13 +140,14 @@ XL = 122                   # front edge of the front lid: an eave over the fasci
 LID_R_X0 = XR - 6          # rear edge: 3.5 mm off the beam, the antenna coax comes up there
 LAP = 14                   # the front lid laps over the rear lid
 XS = 106                   # fascia skin, back face
-FASCIA_W = YR + 10         # 116: flush with the rails
+FASCIA_W = YR + 10         # 116: the skin is flush with the rails
 FASCIA_Z0, FASCIA_Z1 = 62, 213
 ZH = 188                   # ToF sensors
+TOF = (114.5, 97.5, 45)     # middle of the left sensor's face: x, y, and how far it looks inwards
 PHONE_Y0, PHONE_Z0 = -66, 105          # phone: right end (USB), lower edge
 CAM = (70, 158.5)          # camera island: y, z
 CAM_WIN = (46, 34)
-POGO_Z = 192
+POGO_Z = 195               # the boss round the charge contact has to clear the phone
 
 ASSUMED = {
     "57BLR90-24-01 blade motor": "flange 57 square x 6 with 4 holes for M5 on 47.14, shaft 8 x 21, "
