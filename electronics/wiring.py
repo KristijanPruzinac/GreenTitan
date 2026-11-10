@@ -120,6 +120,9 @@ out.append(f'<rect x="20" y="6" width="{W-40}" height="40" rx="8" fill="#fdecea"
            f'DRAFT, NOT CONFIRMED. Green = checked against the bought listing or the maker document (part terminals, cable end to end). Red = not confirmed.</text>')
 out.append(f'<rect x="{cx}" y="{cy}" width="{cw}" height="{ch}" rx="14" fill="#e3edfb" stroke="#4a86e8" stroke-width="3"/>'
            f'<text x="{cx+cw/2}" y="{cy+28}" text-anchor="middle" font-size="17" font-weight="bold" fill="#1c4587">{esc(doc["carrier"]["label"])}</text>')
+for bx, by, bw, bh, bl in doc.get("boxes", []):
+    out.append(f'<rect x="{bx}" y="{by}" width="{bw}" height="{bh}" rx="14" fill="#f1f8e9" stroke="#7cb342" stroke-width="2" stroke-dasharray="8 6"/>'
+               f'<text x="{bx+14}" y="{by+22}" font-size="14" font-weight="bold" fill="#33691e">{esc(bl)}</text>')
 labels = []
 for link in links:
     cable(link)

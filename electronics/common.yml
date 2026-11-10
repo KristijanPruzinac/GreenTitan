@@ -19,11 +19,11 @@ parts:
     hide_disconnected_pins: true
     pinlabels: [5V, 3V3, GND, USB,
                 GPIO19, GPIO32, GPIO26, GPIO33, GPIO18,
-                GPIO16, GPIO17, GPIO13, GPIO27,
+                GPIO16, GPIO17,
                 GPIO21, GPIO22,
                 GPIO25, GPIO23, GPIO4, GPIO14,
                 GPIO34, GPIO36, GPIO39, GPIO2]
-    notes: "Only the pins used on this sheet are shown. USB = micro-ROS link (UART0, 921600). Unused: GPIO36 battery ADC, GPIO39 rain. GPIO2 = status LED."
+    notes: "Only the pins used on this sheet are shown. USB = micro-ROS link (UART0, 921600). Unused: GPIO36 battery ADC, GPIO39 rain, GPIO13/27 debug console (no adapter on the mower). GPIO2 = status LED."
   - &HCT245
     bgcolor_title: "#bcd6ff"
     type: 74HCT245 buffer at 5 V (3.3 V in, 5 V out)
@@ -51,7 +51,6 @@ parts:
     pinlabels: [1 V_BAT 5V, 2 GND, 9 RXD_GNSS, 10 TXD_GNSS]
     notes: 20 pins, 4 used. Must also take another RTK board later.
   - &PORT_TOF {bgcolor_title: "#bcd6ff", type: "carrier port: ToF", pinlabels: [3V3, GND, SDA, SCL, LPn, INT]}
-  - &PORT_DEBUG {bgcolor_title: "#bcd6ff", type: "carrier port: debug console", pinlabels: [RX, TX, GND]}
   - &PORT_DOCK {bgcolor_title: "#bcd6ff", type: "carrier port: dock sense", pinlabels: [DOCK+ via divider, GND]}
   - &TOF8
     bgcolor_title: "#bfe8bf"
@@ -69,7 +68,6 @@ parts:
     notes: "3.3 V UART, 19200. Pin 20 RADIO_OFF left open. J8 is a socket: the ribbon's IDC plug goes in through a 2x10 pin header with long pins on both sides (to buy). J8 is 2.54 mm and carries the UART on the owned board (checked 2026-11-10)."
   - &ANT_GNSS {bgcolor_title: "#bfe8bf", type: ANN-MS GNSS patch antenna, image: {src: img/ant_gnss.jpg, height: 80}, pinlabels: [SMA]}
   - &ANT_UHF {bgcolor_title: "#bfe8bf", type: "UHF whip, 165 mm", image: {src: img/ant_uhf.jpg, height: 80}, pinlabels: [SMA]}
-  - &USB_UART {bgcolor_title: "#bfe8bf", type: CP2102 USB-UART adapter (bench only), image: {src: img/usb_uart.jpg, height: 80}, pinlabels: [TX, RX, GND]}
   - &PHONE {bgcolor_title: "#bfe8bf", type: Galaxy A12 (ROS 2 host), pinlabels: [USB-C]}
   - &HUB
     bgcolor_title: "#ffe08a"

@@ -4,7 +4,9 @@
 #        confirmed: true only if both ends' real terminals are checked and they fit together
 # term: [what the part really has to connect to, true if checked against the bought listing or the maker's document]
 # NOT CONFIRMED as a whole: only the cables marked true are checked end to end; the rest only show which part talks to which.
-canvas: [1900, 1340]
+canvas: [1900, 1440]
+boxes:
+  - [30, 1150, 520, 240, "Charging station (stays in the garden)"]
 carrier: {at: [930, 560], size: [460, 520], label: "Carrier board (own PCB, not designed)"}
 nodes:
   ESP32:    {at: [930, 450],  size: [150, 110], label: ESP32 devboard, img: img/esp32.jpg, status: owned, on: carrier, term: ["HW-394: 2x15 pin headers 2.54 mm + USB-C; came with a screw-terminal breakout", true]}
@@ -17,7 +19,6 @@ nodes:
   C94:      {at: [330, 520],  size: [160, 120], label: C94-M8P RTK board, img: img/c94.jpg, status: owned, term: ["J8 = 2x10 socket, 2.54 mm, with the UART (checked on the owned board); the ribbon goes in through a 2x10 pin header with long pins on both sides", true]}
   ANT_GNSS: {at: [90, 450],   size: [100, 80],  label: GNSS antenna, status: owned, term: ["SMA plug on a fixed cable", true]}
   ANT_UHF:  {at: [90, 600],   size: [100, 80],  label: UHF whip, status: owned, term: ["SMA", true]}
-  DEBUG:    {at: [330, 720],  size: [120, 80],  label: "USB-UART (bench only)", img: img/usb_uart.jpg, status: owned, term: ["bought as variants CP2102 and CH9102; pin row not read off the boards", false]}
   PHONE:    {at: [110, 900],  size: [110, 170], label: Galaxy A12 phone, status: owned, term: ["USB-C socket", true]}
   OTG:      {at: [360, 900],  size: [130, 70],  label: "USB-C OTG adapter (data + charge)", status: buy, term: ["not bought", false]}
   USBC:     {at: [360, 1080], size: [130, 60],  label: "USB-C plug, screw terminal", status: buy, term: ["not bought", false]}
@@ -29,10 +30,13 @@ nodes:
   BLD:      {at: [1450, 670], size: [130, 120], label: BLD-510B blade driver, img: img/bld510b.jpg, status: owned, term: ["plug-in screw terminals: V+ GND MA MB MC / GND HA HB HC +5V / GND F/R EN BK SV PG ALM +5V (maker photo)", true]}
   BLADE:    {at: [1750, 670], size: [150, 120], label: 57BLR90 blade motor, img: img/blade_motor.jpg, status: owned, term: ["8 bare leads, 300 mm: U orange, V green, W brown, +5V red, GND black, A yellow, B white, C blue (maker page)", true]}
 
-  CHARGE:   {at: [800, 1160], size: [120, 90],  label: "Charge port (magnetic pogo)", img: img/pogo.jpg, status: owned, term: ["no wires: solder pin (centre) + 2 solder tabs (shell), 8 mm", true]}
-  BATT:     {at: [1050, 1160], size: [160, 110], label: 7S3P battery 25.9 V, img: img/battery.jpg, status: buy, term: ["not bought", false]}
-  ESTOP:    {at: [1300, 1160], size: [110, 90], label: E-stop, img: img/estop.jpg, status: buy, term: ["not bought", false]}
-  BUCK:     {at: [1180, 930], size: [130, 90],  label: 24 V to 5 V buck, img: img/buck.jpg, status: owned, term: ["4 bare leads: red/black in, yellow/black out", true]}
+  CHARGER:  {at: [150, 1250], size: [150, 90],  label: "29.4 V 2 A charger (comes with the battery)", status: buy, term: ["not bought; output plug unknown", false]}
+  ST_POGO:  {at: [430, 1250], size: [120, 90],  label: "Station contact (other half of the pogo pair)", img: img/pogo.jpg, status: owned, term: ["no wires: solder pin (centre) + 2 solder tabs (shell), 8 mm", true]}
+  CHARGE:   {at: [720, 1250], size: [120, 90],  label: "Charge port (magnetic pogo)", img: img/pogo.jpg, status: owned, term: ["no wires: solder pin (centre) + 2 solder tabs (shell), 8 mm", true]}
+  DIODE:    {at: [900, 1250], size: [90, 60],   label: "Ideal diode (proposed)", status: buy, term: ["not bought; without it the port is live and dock sense always reads the pack", false]}
+  BATT:     {at: [1100, 1230], size: [160, 110], label: 7S3P battery 25.9 V, img: img/battery.jpg, status: buy, term: ["not bought", false]}
+  ESTOP:    {at: [1350, 1230], size: [110, 90], label: E-stop, img: img/estop.jpg, status: buy, term: ["not bought", false]}
+  BUCK:     {at: [1180, 930], size: [130, 90],  label: 24 V to 5 V buck, img: img/buck.jpg, status: owned, term: ["WG-1224S0510: 8-36 V in, 5 V 10 A out, not isolated; 4 bare leads 170 mm: red/black in, yellow/black out", true]}
   DIST:     {at: [1270, 400], size: [50, 700],  label: "24 V", status: board, term: ["not designed", false]}
 
 links:
@@ -41,7 +45,6 @@ links:
   - [C94, carrier, ribbon, "20-way ribbon + 2x10 pin header in J8"]
   - [ANT_GNSS, C94, coax, "SMA coax", true]
   - [ANT_UHF, C94, coax, "SMA", true]
-  - [DEBUG, carrier, [RX, TX, GND], "3 wires"]
   - [PHONE, OTG, usb, "plugs in"]
   - [OTG, carrier, usb, "USB cable to the ESP32 (data)"]
   - [USBC, OTG, usb, "plugs into charge port"]
@@ -52,7 +55,10 @@ links:
   - [DRV_L, MOT_L, ["A+=#222222", "A-=#388e3c", "B+=#d32f2f", "B-=#1976d2"], "bare leads", true]
   - [DRV_R, MOT_R, ["A+=#222222", "A-=#388e3c", "B+=#d32f2f", "B-=#1976d2"], "bare leads", true]
   - [BLD, BLADE, ["U=#ef6c00", "V=#388e3c", "W=#6d4c41", "5V=#d32f2f", "GND=#222222", "HA=#f9a825", "HB=#bdbdbd", "HC=#1976d2"], "bare leads", true]
-  - [CHARGE, BATT, power, "charge: 2 wires soldered to pin and tab"]
+  - [CHARGER, ST_POGO, power, "29.4 V, 2 wires soldered on"]
+  - [ST_POGO, CHARGE, power, "magnetic contact when docked", true]
+  - [CHARGE, DIODE, power, "soldered"]
+  - [DIODE, BATT, power, "charge +/-"]
   - [CHARGE, carrier, [DOCK+, GND], "dock sense, 2 wires"]
   - [BATT, ESTOP, power, "battery +"]
   - [ESTOP, DIST, power, "24 V through the INA226 shunt"]
