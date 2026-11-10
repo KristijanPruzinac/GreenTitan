@@ -66,7 +66,7 @@ parts:
     subtype: J8, 2x10 socket
     image: {src: img/c94.jpg, height: 110}
     pinlabels: [1 V_BAT, 2 GND, 9 RXD_GNSS, 10 TXD_GNSS, SMA GNSS, SMA UHF]
-    notes: "3.3 V UART, 19200. Pin 20 RADIO_OFF left open. J8 is a socket: a ribbon's IDC plug does not fit it directly. Own board version not checked."
+    notes: "3.3 V UART, 19200. Pin 20 RADIO_OFF left open. J8 is a socket: the ribbon's IDC plug goes in through a 2x10 pin header with long pins on both sides (to buy). Pitch and own board version not checked."
   - &ANT_GNSS {bgcolor_title: "#bfe8bf", type: ANN-MS GNSS patch antenna, image: {src: img/ant_gnss.jpg, height: 80}, pinlabels: [SMA]}
   - &ANT_UHF {bgcolor_title: "#bfe8bf", type: "UHF whip, 165 mm", image: {src: img/ant_uhf.jpg, height: 80}, pinlabels: [SMA]}
   - &USB_UART {bgcolor_title: "#bfe8bf", type: CP2102 USB-UART adapter (bench only), image: {src: img/usb_uart.jpg, height: 80}, pinlabels: [TX, RX, GND]}
