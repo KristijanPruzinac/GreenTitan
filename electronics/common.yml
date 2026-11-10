@@ -125,5 +125,40 @@ parts:
     type: charge port, magnetic pogo 2-pin, front
     image: {src: img/pogo.jpg, height: 80}
     pinlabels: [+, "-"]
+  - &CARRIER {bgcolor_title: "#bcd6ff", type: "Carrier board (own PCB, to design)"}
+  - &RIBBON {bgcolor_title: "#ffe08a", type: "20-way ribbon cable for the C94"}
   - &trace {category: bundle, type: on the carrier board, show_name: false}
 
+# Groups for overview.svg (overview.py): parts only, no pins, no wiring.
+# An entry is a part, or {part, count, name} for several of one or a shorter name.
+overview:
+  - group: Brain and sensors
+    parts:
+      - {part: *ESP32, name: ESP32 devboard}
+      - {part: *CARRIER, name: "Carrier board, own PCB (to design)"}
+      - {part: *PHONE, name: Galaxy A12 phone}
+      - {part: *HUB, name: USB-C OTG adapter with charge port}
+      - *USBC_TERM
+      - {part: *IMU, name: ICM-42688-P IMU}
+      - {part: *TOF8, count: 2}
+      - {part: *USB_UART, name: CP2102 USB-UART adapter}
+  - group: GNSS
+    parts:
+      - {part: *C94, name: u-blox C94-M8P RTK board}
+      - *RIBBON
+      - *ANT_GNSS
+      - *ANT_UHF
+  - group: Drive and blade
+    parts:
+      - {part: *DM542T, count: 2}
+      - {part: *STEPPER, count: 2, name: stepper + 10:1 gearbox}
+      - {part: *HCT245, name: 74HCT245 buffer}
+      - *BLD
+      - {part: *BLADE, name: 57BLR90 brushless blade motor}
+  - group: Power
+    parts:
+      - {part: *BATT, name: 7S3P Li-ion pack + charger}
+      - {part: *CHARGE, name: magnetic pogo charge port}
+      - *ESTOP
+      - {part: *INA226, name: INA226 battery monitor}
+      - {part: *BUCK, name: 24 V to 5 V buck}
