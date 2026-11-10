@@ -1,236 +1,342 @@
-"""Exo: the developed concept (from concept A).
-A cage of 2020 on angled corner nodes is the base.  It carries the drive bay across the
-axle, the two casters on shoulders at the rear corners and one open bay.  The mower is a
-module bolted on from below: floor, blade chamber and a well for the blade motor.
-The real parts are inside at their true sizes, placed roughly.  Nothing is fit-checked.
+"""Exo: the buildable concept.
+A plain box of 2020 on 90 degree brackets carries everything.  Two printed tubs hang between
+the rails and hold the parts, two lids close them, a fascia at the front holds the phone, the
+ToF sensors and the charge contact.  The blade deck with its motor bolts on from below.
+The bought parts are in at their true sizes, placed roughly.  Nothing is fit-checked.
+Printed parts are green or black, at most 245 mm, and print without supports.
 
-blender -b --python cad/concepts/exo.py -- [--fast] [views...]     ("open" = lid off)"""
+blender -b --python cad/concepts/exo.py -- [--fast] [views...]     ("open" = lids off)
+Prints a report: printed part sizes against the bed, overlapping parts, mass and balance."""
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lib import *
 
 TAG = "exo"
-AZ, R, WW, TRACK = 120, 120, 56, 444       # drive axle height, wheel radius and width, track
-ZB, ZT = 100, 250                          # cage rails: bottom, top
-YB, YT = 172, 140                          # cage half widths: bottom, top (the sides lean in)
-XFB, XFT, XRT, XRB = 150, 60, -245, -320   # cage corners along x
-BX = -106                                  # blade, blade motor and GNSS antenna
-CX, CY, CZ = -255, 212, 102                # caster swivel axis, mounting face
-TARGET = (-85, 0, 120)
+BED = 245                  # largest printed part, any direction
+AZ = 120                   # drive axle height = wheel radius over the lugs
+ZB, ZT = 80, 205           # frame rings: bottom, top (beam centres)
+YR = 106                   # side rails (beam centres); the tubs sit between them
+XF, XR = 150, -275         # rail ends
+XPF, XPR = 140, -265       # corner posts and the cross beams at the ends
+XM = -40                   # top middle beam: the lid seam and the tub seam are under it
+XT, YT = -285, 170         # tail beam (carries the casters) and its half length
+BX = -92                   # blade, blade motor and GNSS antenna
+YW = 164                   # drive wheel centre plane
+CASTER = (XT + 17.5, 132.5, 25, 28)     # swivel axis x, y; wheel radius; trail
+XS = 166                   # fascia skin (its back face); the phone sits between it and the frame
+XL = 182                   # front edge of the lid: an eave over the fascia
+TARGET = (-70, 0, 115)
+
+PARTS = []                 # bought parts and beams: boxes for the overlap check, mass
+PRINTS = []                # printed parts: size as printed, mass, centre
 
 
-def ys(z):
-    return YB - (z - ZB) * (YB - YT) / (ZT - ZB)
+# ---------------------------------------------------------------- bookkeeping
+def reg(name, lo, hi, kg=0.0, check=True):
+    PARTS.append({"name": name, "lo": Vector(lo), "hi": Vector(hi), "kg": kg, "check": check})
 
 
-def xf(z):
-    return XFB - (z - ZB) * (XFB - XFT) / (ZT - ZB)
+def rbox(name, c, s, mat, bevel=1.0, kg=0.0, check=True):
+    """A bought part as a block: drawn, and entered for the overlap check and the mass."""
+    reg(name, [c[i] - s[i] / 2 for i in range(3)], [c[i] + s[i] / 2 for i in range(3)], kg, check)
+    return box(name, c, s, mat, bevel)
 
 
-def xr(z):
-    return XRB + (z - ZB) * (XRT - XRB) / (ZT - ZB)
+def rcyl(name, c, r, h, axis, mat, kg=0.0, check=True, n=32):
+    d = {"X": (h / 2, r, r), "Y": (r, h / 2, r), "Z": (r, r, h / 2)}[axis]
+    reg(name, [c[i] - d[i] for i in range(3)], [c[i] + d[i] for i in range(3)], kg, check)
+    return cyl(name, c, r, h, axis, n, mat)
 
 
-def ring(z, d=0.0):
-    """Pod outline at height z (left side): the cage planes moved in by the rail + d."""
-    return [(xf(z) - 14 - d, ys(z) - 12.5 - d, z), (xr(z) + 14 + d, ys(z) - 12.5 - d, z)]
+def rail(name, p0, p1):
+    """A length of 2020 between two points on its centre line (0.45 kg/m)."""
+    lo = [min(a, b) - (10 if a == b else 0) for a, b in zip(p0, p1)]
+    hi = [max(a, b) + (10 if a == b else 0) for a, b in zip(p0, p1)]
+    reg(name, lo, hi, (Vector(p1) - Vector(p0)).length * 0.00045)
+    return beam(name, p0, p1)
 
 
-def mir(p):
-    return (p[0], -p[1], p[2])
+def point(name, c, kg):
+    """Mass of a small part that is drawn elsewhere."""
+    reg(name, c, c, kg, False)
 
 
-def unit(a, b):
-    return (Vector(b) - Vector(a)).normalized()
+def printed(name, size, kg, c):
+    PRINTS.append({"name": name, "size": size, "kg": kg, "c": Vector(c)})
 
 
-def hardpoint(p, n, toward):
-    """Located mounting pad on a corner node: one bolt and two pins on a flat face."""
-    n = Vector(n).normalized()
-    t = Vector(toward)
-    t = (t - n * t.dot(n)).normalized()
-    c = Vector(p) + n * 14 + t * 9
-    plate("pad", c, n, t, 20, 20, -1, 2.5, "mid", 1.2)
-    disc("padbolt", tuple(c + n * 3), n, 3.4, 2, "steel", 6)
-    for k in (-1, 1):
-        disc("padpin", tuple(c + n * 3 + t * (k * 6.5) + n.cross(t) * (k * 6.5)), n, 1.7, 2,
-             "alu", 12)
+def bracket(p, a, b, L=20, w=17):
+    """Bought 90 degree corner bracket in the corner p, its legs along a and b."""
+    p, a, b = Vector(p), Vector(a), Vector(b)
+    n = a.cross(b).normalized()
+    hull("bracket", [tuple(p + n * (k * w / 2) + d) for k in (-1, 1)
+                     for d in (Vector(), a * L, b * L)], "steel", 0.8)
+    point("bracket", p, 0.015)
 
 
-def cage():
-    loop = [(XFB, YB, ZB), (XFT, YT, ZT), (XRT, YT, ZT), (XRB, YB, ZB)]
+def screw(c, n=(0, 0, 1), r=4.5, name="screw"):
+    return disc(name, c, n, r, 1.6, "rubber", 12)
+
+
+# ---------------------------------------------------------------- frame
+def frame():
+    """13 lengths of 2020 and 18 brackets.  Every joint is a butt joint at 90 degrees."""
+    yi = YR - 10                                              # inner faces of the rails
     for s in (1, -1):
-        pts = loop if s > 0 else [mir(p) for p in loop]
-        for i in range(4):
-            beam("rail", pts[i], pts[(i + 1) % 4])
-    for i, p in enumerate(loop):
-        beam("cross", mir(p), p)
+        y = s * YR
+        rail("rail_bottom", (XR, y, ZB), (XF, y, ZB))
+        rail("rail_top", (XR, y, ZT), (XF, y, ZT))
+        for x, d in ((XPF, -1), (XPR, 1)):
+            rail("post", (x, y, ZB + 10), (x, y, ZT - 10))
+            bracket((x + 10 * d, y, ZB + 10), (d, 0, 0), (0, 0, 1))
+            bracket((x + 10 * d, y, ZT - 10), (d, 0, 0), (0, 0, -1))
+            bracket((x + 10 * d, s * yi, ZT), (d, 0, 0), (0, -s, 0))      # top end beams
+        bracket((XPF - 10, s * yi, ZB), (-1, 0, 0), (0, -s, 0))           # front beam
+        bracket((XM + 10, s * yi, ZT), (1, 0, 0), (0, -s, 0))             # top middle beam
+        bracket((XR, s * (YR + 10), ZB), (1, 0, 0), (0, s, 0))            # tail beam; the caster plate
+    rail("cross_front", (XPF, -yi, ZB), (XPF, yi, ZB))                    # bridges the joint from below
+    for x in (XPF, XM, XPR):
+        rail("cross_top", (x, -yi, ZT), (x, yi, ZT))
+    rail("tail", (XT, -YT, ZB), (XT, YT, ZB))
+
+
+# ---------------------------------------------------------------- printed shell
+def tub(name, x0, x1, c0=2, c1=2, t=4):
+    """Open box between the rails, floor z 72-75, walls up to 194 under the top ring.
+    c0, c1: plan chamfer of the rear and the front corners.  Prints floor down."""
+    def ring(z, d):
+        w, a, b = YR - 10 - d, x1 - d, x0 + d
+        f, r = max(c1 - 0.41 * d, 1), max(c0 - 0.41 * d, 1)
+        return [(a - f, w, z), (b + r, w, z), (b, w - r, z), (b, r - w, z),
+                (b + r, -w, z), (a - f, -w, z), (a, f - w, z), (a, w - f, z)]
+    return loft(name, [ring(72, 0), ring(194, 0), ring(194, t), ring(75, t)], "body", 1)
+
+
+def lid(name, x0, x1, top, c0=6, c1=6):
+    """Lid on the top ring with a rim that hangs outside the top rails.  Its top face is flat,
+    so it prints top down.  c0, c1: chamfer of the rear and the front edge."""
+    w = YR + 14
+    hull(name, [(x, y, 215) for x in (x0, x1) for y in (-w, w)] +
+         [(x, y, top) for x in (x0 + c0, x1 - c1) for y in (6 - w, w - 6)], "body", 1)
+    for s in (1, -1):
+        box(name + "_rim", ((x0 + x1) / 2, s * (w - 2), 210), (x1 - x0, 4, 10), "body", 1)
+
+
+def shell():
+    tub("tub_front", -36, 130, c1=24)                  # front corners cut for the beam brackets
+    tub("tub_rear", XR, -44)
+    printed("front tub", (166, 192, 140), 0.36, (47, 0, 125))
+    printed("rear tub", (231, 192, 122), 0.42, (-160, 0, 120))
+
+    # the front lid is 5 mm higher and laps 14 mm over the rear lid, like a roof tile;
+    # the joint is over the top middle beam
+    lid("top_lid_front", XM, XL, 226, c0=0.5)
+    box("top_lid_front_rim", (XL - 2, 0, 210), (4, 2 * YR + 28, 10), "body", 1)   # drip edge
+    box("top_lid_lap", (XM - 6.5, 0, 224), (15, 2 * YR + 16, 4), "body", 1)
+    lid("top_lid_rear", XR - 4, XM, 221, c1=0.5)
+    box("top_lid_rear_rim", (XR - 2, 0, 210), (4, 2 * YR + 28, 10), "body", 1)
+    for x, z in ((120, 226.6), (XM + 26, 226.6), (XM - 30, 221.6), (XR + 30, 221.6)):
         for s in (1, -1):
-            q = p if s > 0 else mir(p)
-            a, b = loop[i - 1], loop[(i + 1) % 4]
-            a, b = (a, b) if s > 0 else (mir(a), mir(b))
-            node("node", q, [a, b, mir(q)], "dark", reach=36, size=28)
-            if i != 3:                                   # the rear bottom corners carry the casters
-                hardpoint(q, (0, s * (ZT - ZB), YB - YT), unit(q, a) + unit(q, b))
-            if i in (1, 2):
-                hardpoint(q, (0, 0, 1), unit(q, loop[3 - i] if s > 0 else mir(loop[3 - i]))
-                          + unit(q, mir(q)))
+            screw((x, s * YR, z), name="top_screw")
+    printed("front lid", (XL - XM + 14, 240, 21), 0.25, (71, 0, 218))
+    printed("rear lid", (239, 240, 16), 0.24, (-160, 0, 215))
 
 
-def pod():
-    def quad(z, d=0.0):
-        a, b = ring(z, d)
-        return [a, b, mir(b), mir(a)]
-
-    loft("tub", [quad(92), quad(148), quad(148, 5), quad(96, 5)], "dark", 3)     # an open tray
-    hull("top_lid", sym(ring(152) + ring(238)), "body", 6)
-
-    nf = Vector((ZT - ZB, 0, XFB - XFT)).normalized()        # front slope, outward
-    nr = Vector((-(ZT - ZB), 0, XRT - XRB)).normalized()     # rear slope, outward
-
-    def front(z, y, off):
-        return tuple(Vector((xf(z) - 14, y, z)) + nf * off)
-
-    def rear(z, y, off):
-        return tuple(Vector((xr(z) + 14, y, z)) + nr * off)
-
-    hull("top_lightbar", [front(z, y, o) for z in (159, 164) for y in (-88, 88) for o in (0, 1.6)],
-         "light", 0.6)
-    hull("top_taillight", [rear(z, y, o) for z in (161, 166) for y in (-72, 72) for o in (0, 1.6)],
-         "light", 0.6)
-    text("top_name", "GREENTITAN", rear(202, 0, 0.6),
-         (90 - math.degrees(math.atan2(XRT - XRB, ZT - ZB)), 0, -90), size=24)
-
-    # deck: battery hatch over the axle, GNSS antenna over the blade motor, stop button
-    box("top_hatch", (-2, 0, 238), (84, 170, 5), "body", 2)
-    box("top_latch", (36, 0, 240), (14, 46, 6), "accent", 1.5)
-    box("top_hinge", (-46, 0, 240), (8, 120, 5), "dark", 1.5)
-    place(revolve("top_groundplane", [(54, 0), (54, 3), (51, 5)], 8, "mid", bevel=1, phase=0.5,
-                  angle=5), (BX, 0, 238), (90, 0, 0))
-    box("top_gnss", (BX, 0, 249.5), (48, 40, 13), "dark", 4)
-    estop("top_stop", (-200, 0, 238))
-
-    # UHF whip on the rear left top pad
-    box("whipclamp", (XRT - 6, YT - 6, 271), (24, 24, 8), "dark", 2)
-    cyl("whipbase", (XRT - 6, YT - 6, 283), 5, 16, "Z", 12, "dark")
-    cyl("whip", (XRT - 6, YT - 6, 381), 1.3, 180, "Z", 8, "dark")
-
-
-def phone_pod():
-    """Add-on on the front top bar: the phone looks forward and slightly down, under a visor."""
-    fb, ft = Vector((106, 0, 176)), Vector((118, 0, 254))
-    fn = Vector((0.990, 0, -0.141))
-
-    def face(t, y, off):
-        return tuple(fb + (ft - fb) * t + Vector((0, y, 0)) + fn * off)
-
-    hull("phonepod", sym([(47, 102, 263), (47, 102, 237), (xf(174) - 14, 102, 174),
-                          (105.7, 92, 174), (118.3, 92, 258), (118.3, 92, 263)]), "module", 4)
-    hull("visor", sym([(52, 104, 262.5), (52, 104, 267.5), (140, 94, 260), (140, 94, 264)]),
-         "module", 2)
-    hull("window", [face(t, y, o) for t in (0.03, 0.97) for y in (-87, 87) for o in (-2, 2)],
-         "glass", 1.5)
-    hull("phone", [face(t, y, o) for t in (0.055, 0.945) for y in (-82, 82) for o in (2, 2.9)],
-         "phone", 2.5)
-    hull("camisland", [face(t, y, o) for t in (0.5, 0.9) for y in (45, 77) for o in (2.9, 3.9)],
-         "mid", 2)
-    for t, y in ((0.8, 53), (0.8, 68), (0.6, 53)):
-        disc("cam", face(t, y, 4.3), fn, 4.6, 1.6)
-    disc("flash", face(0.6, 68, 4.1), fn, 2.6, 1.2, "label", 16)
+def fascia():
+    """One part on the front beams: a pocket for the phone with a window for its cameras,
+    both ToF mounts, the charge contact.  Open below, so it drains.  Prints standing on its
+    lower edge (bosses and rests get 45 degree undersides).  The lid's eave keeps the rain off."""
+    w, zc, h = YR + 12, 137.5, 151                             # z 62 .. 213
+    skin = box("fascia", (XS + 1.5, 0, zc), (3, 2 * w, h), "body", 1)
+    cut(skin, tool(box("cutter", (XS + 1.5, 80, 158.5), (12, 46, 34), None, 0)))
     for s in (1, -1):
-        cyl("podknob", (62, s * 72, 271), 8, 8, "Z", 6, "accent", 1)
-
-
-def tof_pods():
-    """VL53L8CX housings on the front corners, turned 20 deg outward, behind the nose bar's face."""
+        box("fascia_side", ((XF + XS) / 2, s * (w - 1.5), zc), (XS - XF, 3, h), "body", 1)
+        for z in (ZB, ZT):
+            box("fascia_boss", ((XF + XS) / 2, s * 60, z), (XS - XF, 14, 14), "body", 1)
+            screw((XS + 3.6, s * 60, z), (1, 0, 0))
+        box("fascia_rest", (158, 26 + s * 55, 102), (14, 24, 5), "body", 1)   # the phone stands on these
+    # VL53L8CX boards at the lower corners, crossed 45 degrees: each looks across the nose
     for s in (1, -1):
-        a = math.radians(20 * s)
-        px, py = XFB, s * (YB - 26)
+        a = math.radians(-45 * s)
+        px, py = XS + 3, s * 100
 
         def L(dx, dy, z):
             return (px + dx * math.cos(a) - dy * math.sin(a),
                     py + dx * math.sin(a) + dy * math.cos(a), z)
 
+        hull("fascia_tof", [L(dx, dy, z) for dx in (-6, 13) for dy in (-15, 15) for z in (62, 100)] +
+             [L(-6, dy, 119) for dy in (-15, 15)], "body", 1.5)
         d = (math.cos(a), math.sin(a), 0)
-        hull("tofpod", [L(dx, dy, z) for dx in (-20, 9) for dy in (-17, 17) for z in (113, 141)],
-             "module", 3)
-        disc("eyering", L(9.5, 0, 127), d, 9, 2.5, "mid")
-        disc("eye", L(10.2, 0, 127), d, 6.5, 3)
-        cyl("tofknob", L(-6, 0, 145), 7, 8, "Z", 6, "accent", 1)
+        disc("tof_board", L(13.4, 0, 84), d, 9, 1.2, "pcb", 4)
+        disc("tof_sensor", L(14.4, 0, 84), d, 3.6, 1.6, "glass", 12)
+        point("tof", L(13, 0, 84), 0.005)
+    # magnetic pogo charge contact: centre pin and shell
+    disc("pogo_boss", (XS + 4, 0, ZB), (1, 0, 0), 12, 2, "body", 24)
+    disc("pogo_shell", (XS + 5.5, 0, ZB), (1, 0, 0), 7, 3, "brass", 24)
+    disc("pogo_gap", (XS + 5.8, 0, ZB), (1, 0, 0), 5, 3, "rubber", 24)
+    disc("pogo_pin", (XS + 6.2, 0, ZB), (1, 0, 0), 2.5, 3, "brass", 16)
+    point("pogo", (XS, 0, ZB), 0.01)
+    printed("fascia", (236, 151, 39), 0.17, (160, 0, 138))
+
+    # Galaxy A12 on its long side, back cameras forward, the OTG adapter plugged in at its end
+    rbox("phone", (158, 26, 142.7), (8.9, 164, 75.4), "phone", 2.5, kg=0.205)
+    box("phone_cam", (162.9, 80, 158.4), (1.2, 40, 28), "rubber", 0.5)
+    for y in (70, 90):
+        for z in (152, 165):
+            disc("phone_lens", (163.8, y, z), (1, 0, 0), 4.4, 1.2)
+    rbox("otg", (158, -79, 142.7), (10, 46, 22), "mid", 2, kg=0.02)
 
 
-def running_gear():
+# ---------------------------------------------------------------- drive
+def drive():
+    """23HS32 stepper inside the tub, MG23 10:1 gearbox outside, the tub wall between them
+    (as on Mower V3).  The wall is 9 mm thick there and bolts to the bottom and the top rail."""
     for s, nm in ((1, "l"), (-1, "r")):
-        wheel("wheel_" + nm, (0, s * TRACK / 2, AZ), s, R=R, W=WW)
-        cyl("axleboss_" + nm, (0, s * 177, AZ), 38, 34, "Y", 8, "dark", 2)
-        # caster shoulder: the rear corner grows a fender that carries the caster
-        box("shoulderclamp", (-262, s * YB, ZB), (112, 30, 30), "dark", 2.5)
-        hull("shoulder", [(x, s * y, z) for x, y, z in (
-            (-208, 184, 102), (-316, 184, 102), (-216, 186, 132), (-308, 186, 132),
-            (-226, 252, 102), (-298, 252, 102), (-232, 248, 114), (-292, 248, 114))], "dark", 3)
-        caster("caster_" + nm, (CX, s * CY, CZ), R=30.6, W=28, trail=34.4, plate=True)
+        rbox("stepper_" + nm, (0, s * 46, AZ), (56.4, 82, 56.4), "rubber", 2, kg=1.2)
+        for y in (10, 82):
+            box("stepper_end", (0, s * y, AZ), (57, 10, 57), "alu", 2)
+        box("drive_plate", (0, s * 91.5, 143), (68, 9, 138), "body", 1)
+        box("stepper_saddle", (0, s * 50, 83.5), (44, 50, 16), "body", 1)
+        rcyl("gearbox_" + nm, (0, s * 119.75, AZ), 28.5, 47.5, "Y", "steel", kg=0.75)
+        box("gearbox_flange", (0, s * 147.5, AZ), (57, 8, 57), "steel", 2)
+        cyl("shaft", (0, s * 168.5, AZ), 7, 34, "Y", 20, "steel")
+        cyl("hub", (0, s * 168, AZ), 15, 20.4, "Y", 24, "alu")              # bought flange hub
+        cyl("hub_flange", (0, s * 181.2, AZ), 28.4, 6, "Y", 32, "alu")
+        point("hub", (0, s * 170, AZ), 0.08)
+        wheel("wheel_" + nm, (0, s * YW, AZ), s, R=AZ - 6, W=56)
+        printed("wheel " + nm, (240, 240, 69), 0.45, (0, s * YW, AZ))
+        # bought plate caster under the corner of rail and tail beam: three bolts into metal
+        cx, cy, cr, ct = CASTER
+        caster("caster_" + nm, (cx, s * cy, 70), R=cr, W=24, mat="steel", trail=ct)
+        box("caster_plate", (cx, s * cy, 68.5), (51, 70, 3), "steel", 1)
+        point("caster", (cx, s * cy, 35), 0.15)
 
 
-def mower_module():
-    """Bolts on from below: floor, blade chamber, blade motor well.  Orange = release points."""
-    place(revolve("deck", [(140, 0), (156, 12), (156, 40), (150, 46), (9, 46), (9, 41), (148, 41),
-                           (151, 38), (151, 13), (137, 0)], 8, "module", bevel=1.5, closed=True,
-                  phase=0.5, angle=5), (BX, 0, 44), (90, 0, 0))             # a bell, open below
-    blade("blade", (BX, 0, 64))
-    cyl("bladehub", (BX, 0, 74), 14, 24, "Z", 12, "steel")
-    for n in ((1, 0, 0), (-0.7071, 0.7071, 0), (-0.7071, -0.7071, 0)):
-        c = Vector((BX, 0, 70)) + Vector(n) * 144.1
-        plate("moduletab", c, n, (0, 0, 1), 12, 46, -2, 6, "accent", 2)
-    box("modfloor", (-174, 0, 97.5), (252, 300, 3), "module", 0)
-    place(revolve("well", [(62, 0), (62, 86)], 8, "module", bevel=2, phase=0.5, angle=5),
-          (BX, 0, 99), (90, 0, 0))
-    # MY1016 blade motor standing in the well
-    cyl("blademotor", (BX, 0, 148), 50.5, 96, "Z", 40, "dark")
-    cyl("blademotor_cap", (BX, 0, 201), 50.5, 10, "Z", 40, "alu")
-    cyl("blademotor_boss", (BX, 0, 208.5), 16, 5, "Z", 24, "alu")
+# ---------------------------------------------------------------- mower module
+def mower():
+    """Bolts under the rails from below as one unit: deck, blade, blade motor."""
+    place(revolve("deck", [(120, 42), (120, 62), (114, 70), (10, 70), (10, 66), (112.5, 66),
+                           (117, 61), (117, 42)], 64, "dark", closed=True),
+          (BX, 0, 0), (90, 0, 0))                                            # a bell, open below
+    printed("deck", (240, 240, 28), 0.25, (BX, 0, 56))
     for s in (1, -1):
-        cyl("blademotor_term", (BX - 30, s * 12, 208), 3.5, 6, "Z", 6, "brass")
-
-
-def drive_bay():
-    """Sealed chamber across the axle: 23HS32 stepper + MG23 10:1 gearbox on each side."""
+        for x in (-36, 36):
+            screw((BX + x, s * YR, 65.4), (0, 0, -1))
+    b = blade("blade", (BX, 0, 55), r=107)                                   # cut 220 mm
+    b[0].data.materials[0] = M["body"]
+    printed("blade disc", (170, 170, 4), 0.08, (BX, 0, 55))
+    cyl("blade_hub", (BX, 0, 52), 8, 12, "Z", 16, "alu")                     # bought 8 mm flange hub
+    cyl("blade_hub_flange", (BX, 0, 59.5), 16, 3, "Z", 24, "alu")
+    cyl("blade_shaft", (BX, 0, 57.5), 4, 25, "Z", 12, "steel")
+    # 57BLR90 standing on the deck, up through a collared hole in the tub floor
+    rbox("blade_motor", (BX, 0, 114.55), (57, 57, 89.1), "rubber", 2, kg=1.1)
+    box("blade_motor_flange", (BX, 0, 73), (57.4, 57.4, 6), "alu", 2)
+    box("blade_motor_cap", (BX, 0, 156), (57.4, 57.4, 6), "alu", 2)
     for s in (1, -1):
-        cyl("shaft", (0, s * 168, AZ), 7, 52, "Y", 20, "steel")
-        box("gearbox", (0, s * 114.25, AZ), (60, 55.5, 60), "mid", 3)
-        box("stepper", (0, s * 45.5, AZ), (56.4, 82, 56.4), "rubber", 4)
-        for y in (9.5, 81.5):
-            box("stepper_end", (0, s * y, AZ), (57, 10, 57), "alu", 4)
-        box("baywall", (s * 46, 0, 123), (4, 284, 54), "mid", 0)
-    box("top_baycover", (0, 0, 152), (96, 284, 4), "mid", 1)
-    box("imu", (0, 0, 149.2), (16, 21, 1.6), "blue", 0)                 # MPU6050 over the axle
+        box("tub_collar", (BX + s * 33, 0, 82.5), (3, 69, 15), "body", 0.5)
+        box("tub_collar", (BX, s * 33, 82.5), (63, 3, 15), "body", 0.5)
+
+
+# ---------------------------------------------------------------- electronics
+def driver(name, c, s, term, kg=0.29):
+    """DM542T / BLD-510B, 118 x 75.5 x 34.  term = (axis, sign): the face with the terminals."""
+    rbox(name, c, s, "rubber", 1, kg=kg)
+    ax, sg = term
+    tc, ts = list(c), [8, 8, 8]
+    tc[ax] += sg * (s[ax] / 2 + 3.5)
+    ts[ax] = 7
+    ts[max((i for i in range(3) if i != ax), key=lambda i: s[i])] = 100
+    box(name + "_term", tc, ts, "term", 0.5)
 
 
 def electronics():
-    # Einhell 18 V pack on its adapter, over the drive bay
-    box("batt_adapter", (0, 0, 160), (80, 118, 12), "dark", 2)
-    box("batt_base", (0, 0, 177), (76, 128, 22), "rubber", 3)
-    box("batt", (0, 0, 209), (74, 126, 42), "red", 6)
-    # DM542T drivers standing along the side walls, next to the motors they feed
+    f = 75                                                    # tub floor
+    # --- nose: the drive.  Stepper drivers upright at the sides, the 24 V -> 5 V buck between them
     for s in (1, -1):
-        box("driver", (-168, s * 126, 136.75), (118, 34, 75.5), "rubber", 1.5)
-        box("driver_label", (-168, s * 108.7, 136.75), (96, 0.8, 52), "label", 0)
-        box("driver_term", (-168, s * 126, 177.5), (100, 10, 8), "term", 1)
-    # C94-M8P rover board
-    box("c94", (-260, 0, 105.8), (75, 100, 1.6), "pcb", 0)
-    box("c94_gnss", (-272, -22, 108), (22, 17, 2.8), "alu", 0.5)
-    box("c94_radio", (-250, 20, 108.6), (36, 30, 4), "alu", 0.5)
-    for y in (-30, 30):
-        cyl("c94_sma", (-292, y, 111), 3.2, 14, "X", 6, "brass")
-    # ESP32 devboard, relay module
-    box("esp32", (-260, 76, 105.8), (55, 28, 1.6), "rubber", 0)
-    box("esp32_can", (-275, 76, 108.2), (24, 16, 3.2), "alu", 0.5)
-    box("esp32_usb", (-235, 76, 108), (6, 8, 2.8), "alu", 0.3)
-    box("relay", (-260, -76, 105.8), (50, 26, 1.6), "blue", 0)
-    box("relay_cube", (-266, -76, 114.3), (19, 15.5, 15.4), "blue", 1)
-    box("relay_term", (-241, -76, 111.5), (8, 15, 10), "term", 0.5)
-    # waterproof buck and the USB-C splitter, in the nose under the phone
-    box("buck", (88, -55, 107), (33, 61, 21), "alu", 2)
-    box("otg", (88, 55, 102), (22, 46, 10), "label", 2)
+        driver("dm542t", (67.75, s * 71, f + 59), (75.5, 34, 118), (0, 1))
+    rbox("buck", (68, 0, f + 11), (64, 57, 22), "rubber", 2, kg=0.2)
+    # IMU on the axle midpoint (the turning centre), on two bosses of the tub floor under the steppers
+    for y in (-8, 8):
+        box("imu_boss", (0, y, f + 3), (6, 6, 6), "body", 0.5)
+    box("imu", (0, 0, f + 7), (15, 20, 2), "blue", 0)
+
+    # --- rear tub: battery, blade driver, and the quiet end: carrier board (ESP32) and GNSS
+    cx, cy = -164.5, 2
+    rbox("carrier", (cx, cy, f + 9), (65, 100, 1.6), "pcb", 0, kg=0.08)
+    for dx in (-12.7, 12.7):
+        box("esp32_socket", (cx + dx, cy + 22, f + 14.3), (2.5, 38, 9), "rubber", 0)
+    box("esp32", (cx, cy + 22, f + 19.6), (28, 52, 1.6), "rubber", 0)
+    box("esp32_can", (cx, cy + 10, f + 22), (16, 18, 3.2), "alu", 0.5)
+    box("ina226", (cx + 18, cy - 34, f + 11), (15, 20, 2), "blue", 0)
+    box("buffer", (cx, cy - 16, f + 12), (8, 26, 4.5), "rubber", 0)
+    for y in (4, 26):
+        box("carrier_term", (cx + 27, cy + y, f + 14), (8, 20, 8), "term", 0.5)
+    box("carrier_header", (cx - 27, cy + 18, f + 14.5), (9, 33, 9), "rubber", 0.5)
+
+    # battery at the tail for the balance: the mower has no support ahead of the axle
+    rbox("battery", (-235.5, 23.5, f + 50), (67, 133, 100), "blue", 4, kg=1.1)   # 7S3P, on its side
+    # battery-disconnect e-stop through the rear wall
+    rbox("estop_body", (-248, -70, 150), (46, 40, 50), "rubber", 2, kg=0.15)
+    disc("estop_collar", (XR - 4, -70, 150), (-1, 0, 0), 24, 8, "yellow", 24)
+    disc("estop_button", (XR - 17, -70, 150), (-1, 0, 0), 20, 20, "red", 24, 2)
+    driver("bld510b", (-137, -73, f + 37.75), (118, 34, 75.5), (2, 1), kg=0.3)   # beside its motor
+    # C94-M8P standing on the left wall, both SMA up; the UHF whip folds flat under the lid
+    rbox("c94", (-82.5, 86, 137.5), (55, 1.6, 75), "pcb", 0, kg=0.05)
+    box("c94_gnss", (-90, 83.8, 150), (17, 2.8, 22), "alu", 0.5)
+    box("c94_radio", (-80, 83.2, 118), (30, 4, 36), "alu", 0.5)
+    for x in (-95, -70):
+        cyl("c94_sma", (x, 84, 181), 3.2, 12, "Z", 6, "brass")
+    cyl("uhf_elbow", (-70, 84, 190), 5.5, 8, "Z", 12, "rubber")
+    rcyl("uhf_whip", (-152.5, 84, 190), 5, 165, "X", "rubber", kg=0.05, n=12)
+    # the antenna's 5 m of coax, coiled, against the front wall
+    place(revolve("gnss_coil", [(35, -6), (49, -6), (49, 6), (35, 6)], 32, "rubber", closed=True),
+          (-54.5, 0, 141), (0, 0, 90))
+    point("gnss coax", (-54.5, 0, 141), 0.11)
+
+    # ANN-MS antenna on its steel ground plane, on the rear lid above the blade motor
+    cyl("top_groundplane", (BX, 0, 221.75), 50, 1.5, "Z", 48, "steel")
+    box("top_gnss", (BX, 0, 230.5), (49, 46, 16), "rubber", 4)
+    cyl("top_gnss_cable", (BX, -72, 223.4), 1.4, 100, "Y", 8, "rubber")
+    point("gnss antenna", (BX, 0, 228), 0.1)
+
+
+# ---------------------------------------------------------------- report
+def report():
+    print("\n== printed parts (limit %d mm) ==" % BED)
+    for p in PRINTS:
+        ok = "ok" if max(p["size"]) <= BED else "TOO BIG"
+        print("  %-12s %3d x %3d x %3d  %s" % (p["name"], *p["size"], ok))
+    print("  %d printed parts" % len(PRINTS))
+
+    print("== overlapping bought parts and beams ==")
+    hard = [p for p in PARTS if p["check"]]
+    n = 0
+    for i, a in enumerate(hard):
+        for b in hard[i + 1:]:
+            if all(min(a["hi"][k], b["hi"][k]) - max(a["lo"][k], b["lo"][k]) > 0.5 for k in range(3)):
+                print("  CLASH", a["name"], b["name"])
+                n += 1
+    print("  %d overlaps" % n)
+
+    items = [(p["kg"], (p["lo"] + p["hi"]) / 2) for p in PARTS] + [(p["kg"], p["c"]) for p in PRINTS]
+    m = sum(k for k, _ in items)
+    com = sum((c * k for k, c in items), Vector()) / m
+    beams = [p for p in PARTS if p["name"].startswith(("rail", "post", "cross", "tail"))]
+    kgb = sum(p["kg"] for p in beams)
+    cx, cy, cr, ct = CASTER
+    print("== size, mass and balance (estimates) ==")
+    print("  length %d mm (lid edge to caster), width %d mm over the wheel nuts, height %d mm" %
+          (XL - (cx - ct - cr), 2 * (YW + 41), 2 * AZ))
+    print("  total %.1f kg: 2020 %.1f kg (%d lengths, %.2f m), printed %.1f kg, bought %.1f kg" %
+          (m, kgb, len(beams), kgb / 0.45, sum(p["kg"] for p in PRINTS),
+           m - kgb - sum(p["kg"] for p in PRINTS)))
+    print("  centre of mass x %.0f, y %.0f, z %.0f mm: %.0f %% of the weight on the casters, "
+          "tips forward at %.0f deg" % (com.x, com.y, com.z, 100 * com.x / (cx - ct),
+                                       math.degrees(math.atan2(-com.x, com.z))))
+    bat = next(p for p in PARTS if p["name"] == "battery")
+    nose = com.x + bat["kg"] * (68 - (bat["lo"].x + bat["hi"].x) / 2) / m
+    print("  with the battery in the nose instead: x %.0f mm, tips forward at %.0f deg" %
+          (nose, math.degrees(math.atan2(-nose, com.z))))
 
 
 def build():
@@ -238,23 +344,21 @@ def build():
     make_mat("pcb", "#17603A", rough=0.5)
     make_mat("term", "#35A862", rough=0.5)
     make_mat("blue", "#1C4FA6", rough=0.45)
-    make_mat("label", "#D8DBDD", rough=0.6)
+    make_mat("yellow", "#E0B21A", rough=0.5)
     make_mat("brass", "#C7A23A", rough=0.3, metal=1.0)
     make_mat("phone", "#223247", rough=0.3, coat=0.3)
-    make_mat("module", "#5D646B", rough=0.55)                # swappable modules and add-ons
-    cage()
-    pod()
-    phone_pod()
-    tof_pods()
-    running_gear()
-    mower_module()
-    drive_bay()
+    frame()
+    shell()
+    fascia()
+    drive()
+    mower()
     electronics()
+    report()
 
 
 if __name__ == "__main__":
     fast, views = args()
-    views = views or ["hero", "rear", "side", "top", "low", "open"]
+    views = views or ["hero", "rear", "side", "top", "low", "open", "under"]
     build()
     studio()
     bake()
@@ -269,20 +373,20 @@ if __name__ == "__main__":
         sc.collection.objects.link(lo)
         lo.location = (0.5, 0.4, -1.2)
         lo.rotation_euler = (Vector((-0.1, 0, 0.1)) - Vector(lo.location)).to_track_quat("-Z", "Y").to_euler()
-        render(tag, ["under"], fast, target=(-95, 0, 90), dist=0.95)
+        render(tag, ["under"], fast, target=(-75, 0, 90), dist=0.95)
         sc.objects["floor"].hide_render = False
         lo.hide_render = True
     closed = [v for v in views if v not in ("open", "under")]
     if closed:
         render(tag, closed, fast, target=TARGET, dist=0.95)
-    if "open" in views:                                   # lid off: what is inside
+    if "open" in views:                                   # lids off: what is inside
         sc = bpy.context.scene
         for o in sc.objects:
             if o.name.startswith("top_"):
                 o.hide_render = True
-        ld = bpy.data.lights.new("baylight", "AREA")      # the open bay is a dark box: light it from above
-        ld.shape, ld.size, ld.energy = "DISK", 0.7, 70
+        ld = bpy.data.lights.new("baylight", "AREA")      # the open tubs are dark boxes: light them from above
+        ld.shape, ld.size, ld.energy = "DISK", 0.7, 110
         lo = bpy.data.objects.new("baylight", ld)
         sc.collection.objects.link(lo)
-        lo.location = (-0.12, 0, 1.3)
-        render(tag, ["open"], fast, target=(-110, 0, 130), dist=0.85)
+        lo.location = (-0.07, 0, 1.3)
+        render(tag, ["open"], fast, target=(-55, 0, 125), dist=0.95)
