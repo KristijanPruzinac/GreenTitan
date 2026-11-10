@@ -4,7 +4,8 @@
 # Title colour: green = owned, yellow = to buy, blue = on the own carrier board.
 # ESP32 pin numbers come from src/definitions.h. "?" = not confirmed.
 # Connector types and the wiring itself are NOT decided: this map is for keeping track of parts and pins.
-# Photos in img/ are seller listing photos as placeholders (the C94 photo is from the u-blox user guide).
+# NOT CONFIRMED: see wiring.svg and docs/HARDWARE.md (connection audit) for what is checked.
+# Photos in img/: ESP32, ToF, pogo and buck are from the bought listings, the C94 from the u-blox user guide, DM542T/BLD-510B/blade motor from the maker; the rest are placeholders.
 
 options:
   bgcolor: WH
@@ -41,7 +42,7 @@ parts:
     pinlabels: [VCC 3V3, GND, SDA, SCL, IN+, IN-]
     notes: pack voltage and current
   - &PORT_PWR {bgcolor_title: "#bcd6ff", type: "carrier port: power in", pinlabels: [5V, GND]}
-  - &PORT_DRV {bgcolor_title: "#bcd6ff", type: "carrier port: stepper driver", pinlabels: [5V, STEP, DIR, ENA]}
+  - &PORT_DRV {bgcolor_title: "#bcd6ff", type: "carrier port: stepper driver", pinlabels: [GND, STEP, DIR, ENA]}
   - &PORT_BLADE {bgcolor_title: "#bcd6ff", type: "carrier port: blade driver", pinlabels: [5V, EN, GND]}
   - &PORT_GNSS
     bgcolor_title: "#bcd6ff"
@@ -56,15 +57,16 @@ parts:
     bgcolor_title: "#bfe8bf"
     type: VL53L8CX ToF, 8x8 zones
     image: {src: img/tof_8x8.jpg, height: 80}
-    pinlabels: [VIN, GND, SDA, SCL, LPn, INT]
-    notes: "bare header holes; pin order ?"
+    hide_disconnected_pins: true
+    pinlabels: [VIN, GND, SDA, SCL, MISO, LPn, INT, NCS, SPI_I2C_N]
+    notes: "9 bare holes 2.54 mm + loose pin header. For I2C: NCS and SPI_I2C_N to GND (ST); plug not chosen"
   - &C94
     bgcolor_title: "#bfe8bf"
     type: u-blox C94-M8P RTK board (rover)
     subtype: J8, 2x10 socket
     image: {src: img/c94.jpg, height: 110}
     pinlabels: [1 V_BAT, 2 GND, 9 RXD_GNSS, 10 TXD_GNSS, SMA GNSS, SMA UHF]
-    notes: 3.3 V UART, 19200. Pin 20 RADIO_OFF left open.
+    notes: "3.3 V UART, 19200. Pin 20 RADIO_OFF left open. J8 is a socket: a ribbon's IDC plug does not fit it directly. Own board version not checked."
   - &ANT_GNSS {bgcolor_title: "#bfe8bf", type: ANN-MS GNSS patch antenna, image: {src: img/ant_gnss.jpg, height: 80}, pinlabels: [SMA]}
   - &ANT_UHF {bgcolor_title: "#bfe8bf", type: "UHF whip, 165 mm", image: {src: img/ant_uhf.jpg, height: 80}, pinlabels: [SMA]}
   - &USB_UART {bgcolor_title: "#bfe8bf", type: CP2102 USB-UART adapter (bench only), image: {src: img/usb_uart.jpg, height: 80}, pinlabels: [TX, RX, GND]}
@@ -88,20 +90,21 @@ parts:
     bgcolor_title: "#bfe8bf"
     type: 23HS32-4004S stepper + MG23-G10-D8 gearbox
     image: {src: img/stepper_gearbox.jpg, height: 110}
-    pinlabels: [A+, A-, B+, B-]
+    pinlabels: [A+ black, A- green, B+ red, B- blue]
+    notes: "4 bare leads AWG20, 300 mm (datasheet)"
   - &BLD
     bgcolor_title: "#bfe8bf"
     type: BLD-510B brushless driver
     image: {src: img/bld510b.jpg, height: 110}
     hide_disconnected_pins: true
-    pinlabels: [EN, COM, V+, GND, U, V, W, HALL 5V, HA, HB, HC, HALL GND]
-    notes: "also has SV (speed), F/R, BRK: use ?; EN level ?"
+    pinlabels: [EN, SIG GND, V+, GND, MA, MB, MC, HALL +5V, HA, HB, HC, HALL GND]
+    notes: "plug-in screw terminals (names from the maker photo). Also F/R, BK, SV, PG, ALM, +5V: use ?; EN level ? (manual not read)"
   - &BLADE
     bgcolor_title: "#bfe8bf"
     type: 57BLR90-24-01 brushless motor, 24 V 220 W
     image: {src: img/blade_motor.jpg, height: 110}
-    pinlabels: [U, V, W, HALL 5V, HA, HB, HC, HALL GND]
-    notes: "shaft diameter ?; printed blade disc on a flange coupling (to buy)"
+    pinlabels: [U orange, V green, W brown, +5V red, A yellow, B white, C blue, GND black]
+    notes: "8 bare leads, 300 mm; shaft 8 mm D-cut, 25 mm long (maker page); printed blade disc on a flange coupling (to buy)"
   - &BATT
     bgcolor_title: "#ffe08a"
     type: 7S3P Li-ion pack with BMS, 25.9 V
@@ -122,7 +125,8 @@ parts:
     pinlabels: [IN+, IN-, OUT 5V, OUT GND]
   - &CHARGE
     bgcolor_title: "#bfe8bf"
-    type: charge port, magnetic pogo 2-pin, front
+    type: charge port, 8 mm magnetic pogo connector, front
     image: {src: img/pogo.jpg, height: 80}
     pinlabels: [+, "-"]
+    notes: "no wires or plug: centre solder pin + 2 solder tabs on the shell; which pole is + is not decided"
   - &trace {category: bundle, type: on the carrier board, show_name: false}

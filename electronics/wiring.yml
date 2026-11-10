@@ -1,8 +1,9 @@
 # Picture of how the parts connect (wiring.py -> wiring.svg). Edit here, then run render.sh.
 # nodes: id: {at: [x, y] centre, size: [w, h], label, img (optional), status: owned | buy | board, on: carrier (drawn on the board)}
-# links: [from, to, wires, label]  wires = signal names (one drawn wire each), or "ribbon" / "usb" / "coax" / "power"
+# links: [from, to, wires, label, confirmed]  wires = signal names (one drawn wire each, "name=#colour" for a real lead colour), or "ribbon" / "usb" / "coax" / "power"
+#        confirmed: true only if both ends' real terminals are checked and they fit together
 # term: [what the part really has to connect to, true if checked against the bought listing or the maker's document]
-# NOT CONFIRMED: no cable here is confirmed end to end; the cables only show which part talks to which.
+# NOT CONFIRMED as a whole: only the cables marked true are checked end to end; the rest only show which part talks to which.
 canvas: [1900, 1340]
 carrier: {at: [930, 560], size: [460, 520], label: "Carrier board (own PCB, not designed)"}
 nodes:
@@ -11,22 +12,22 @@ nodes:
   INA226:   {at: [1060, 640], size: [90, 70],   label: INA226 battery monitor, img: img/ina226.jpg, status: buy, on: carrier, term: ["not bought", false]}
   HCT245:   {at: [930, 740],  size: [100, 60],  label: 74HCT245 (5 V signals), img: img/hct245.jpg, status: board, on: carrier, term: ["not bought", false]}
 
-  TOF_L:    {at: [330, 120],  size: [120, 90],  label: "ToF 8x8, front left", img: img/tof_8x8.jpg, status: owned, term: ["9 bare holes 2.54 mm + loose pin header: VIN GND SDA SCL MISO LPn INT NCS SPI_I2C_N", true]}
-  TOF_R:    {at: [330, 300],  size: [120, 90],  label: "ToF 8x8, front right", img: img/tof_8x8.jpg, status: owned, term: ["9 bare holes 2.54 mm + loose pin header: VIN GND SDA SCL MISO LPn INT NCS SPI_I2C_N", true]}
-  C94:      {at: [330, 520],  size: [160, 120], label: C94-M8P RTK board, img: img/c94.jpg, status: owned, term: ["J8 2x10 socket per u-blox guide; own board not checked", false]}
+  TOF_L:    {at: [330, 120],  size: [120, 90],  label: "ToF 8x8, front left", img: img/tof_8x8.jpg, status: owned, term: ["9 bare holes 2.54 mm + loose pin header: VIN GND SDA SCL MISO LPn INT NCS SPI_I2C_N. I2C: NCS + SPI_I2C_N to GND", true]}
+  TOF_R:    {at: [330, 300],  size: [120, 90],  label: "ToF 8x8, front right", img: img/tof_8x8.jpg, status: owned, term: ["9 bare holes 2.54 mm + loose pin header: VIN GND SDA SCL MISO LPn INT NCS SPI_I2C_N. I2C: NCS + SPI_I2C_N to GND", true]}
+  C94:      {at: [330, 520],  size: [160, 120], label: C94-M8P RTK board, img: img/c94.jpg, status: owned, term: ["J8 = 2x10 SOCKET (u-blox guide): a ribbon plug is a socket too and does not fit. Own board version not checked", false]}
   ANT_GNSS: {at: [90, 450],   size: [100, 80],  label: GNSS antenna, status: owned, term: ["SMA plug on a fixed cable", true]}
   ANT_UHF:  {at: [90, 600],   size: [100, 80],  label: UHF whip, status: owned, term: ["SMA", true]}
-  DEBUG:    {at: [330, 720],  size: [120, 80],  label: "USB-UART (bench only)", img: img/usb_uart.jpg, status: owned, term: ["which of the listing's 5 variants was bought: not checked", false]}
+  DEBUG:    {at: [330, 720],  size: [120, 80],  label: "USB-UART (bench only)", img: img/usb_uart.jpg, status: owned, term: ["bought as variants CP2102 and CH9102; pin row not read off the boards", false]}
   PHONE:    {at: [110, 900],  size: [110, 170], label: Galaxy A12 phone, status: owned, term: ["USB-C socket", true]}
   OTG:      {at: [360, 900],  size: [130, 70],  label: "USB-C OTG adapter (data + charge)", status: buy, term: ["not bought", false]}
   USBC:     {at: [360, 1080], size: [130, 60],  label: "USB-C plug, screw terminal", status: buy, term: ["not bought", false]}
 
-  DRV_L:    {at: [1450, 130], size: [130, 120], label: "DM542T driver, left", img: img/dm542t.jpg, status: owned, term: ["screw terminals: PUL DIR ENA +/-, V+ GND, A+ A- B+ B-", true]}
-  DRV_R:    {at: [1450, 400], size: [130, 120], label: "DM542T driver, right", img: img/dm542t.jpg, status: owned, term: ["screw terminals: PUL DIR ENA +/-, V+ GND, A+ A- B+ B-", true]}
-  MOT_L:    {at: [1750, 130], size: [150, 120], label: "Stepper + 10:1 gearbox, left", img: img/stepper_gearbox.jpg, status: owned, term: ["4 bare leads; colours not checked", false]}
-  MOT_R:    {at: [1750, 400], size: [150, 120], label: "Stepper + 10:1 gearbox, right", img: img/stepper_gearbox.jpg, status: owned, term: ["4 bare leads; colours not checked", false]}
-  BLD:      {at: [1450, 670], size: [130, 120], label: BLD-510B blade driver, img: img/bld510b.jpg, status: owned, term: ["screw terminals; signal names not checked against the manual", false]}
-  BLADE:    {at: [1750, 670], size: [150, 120], label: 57BLR90 blade motor, img: img/blade_motor.jpg, status: owned, term: ["leads; count and plug not checked", false]}
+  DRV_L:    {at: [1450, 130], size: [130, 120], label: "DM542T driver, left", img: img/dm542t.jpg, status: owned, term: ["screw terminals: PUL DIR ENA +/- (6, a 4-wire cable needs the 3 minus bridged), V+ GND, A+ A- B+ B-", true]}
+  DRV_R:    {at: [1450, 400], size: [130, 120], label: "DM542T driver, right", img: img/dm542t.jpg, status: owned, term: ["screw terminals: PUL DIR ENA +/- (6, a 4-wire cable needs the 3 minus bridged), V+ GND, A+ A- B+ B-", true]}
+  MOT_L:    {at: [1750, 130], size: [150, 120], label: "Stepper + 10:1 gearbox, left", img: img/stepper_gearbox.jpg, status: owned, term: ["4 bare leads AWG20, 300 mm: black A+, green A-, red B+, blue B- (datasheet)", true]}
+  MOT_R:    {at: [1750, 400], size: [150, 120], label: "Stepper + 10:1 gearbox, right", img: img/stepper_gearbox.jpg, status: owned, term: ["4 bare leads AWG20, 300 mm: black A+, green A-, red B+, blue B- (datasheet)", true]}
+  BLD:      {at: [1450, 670], size: [130, 120], label: BLD-510B blade driver, img: img/bld510b.jpg, status: owned, term: ["plug-in screw terminals: V+ GND MA MB MC / GND HA HB HC +5V / GND F/R EN BK SV PG ALM +5V (maker photo)", true]}
+  BLADE:    {at: [1750, 670], size: [150, 120], label: 57BLR90 blade motor, img: img/blade_motor.jpg, status: owned, term: ["8 bare leads, 300 mm: U orange, V green, W brown, +5V red, GND black, A yellow, B white, C blue (maker page)", true]}
 
   CHARGE:   {at: [800, 1160], size: [120, 90],  label: "Charge port (magnetic pogo)", img: img/pogo.jpg, status: owned, term: ["no wires: solder pin (centre) + 2 solder tabs (shell), 8 mm", true]}
   BATT:     {at: [1050, 1160], size: [160, 110], label: 7S3P battery 25.9 V, img: img/battery.jpg, status: buy, term: ["not bought", false]}
@@ -35,22 +36,22 @@ nodes:
   DIST:     {at: [1270, 400], size: [50, 700],  label: "24 V", status: board, term: ["not designed", false]}
 
 links:
-  - [TOF_L, carrier, [3V3, GND, SDA, SCL, LPn, INT], "6 wires"]
-  - [TOF_R, carrier, [3V3, GND, SDA, SCL, LPn, INT], "6 wires"]
-  - [C94, carrier, ribbon, "20-way ribbon (5 V, GND, TX, RX used)"]
-  - [ANT_GNSS, C94, coax, "SMA coax"]
-  - [ANT_UHF, C94, coax, "SMA"]
+  - [TOF_L, carrier, [3V3, GND, SDA, SCL, LPn, INT], "6 wires, plug not chosen"]
+  - [TOF_R, carrier, [3V3, GND, SDA, SCL, LPn, INT], "6 wires, plug not chosen"]
+  - [C94, carrier, ribbon, "20-way ribbon: does NOT fit J8"]
+  - [ANT_GNSS, C94, coax, "SMA coax", true]
+  - [ANT_UHF, C94, coax, "SMA", true]
   - [DEBUG, carrier, [RX, TX, GND], "3 wires"]
   - [PHONE, OTG, usb, "plugs in"]
   - [OTG, carrier, usb, "USB cable to the ESP32 (data)"]
   - [USBC, OTG, usb, "plugs into charge port"]
   - [BUCK, USBC, power, "5 V, 2 wires"]
-  - [carrier, DRV_L, [5V, STEP, DIR, ENA], "4 wires"]
-  - [carrier, DRV_R, [5V, STEP, DIR, ENA], "4 wires"]
-  - [carrier, BLD, [EN, GND], "2 wires"]
-  - [DRV_L, MOT_L, [A+, A-, B+, B-], "4 motor wires"]
-  - [DRV_R, MOT_R, [A+, A-, B+, B-], "4 motor wires"]
-  - [BLD, BLADE, [U, V, W, 5V, HA, HB, HC, GND], "3 phase + 5 hall wires"]
+  - [carrier, DRV_L, [GND, STEP, DIR, ENA], "4 wires, bridge at the driver"]
+  - [carrier, DRV_R, [GND, STEP, DIR, ENA], "4 wires, bridge at the driver"]
+  - [carrier, BLD, [EN, GND], "2 wires, run logic not read"]
+  - [DRV_L, MOT_L, ["A+=#222222", "A-=#388e3c", "B+=#d32f2f", "B-=#1976d2"], "bare leads", true]
+  - [DRV_R, MOT_R, ["A+=#222222", "A-=#388e3c", "B+=#d32f2f", "B-=#1976d2"], "bare leads", true]
+  - [BLD, BLADE, ["U=#ef6c00", "V=#388e3c", "W=#6d4c41", "5V=#d32f2f", "GND=#222222", "HA=#f9a825", "HB=#bdbdbd", "HC=#1976d2"], "bare leads", true]
   - [CHARGE, BATT, power, "charge: 2 wires soldered to pin and tab"]
   - [CHARGE, carrier, [DOCK+, GND], "dock sense, 2 wires"]
   - [BATT, ESTOP, power, "battery +"]
