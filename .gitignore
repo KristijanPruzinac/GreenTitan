@@ -5,6 +5,8 @@
 .vscode/ipch
 Simulator/config.txt
 cad/**/__pycache__/
+cad/concepts/renders/
+*.blend1
 # Generated CAD exports, renders, downloads and local review reports.
 outputs/roof_v4/
 outputs/roof_v5/
@@ -25,3 +27,4 @@ ros2_ws/build/
 ros2_ws/install/
 ros2_ws/log/
 __pycache__/
+cad/concepts/concept_*.blend

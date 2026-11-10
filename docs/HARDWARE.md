@@ -119,7 +119,43 @@ Cover (in progress):
 Clean-slate redesign (2026-11-09): the mechanical design starts from scratch. The old studies in `cad/` and `outputs/` (roof_reset, canopy, cowl, spine_b, packaging_b_review) and the Fusion scripts were removed. Only these parts carry over:
 - **Frame base:** 2020 aluminium extrusion (lengths free), 2020 corner brackets (90° owned now, any angle allowed), 2020 drop-in T-nuts and screws.
 - **Electronics and drive:** ESP32 devboard, C94-M8P with its UHF whip, ANN-MS patch antenna (5 m RG174, Ø100 ground plane), MPU6050, 2× VL53L8CX, 2× 23HS32-4004S + 2× MG23-G10-D8 (interfaces in §2), 2× DM542T, MY1016 blade motor, single-channel relay module, waterproof buck → 5 V, USB-C OTG splitter, Einhell 18 V pack + adapter, Galaxy A12 (§3, §5).
-- Not carried over: wheels, casters, blade and holder, cover, all printed parts.
+- **Casters:** the two existing swivel casters (§2), reused at the rear (2026-11-10).
+- Not carried over: wheels, blade and holder, cover, all printed parts.
+
+Layout decisions (2026-11-10):
+- Drive wheels and phone at the front, two casters at the rear. A centred layout is out: the two stepper + gearbox stacks (137.5 mm each) fill the axle line.
+- The body gets wider and shorter than V3, with the casters spread further apart.
+- The blade tucks under the drive steppers as far as it can, which needs bigger drive wheels.
+- Each mechanical group has its own chamber: the blade chamber is closed off from the steppers, and both from the electronics.
+- The mower is a module. Deck, blade and blade motor (in a well) bolt on from below as one part. Without it the frame is a general base with a roomy, flat electronics bay.
+
+Concept "Exo" (**proposed**, 2026-11-10): `cad/concepts/exo.py`, a Blender concept model with the real parts as blocks. Nothing in it is fit-checked.
+- An exposed 2020 cage (two side loops, four cross beams, printed corner nodes) around a tub and a lid. About 470 mm long and 500 mm wide over the wheels, track 444 mm (V3: 364.7 mm, ~402 mm over the wheels). With the Ø254 blade the uncut strip along a wall grows from about 7 cm to about 12 cm.
+- Drive wheels Ø240, the largest that print in one piece. The axle is 120 mm up, the blade centre 106 mm behind it (V3: 180).
+- The casters sit on shoulders outside the cage at the rear corners (y ±212 mm), trailing in the drive wheels' tracks. Rear swing radius about 0.40 m.
+- Drive bay across the front (steppers, gearboxes, IMU), electronics bay behind it, battery under a hatch in the lid.
+- Phone pod, ToF pods and the whip mount on pads on the corner nodes. Swappable parts are grey, release points orange.
+- This first model is the base for the buildable version. It still breaks the rules below (printed load-carrying nodes and caster shoulders, grey and orange parts, lettering, light bars).
+
+Buildability rules for the redesign (2026-11-10):
+- **Structure is metal only:** 2020 extrusion and bought brackets. The cage becomes a plain box on 90° brackets. Printed parts are skins and holders that bolt to the extrusion; plastic-to-plastic joints only connect, they never carry load.
+- **Casters and wheels bolt to metal:** caster plates onto a 2020 beam, wheels over a metal flange hub on the gearbox shaft.
+- **Printed parts:** at most 245×245 mm, no supports, green or black only, a colour change only by layer. No decals, lettering, light bars or other parts that can't be made.
+- **Rain:** panels overlap like roof tiles, the upper over the lower, with the seams raised and over a frame beam. No gaskets.
+- **Charging port at the front** (the mower docks nose first). Power parts (battery, drivers, steppers) in the front half, the ESP32 and GNSS at the rear.
+- **The gyro stays on the ESP32** (I2C or SPI), not on USB to the phone.
+- **Wiring:** plug connectors throughout, XT60/XT30 for power. No soldered signal joints.
+- New parts come from AliExpress or an EU shop that sells to private buyers, and the user approves each one first.
+
+Parts under review (**proposed**, 2026-11-10, nothing chosen yet):
+- Battery: the Einhell 18 V pack is below the DM542T minimum and can't be monitored. Candidate: a 7S Li-ion pack with a smart BMS (UART) and its own plug-in charger.
+- IMU: a better gyro than the MPU6050 on the same bus.
+- Blade unit: a brushless mower motor with its blade already fitted, replacing the MY1016 and the Ø254 bar.
+- Casters: the current ones mount on an M10 stem, which doesn't bolt to 2020 and is hard to tighten. Candidate: plate-mount casters.
+- Wheel hub: a metal flange hub for the 8 mm gearbox shaft (the DIY coupling doesn't hold).
+- ESP32 board: one with plug connectors and 5 V step/dir outputs for the DM542T, replacing the breakout and the soldered level shifter.
+- C94-M8P: stays (spares owned); find a plug connection for its UART instead of soldered pins.
+- E-stop: to be ordered.
 
 Fusion gotchas:
   - Positions that aren't captured revert on timeline operations.
@@ -143,6 +179,7 @@ These are what the software must survive:
 - [ ] Cut the 23HS32 shafts to ~12–13 mm, assemble the motor + gearbox + bracket, and test-fit.
 - [ ] Verify DM542T supply voltage against the 18 V Einhell pack (it runs mostly below the 20 V minimum; see the 7S proposal below). Choose and record the microstep setting.
 - [ ] Measure and record the Mower V3 wheel radius and wheel base for the firmware.
+- [ ] Exo concept (§6): check the drive torque margin with Ø240 wheels on the real drive unit. Against V3's r 74.9 mm the same push needs 1.6× the wheel torque, and the motor turns slower (~240 rpm at 0.3 m/s instead of ~380).
 - [ ] Bring-up checks for the firmware constants (`src/definitions.h`): the gear ratio is exactly 10:1 (mark the wheel and count 10 motor turns), `MOTOR_MICROSTEPS` matches the DM542T DIP, both wheels turn forward on `w` (stepper wiring sign), and the STEP pulses look clean on a scope at 100 and 2000 steps/s.
 - [ ] Mount the MPU6050 above the axle midpoint (2026-10-30, §2), record which way it faces, and confirm `IMU_INVERT`.
 - [ ] Weigh the mower and its main parts (drive units, blade motor, battery) and check the casters' wheel width; the sim masses are estimates (§2).
