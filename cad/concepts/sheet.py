@@ -8,7 +8,7 @@ R = os.path.join(HERE, "renders")
 CONCEPTS = [("concept_a", "A  ·  EXO", "The frame is the look: a sealed pod inside a 2020 cage"),
             ("concept_b", "B  ·  SHELL", "One body over a hidden frame, rails surface in the deck"),
             ("concept_c", "C  ·  BELT", "The frame is a waistline: one ring of 2020 between tub and shell")]
-EXO = ("exo", "EXO", "Buildable version: a 2020 box frame, the bought parts at true size, 9 printed parts (below: low view, lids off)")
+EXO = ("exo", "EXO", "Buildable version: a 2020 box frame, the bought parts at true size, 10 printed parts (below: low view, lids off)")
 
 
 def font(size):
