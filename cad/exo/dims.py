@@ -69,13 +69,14 @@ M4, M3 = 4.5, 3.4
 TAP4, TAP3 = 3.4, 2.6      # holes a screw cuts its own thread in
 
 # ------------------------------------------------------------------ drive
-YS = 87                    # inner face of the drive wall: the stepper bolts on here
+DW_T, DW_WEB = 9, 4        # drive wall: thickness, and what is left of it in the channel the stepper sits in
+YS = YI - DW_WEB           # 92: the stepper's face
 DW_X, DW_Z1 = 42, 213      # drive wall: half width, top (it reaches up beside the top rail)
-DW_BOLT_X = 33             # M5 into the rail slots, bottom and top
+DW_BOLT_X = 35             # M5 into the rail slots, bottom and top: beside the channel
 NEMA_SQ, NEMA_LEN = 56.4, 82
 NEMA_PCD = 47.14           # square hole pattern of stepper, gearbox and blade motor
 NEMA_BOSS, NEMA_BOSS_H = 38.1, 1.6
-NEMA_SHAFT, NEMA_SHAFT_L = 8, 21
+NEMA_SHAFT, NEMA_SHAFT_L = 8, 16       # cut: it comes 21 long
 GB_D, GB_LEN = 57, 47.5    # MG23-G10-D8: round body up to its output flange
 GB_FL, GB_FL_T = 57, 8     # output flange
 GB_PILOT, GB_PILOT_H = 40, 3
@@ -116,7 +117,12 @@ DRV = (118, 34, 75.5)      # DM542T / BLD-510B: length, thickness, height standi
 DRV_SLOT_PITCH, DRV_SLOT_OFF = 112, 14        # base slots: apart, from one big face
 PLINTH = 5                 # drivers and battery stand this far over the floor
 ZP = TUB_ZF + PLINTH       # 80
-STEPPER_Y0 = YS - NEMA_LEN             # 5: tail of the stepper
+STEPPER_Y0 = YS - NEMA_LEN             # 10: tail of the stepper
+# The steppers lie tail to tail.  The second one goes down pulled back by its shaft's length, then out
+# through its bore: the gap between the tails has to be longer than the shaft.  And the shaft has to
+# end inside the gearbox's bore.
+assert 2 * STEPPER_Y0 >= NEMA_SHAFT_L + 3, "no room to put the second stepper in"
+assert 9.5 <= NEMA_SHAFT_L - DW_WEB <= GB_BORE_DEPTH, "stepper shaft too short or too long for the gearbox"
 DM_A_X = -NEMA_SQ / 2 - 5 - DRV[1] / 2            # behind the steppers
 DM_B_X = DM_A_X - DRV[1] - 4
 BUCK = ((38, 60), (-32, 32), (TUB_ZF + 4, TUB_ZF + 61))               # 22 x 64 x 57, on a rest with a tie tunnel
@@ -124,7 +130,7 @@ BAT_Z0 = TUB_ZF + 7        # the battery stands higher: its strap runs underneat
 BATTERY = ((-327, -260), (-46, 87), (BAT_Z0, BAT_Z0 + 100))           # 67 x 133 x 100, on its side
 ESTOP = (-70, 150)         # y, z of the hole in the rear wall
 ESTOP_BODY = ((RT_X0 + WALL, RT_X0 + WALL + 46), (-88, -52), (125, 175))
-BLD = ((-254, -136), (-90, -56), (ZP, ZP + DRV[2]))                   # along the right wall
+BLD = ((-254, -136), (-89, -55), (ZP, ZP + DRV[2]))                   # along the right wall, clear of the rim
 CARRIER = ((-255, -200), (-50, 50), (93, 94.6))                       # 55 x 100 board
 CARRIER_POSTS = ((-252, 46), (-218, 46))                              # and mirrored
 C94 = ((-193, -138), (86, 87.6), (95, 170))                           # standing on the left wall
@@ -145,9 +151,11 @@ FASCIA_Z0, FASCIA_Z1 = 62, 213
 ZH = 188                   # ToF sensors
 TOF = (114.5, 97.5, 45)     # middle of the left sensor's face: x, y, and how far it looks inwards
 PHONE_Y0, PHONE_Z0 = -66, 105          # phone: right end (USB), lower edge
+PHONE_GAP = 4.5            # between the phone's back and the skin: the charge contact's leads pass there
 CAM = (70, 158.5)          # camera island: y, z
 CAM_WIN = (46, 34)
-POGO_Z = 195               # the boss round the charge contact has to clear the phone
+POGO_Z = 192               # charge contact: its boss stays under the lid's eave
+POGO_L, POGO_D = 12, 14    # its body
 
 ASSUMED = {
     "57BLR90-24-01 blade motor": "flange 57 square x 6 with 4 holes for M5 on 47.14, shaft 8 x 21, "

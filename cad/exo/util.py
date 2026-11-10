@@ -125,6 +125,9 @@ class Part:
     up: tuple = (0, 0, 1)           # printed parts: the direction that points up on the bed
     of: str = ""                    # printed parts: the file this one is a copy of
     bolts: list = field(default_factory=list)     # (what, point on the beam face, normal of that face)
+    off: tuple = ()                 # the way the part comes off (and goes on): a direction
+    first: tuple = ()               # a shift before that, such as a shaft pulled out of its hole
+    past: tuple = ()                # parts it has to pass on that way, besides the frame
 
 
 def vol(w):

@@ -33,7 +33,11 @@ def drive():
     stepper = fuse(box(-h, h, STEPPER_Y0, YS, AZ - h, AZ + h),
                    rod((0, YS, AZ), (0, YS + NEMA_BOSS_H, AZ), NEMA_BOSS / 2),
                    rod((0, YS, AZ), (0, YS + NEMA_SHAFT_L, AZ), NEMA_SHAFT / 2))
-    _lr(parts, "stepper", stepper, "rubber", 1.2)
+    back = (0, -(NEMA_SHAFT_L + 1), 0)                  # out of the bore, then up: with the other one in place
+    parts.append(Part("stepper_l", stepper, "rubber", "bought", 1.2, off=(0, 0, 1), first=back,
+                      past=("tub_front", "stepper_r")))
+    parts.append(Part("stepper_r", mirror(stepper), "rubber", "bought", 1.2, off=(0, 0, 1),
+                      first=(0, NEMA_SHAFT_L + 1, 0), past=("tub_front", "stepper_l")))
     g = GB_FL / 2
     gearbox = fuse(rod((0, YI, AZ), (0, YI + GB_LEN, AZ), GB_D / 2),
                    box(-g, g, YI + GB_LEN, Y_GB1, AZ - g, AZ + g),
@@ -83,7 +87,9 @@ def _driver(name, x, y0, y1, flip=False):
     term = box(x - 5, x + 5, y0 + 9, y1 - 9, z1, z1 + 12)
     if flip:                                   # lying along x
         body, term = box(y0, y1, x - t, x + t, ZP, z1), box(y0 + 9, y1 - 9, x - 5, x + 5, z1, z1 + 12)
-    return [Part(name, body, "rubber", "bought", 0.29), Part(name + "_term", term, "term", "bought", 0.0)]
+    tub = ("tub_rear",) if flip else ("tub_front",)
+    return [Part(name, body, "rubber", "bought", 0.29, off=(0, 0, 1) if name != "dm542t_b" else (), past=tub),
+            Part(name + "_term", term, "term", "bought", 0.0)]
 
 
 def electronics():
@@ -91,7 +97,7 @@ def electronics():
     # front tub
     parts += _driver("dm542t_a", DM_A_X, -DRV[0] / 2, DRV[0] / 2)
     parts += _driver("dm542t_b", DM_B_X, -DRV[0] / 2, DRV[0] / 2)
-    parts.append(Part("buck", bbox3(BUCK), "rubber", "bought", 0.2))
+    parts.append(Part("buck", bbox3(BUCK), "rubber", "bought", 0.2, off=(0, 0, 1), past=("tub_front",)))
     # rear tub
     parts.append(Part("battery", bbox3(BATTERY), "blue", "bought", 1.1))
     ey, ez = ESTOP
@@ -120,16 +126,18 @@ def electronics():
                       "rubber", "bought", 0.1))
     # in the fascia
     pl, ph, pt = PHONE
-    px1 = XS - 1.5
+    px1 = XS - PHONE_GAP
     parts.append(Part("phone", box(px1 - pt, px1, PHONE_Y0, PHONE_Y0 + pl, PHONE_Z0, PHONE_Z0 + ph),
-                      "phone", "bought", 0.205))
+                      "phone", "bought", 0.205, off=(0, 0, 1), past=("fascia",)))
     zm = PHONE_Z0 + ph / 2
     parts.append(Part("otg", box(px1 - pt / 2 - 5, px1 - pt / 2 + 5, PHONE_Y0 - 46, PHONE_Y0, zm - 11, zm + 11),
                       "rubber", "bought", 0.02))
     x, y, a = TOF
     board = rotz(box(-1.6, 0, -6.5, 6.5, -9, 9), -a).translate((x, y, ZH))
     _lr(parts, "tof", board, "pcb", 0.002)
-    parts.append(Part("pogo", rod((XS - 6, 0, POGO_Z), (XS + 6, 0, POGO_Z), 7), "brass", "bought", 0.01))
+    pogo = fuse(rod((XS, 0, POGO_Z), (XS + POGO_L, 0, POGO_Z), POGO_D / 2),
+                box(XS - PHONE_GAP + 1, XS, -5, 5, POGO_Z - 5, POGO_Z + 5))            # solder pins and leads
+    parts.append(Part("pogo", pogo, "brass", "bought", 0.01))
     return parts
 
 

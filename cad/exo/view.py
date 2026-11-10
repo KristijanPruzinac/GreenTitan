@@ -61,4 +61,15 @@ if __name__ == "__main__":
     load(hide, "--printed" in a)
     lib.studio()
     lib.OUT = os.path.join(OUT, "renders")
-    lib.render(tag, views, fast)
+    views = views or ["hero", "rear", "side", "top"]
+    above = [v for v in views if v != "under"]
+    if above:
+        lib.render(tag, above, fast)
+    if "under" in views:                                       # from below: no floor, and a light down there
+        bpy.data.objects["floor"].hide_render = True
+        ld = bpy.data.lights.new("below", "AREA")
+        ld.size, ld.energy = 3.0, 400
+        lo = bpy.data.objects.new("below", ld)
+        bpy.context.scene.collection.objects.link(lo)
+        lo.location, lo.rotation_euler = (0.4, 0.3, -1.6), (math.pi, 0, 0)
+        lib.render(tag, ["under"], fast)

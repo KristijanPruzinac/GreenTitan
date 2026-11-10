@@ -104,6 +104,24 @@ def check(parts):
         ok &= fits and not big
     print("  printed plastic, solid: %.0f g" % grams)
 
+    print("\n== parts go on and come off in a straight line")
+    stuck = 0
+    for p in parts:
+        if not p.off:
+            continue
+        others = [q for q in parts if q.kind == "frame" or q.name in p.past]
+        hit = set()
+        start = p.shape.translate(p.first) if p.first else p.shape
+        ways = [tuple(k * c for c in p.first) for k in (0.25, 0.5, 0.75)] if p.first else []
+        for moved in [p.shape.translate(w) for w in ways] + \
+                     [start.translate(tuple(step * c for c in p.off)) for step in (0, 4, 15, 40, 80, 130, 180)]:
+            hit |= {q.name for q in others if overlap(moved, q.shape) > 0.5}
+        if hit:
+            print("  %-22s blocked by %s" % (p.name, ", ".join(sorted(hit))))
+            stuck += 1
+    print("  all free" if not stuck else "  %d blocked" % stuck)
+    ok &= not stuck
+
     print("\n== frame bolts")
     bm, bk = beams(), brackets()
     count, wrong = {}, 0

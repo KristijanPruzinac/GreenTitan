@@ -58,9 +58,10 @@ def parts():
     motor = [("M5x16 button head + nyloc nut, blade motor", None, None)] * 2
     joint = [("M4x16 + nyloc nut, deck halves at the motor", None, None)] * 2 + \
             [("M4x30 + nyloc nut, deck halves at the skirt", None, None)] * 2
-    return [Part("deck_front", front, "black", "printed", up=(1, 0, 0), bolts=bolts + motor + joint),
+    return [Part("deck_front", front, "black", "printed", up=(1, 0, 0), bolts=bolts + motor + joint,
+                 off=(0, 0, -1), past=("tub_rear",)),
             Part("deck_rear", rotz(front, 180, (BX, 0)), "black", "printed", up=(-1, 0, 0), of="deck_front",
-                 bolts=back + motor),
+                 bolts=back + motor, off=(0, 0, -1), past=("tub_rear",)),
             Part("blade_disc", disc(), "black", "printed",
                  bolts=[("M4x12 + nyloc nut, blade pivot", None, None)] * 3 +
                        [("M3x10 + nut, disc to coupling", None, None)] * 4)]

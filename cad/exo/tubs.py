@@ -32,21 +32,26 @@ def front():
     tub = shell(x0, x1, 5, FT_CH)
     add, sub = [], []                                   # left side and centre; mirrored below
 
-    # drive wall: thick where stepper and gearbox bolt on, up beside the top rail
-    g = YI - WALL - YS
-    wall = prism([(-DW_X - g, YI - WALL), (-DW_X, YS), (DW_X, YS), (DW_X + g, YI - WALL),
+    # drive wall: thick, up beside the top rail.  The stepper comes down in a channel in it, pulled
+    # back, and goes out through the bore; what is left of the wall there is clamped between stepper
+    # and gearbox
+    yd = YI - DW_T
+    g = YI - WALL - yd
+    wall = prism([(-DW_X - g, YI - WALL), (-DW_X, yd), (DW_X, yd), (DW_X + g, YI - WALL),
                   (DW_X + g, YI), (-DW_X - g, YI)], "z", TUB_Z0, TUB_Z1)
     wall = common(wall, prism(chamfered(x0, x1, YI, 5, FT_CH), "z", TUB_Z0, TUB_Z1))
-    add += [wall, box(-DW_X, DW_X, YS, YI, TUB_Z1, DW_Z1)]
+    add += [wall, box(-DW_X, DW_X, yd, YI, TUB_Z1, DW_Z1)]
+    c = NEMA_SQ / 2 + 0.6
+    sub.append(box(-c, c, yd - 1, YS, AZ - c, DW_Z1 + 1))
     r = NEMA_BOSS / 2 + 0.15                            # bore for the stepper's boss
-    sub.append(hhole((0, YS - 1, AZ), (0, YI + 1, AZ), r))
+    sub.append(hhole((0, yd - 1, AZ), (0, YI + 1, AZ), r))
     h = NEMA_PCD / 2
-    sub += [ybolt(sx * h, AZ + sz * h, YS - 1, YI + 1, M4) for sx in (1, -1) for sz in (1, -1)]
-    sub += [ybolt(sx * DW_BOLT_X, z, YS - 1, YI + 1, M5) for sx in (1, -1) for z in (ZB, ZT)]
+    sub += [ybolt(sx * h, AZ + sz * h, yd - 1, YI + 1, M4) for sx in (1, -1) for sz in (1, -1)]
+    sub += [ybolt(sx * DW_BOLT_X, z, yd - 1, YI + 1, M5) for sx in (1, -1) for z in (ZB, ZT)]
 
     # saddles under the stepper's tail
     zs = AZ - NEMA_SQ / 2 - 0.5
-    add += [box(sx * 20 - 1.5, sx * 20 + 1.5, STEPPER_Y0 + 3, 40, TUB_ZF, zs) for sx in (1, -1)]
+    add += [box(sx * 20 - 1.5, sx * 20 + 1.5, STEPPER_Y0 + 3, STEPPER_Y0 + 35, TUB_ZF, zs) for sx in (1, -1)]
 
     # drivers: one rail under each end of both, screws from above
     add.append(box(DM_B_X - DRV[1] / 2, DM_A_X + DRV[1] / 2, DRV[0] / 2 - 9, DRV[0] / 2 + 3, TUB_ZF, ZP))
@@ -80,10 +85,10 @@ def front():
         n = (0, -s, 0)
         bolts += [(T5L, (sx * DW_BOLT_X, s * YI, z), n) for sx in (1, -1) for z in (ZB, ZT)]
         bolts += [(T5, (-90, s * YI, ZB), n), (T5, (x1, s * 40, ZB), (-1, 0, 0))]
-    bolts += [("M4x20 socket head, stepper through the wall into the gearbox", None, None)] * 8
+    bolts += [("M4x16 socket head, stepper through the wall into the gearbox", None, None)] * 8
     bolts += [("M4x8 self-tapping, driver base", None, None)] * 4
     bolts += [("cable tie, buck converter", None, None)]
-    return Part("tub_front", tub, "green", "printed", bolts=bolts)
+    return Part("tub_front", tub, "green", "printed", bolts=bolts, off=(0, 0, -1))
 
 
 def rear():
@@ -101,7 +106,7 @@ def rear():
     for y in (-36.5, 9.5, 38.5, 68.5):
         add.append(box(xi0, ax1 + 2, y - 1.5, y + 1.5, TUB_ZF, az0))
     add.append(box((ax0 + ax1) / 2 - 10, (ax0 + ax1) / 2 + 10, 9.5, 38.5, az0 - 2.5, az0))
-    zs = az0 + 12
+    zs = az0 + 8                                        # low stops: the battery lifts 13 mm at most under the rear beam
     add += [box(ax1 + 0.5, ax1 + 3, ay0 + 2, ay1 - 2, TUB_ZF, zs),                    # front
             box(ax0 + 5, ax1 - 5, ay0 - 3, ay0 - 0.5, TUB_ZF, zs),                    # right
             box(xi0, ax0 - 0.5, -42, -39, TUB_ZF, zs), box(xi0, ax0 - 0.5, 70, 73, TUB_ZF, zs),
@@ -117,7 +122,7 @@ def rear():
     for s in (1, -1):
         xs = xm + s * DRV_SLOT_PITCH / 2
         add.append(box(xs - 6, xs + 6, by0, by1, TUB_ZF, ZP))
-        sub.append(rod((xs, by1 - DRV_SLOT_OFF, TUB_Z0 + 1.2), (xs, by1 - DRV_SLOT_OFF, ZP + 1), TAP3 + 0.4))
+        sub.append(rod((xs, by1 - DRV_SLOT_OFF, TUB_Z0 + 1.2), (xs, by1 - DRV_SLOT_OFF, ZP + 1), TAP4 / 2))
 
     # carrier board on four posts
     cz = CARRIER[2][0]
@@ -153,7 +158,7 @@ def rear():
     bolts += [("M4x8 self-tapping, driver base", None, None)] * 2
     bolts += [("M3x8 self-tapping, board", None, None)] * 8
     bolts += [("strap 25 mm, battery", None, None)]
-    return Part("tub_rear", tub, "green", "printed", bolts=bolts)
+    return Part("tub_rear", tub, "green", "printed", bolts=bolts, off=(0, 0, -1))
 
 
 def parts():

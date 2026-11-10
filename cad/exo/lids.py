@@ -43,7 +43,8 @@ def front():
                 box(x0 - LAP, x0, -w, w, top - 4, top),                    # tongue over the rear lid
                 box(GUTTER[0] + 1, GUTTER[1] - 1, -w, w, top - 6.5, top - 4))   # drip rib, hangs into the gutter
     bolts = [("M5x16 button head + drop-in T-nut", (x, s * YR, ZF), (0, 0, 1)) for x in FRONT_SCREWS for s in (1, -1)]
-    return Part("lid_front", body, "green", "printed", up=(0, 0, -1), bolts=bolts)
+    return Part("lid_front", body, "green", "printed", up=(0, 0, -1), bolts=bolts,
+                off=(0, 0, 1), past=("lid_rear", "fascia", "tub_front"))
 
 
 def rear():
@@ -56,7 +57,8 @@ def rear():
     body, _ = lid(x0, x1, top, hollow, REAR_RIBS, 90, REAR_SCREWS)
     body = fuse(body, box(x0, x0 + 2.5, -w, w, ZF - RIM_DOWN, ZF))         # rear rim, 3.5 mm off the beam: coax comes up there
     bolts = [("M5x10 button head + drop-in T-nut", (x, s * YR, ZF), (0, 0, 1)) for x in REAR_SCREWS for s in (1, -1)]
-    return Part("lid_rear", body, "green", "printed", up=(0, 0, -1), bolts=bolts)
+    return Part("lid_rear", body, "green", "printed", up=(0, 0, -1), bolts=bolts,
+                off=(0, 0, 1), past=("tub_rear", "gnss_coax", "uhf_whip"))
 
 
 def parts():
