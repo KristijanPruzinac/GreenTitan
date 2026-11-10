@@ -1,7 +1,8 @@
 """Exo: the two tubs that hang between the rails.  Both print floor down.
 
-Front tub: steppers, both stepper drivers, buck converter.  Its side walls carry the drive:
-stepper inside, gearbox outside, bolted to the rails below and above.
+Front tub: steppers, both stepper drivers, buck converter.  Its side walls carry the drive and
+bolt to the rails below and above.  Each drive is a unit: stepper, drive plate, gearbox.  It goes
+in from outside, the stepper through a window in the wall, the plate into a pocket in it.
 Rear tub: battery, e-stop, blade driver, carrier board, GNSS board; the blade motor comes up
 through a hole in its floor (it stands on the deck)."""
 from dims import *
@@ -32,21 +33,28 @@ def front():
     tub = shell(x0, x1, 5, FT_CH)
     add, sub = [], []                                   # left side and centre; mirrored below
 
-    # drive wall: thick, up beside the top rail.  The stepper comes down in a channel in it, pulled
-    # back, and goes out through the bore; what is left of the wall there is clamped between stepper
-    # and gearbox
-    yd = YI - DW_T
-    g = YI - WALL - yd
-    wall = prism([(-DW_X - g, YI - WALL), (-DW_X, yd), (DW_X, yd), (DW_X + g, YI - WALL),
+    # drive wall: thick, up beside the top rail, bolted to the rails below and above.  Between the
+    # rails it has a pocket on the outside for the drive plate, and a window for the stepper: stepper,
+    # plate and gearbox come in from outside as one unit
+    yd = YS
+    yb = yd - DW_BACK
+    g = YI - WALL - yb
+    wall = prism([(-DW_X - g, YI - WALL), (-DW_X, yb), (DW_X, yb), (DW_X + g, YI - WALL),
                   (DW_X + g, YI), (-DW_X - g, YI)], "z", TUB_Z0, TUB_Z1)
     wall = common(wall, prism(chamfered(x0, x1, YI, 5, FT_CH), "z", TUB_Z0, TUB_Z1))
     add += [wall, box(-DW_X, DW_X, yd, YI, TUB_Z1, DW_Z1)]
+    sub.append(box(-DW_X, DW_X, yd, YI + 1, DP_Z0, DP_Z1))                  # pocket, its ceiling at 45 degrees
+    sub.append(prism([(yd, DP_Z1 - 0.01), (YI + 1, DP_Z1 - 0.01), (YI + 1, DP_Z1 + DW_T + 1)], "x", -DW_X, DW_X))
     c = NEMA_SQ / 2 + 0.6
-    sub.append(box(-c, c, yd - 1, YS, AZ - c, DW_Z1 + 1))
-    r = NEMA_BOSS / 2 + 0.15                            # bore for the stepper's boss
-    sub.append(hhole((0, yd - 1, AZ), (0, YI + 1, AZ), r))
-    h = NEMA_PCD / 2
-    sub += [ybolt(sx * h, AZ + sz * h, yd - 1, YI + 1, M4) for sx in (1, -1) for sz in (1, -1)]
+    sub.append(box(-c, c, yb - 1, yd + 1, AZ - c, AZ + c))                  # window, with a gable so it prints
+    sub.append(prism([(-c, AZ + c - 0.01), (c, AZ + c - 0.01), (0, AZ + 2 * c)], "y", yb - 1, yd + 1))
+    px, pz0, pz1 = DP_BOLT
+    for sx in (1, -1):
+        for z in (AZ + pz0, AZ + pz1):
+            sub.append(ybolt(sx * px, z, yb - 1, yd + 1, M4))
+            sub.append(prism([(sx * px + 4.2 * math.sin(math.radians(a)), z + 4.2 * math.cos(math.radians(a)))
+                              for a in range(0, 360, 60)], "y", yb - 1, yb + 3.5))       # nut, held
+        sub.append(hhole((sx * DW_BOLT_X, yb - 1, ZB), (sx * DW_BOLT_X, yd, ZB), 5.2))   # the lower screw's head
     sub += [ybolt(sx * DW_BOLT_X, z, yd - 1, YI + 1, M5) for sx in (1, -1) for z in (ZB, ZT)]
 
     # saddles under the stepper's tail
@@ -85,7 +93,6 @@ def front():
         n = (0, -s, 0)
         bolts += [(T5L, (sx * DW_BOLT_X, s * YI, z), n) for sx in (1, -1) for z in (ZB, ZT)]
         bolts += [(T5, (-90, s * YI, ZB), n), (T5, (x1, s * 40, ZB), (-1, 0, 0))]
-    bolts += [("M4x16 socket head, stepper through the wall into the gearbox", None, None)] * 8
     bolts += [("M4x8 self-tapping, driver base", None, None)] * 4
     bolts += [("cable tie, buck converter", None, None)]
     return Part("tub_front", tub, "green", "printed", bolts=bolts, off=(0, 0, -1))
@@ -161,5 +168,23 @@ def rear():
     return Part("tub_rear", tub, "green", "printed", bolts=bolts, off=(0, 0, -1))
 
 
+def plates():
+    """Drive plate: stepper on one face, gearbox on the other, screwed together on the bench.  It sits
+    in the wall's pocket between the rails.  Prints flat; left and right are the same part."""
+    p = box(-DW_X + 0.3, DW_X - 0.3, YS, YI, DP_Z0 + 0.3, DP_Z1 - 0.3)
+    h = NEMA_PCD / 2
+    px, pz0, pz1 = DP_BOLT
+    holes = [rod((0, YS - 1, AZ), (0, YI + 1, AZ), NEMA_BOSS / 2 + 0.15)]
+    holes += [ybolt(sx * h, AZ + sz * h, YS - 1, YI + 1, M4) for sx in (1, -1) for sz in (1, -1)]
+    holes += [ybolt(sx * px, AZ + z, YS - 1, YI + 1, M4) for sx in (1, -1) for z in (pz0, pz1)]
+    p = cut(p, *holes)
+    bolts = [("M4x20 socket head, stepper through the plate into the gearbox", None, None)] * 4
+    bolts += [("M4x25 socket head + nyloc nut, drive plate to the tub", None, None)] * 4
+    return [Part("drive_plate_l", p, "black", "printed", up=(0, 1, 0), bolts=bolts, off=(0, 1, 0),
+                 past=("tub_front",)),
+            Part("drive_plate_r", mirror(p), "black", "printed", up=(0, -1, 0), of="drive_plate_l", bolts=bolts,
+                 off=(0, -1, 0), past=("tub_front",))]
+
+
 def parts():
-    return [front(), rear()]
+    return [front(), rear()] + plates()

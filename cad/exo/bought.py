@@ -33,11 +33,10 @@ def drive():
     stepper = fuse(box(-h, h, STEPPER_Y0, YS, AZ - h, AZ + h),
                    rod((0, YS, AZ), (0, YS + NEMA_BOSS_H, AZ), NEMA_BOSS / 2),
                    rod((0, YS, AZ), (0, YS + NEMA_SHAFT_L, AZ), NEMA_SHAFT / 2))
-    back = (0, -(NEMA_SHAFT_L + 1), 0)                  # out of the bore, then up: with the other one in place
-    parts.append(Part("stepper_l", stepper, "rubber", "bought", 1.2, off=(0, 0, 1), first=back,
-                      past=("tub_front", "stepper_r")))
-    parts.append(Part("stepper_r", mirror(stepper), "rubber", "bought", 1.2, off=(0, 0, 1),
-                      first=(0, NEMA_SHAFT_L + 1, 0), past=("tub_front", "stepper_l")))
+    # stepper, plate and gearbox are one unit: it goes in and comes out sideways, between the rails
+    parts.append(Part("stepper_l", stepper, "rubber", "bought", 1.2, off=(0, 1, 0), past=("tub_front", "stepper_r")))
+    parts.append(Part("stepper_r", mirror(stepper), "rubber", "bought", 1.2, off=(0, -1, 0),
+                      past=("tub_front", "stepper_l")))
     g = GB_FL / 2
     gearbox = fuse(rod((0, YI, AZ), (0, YI + GB_LEN, AZ), GB_D / 2),
                    box(-g, g, YI + GB_LEN, Y_GB1, AZ - g, AZ + g),

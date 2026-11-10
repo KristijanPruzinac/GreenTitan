@@ -69,14 +69,17 @@ M4, M3 = 4.5, 3.4
 TAP4, TAP3 = 3.4, 2.6      # holes a screw cuts its own thread in
 
 # ------------------------------------------------------------------ drive
-DW_T, DW_WEB = 9, 4        # drive wall: thickness, and what is left of it in the channel the stepper sits in
-YS = YI - DW_WEB           # 92: the stepper's face
-DW_X, DW_Z1 = 42, 213      # drive wall: half width, top (it reaches up beside the top rail)
-DW_BOLT_X = 35             # M5 into the rail slots, bottom and top: beside the channel
+DW_T = 9                   # drive plate, clamped between stepper and gearbox: the stepper's shaft goes through it
+DW_BACK = 9                # the tub's wall behind the plate
+YS = YI - DW_T             # 87: the stepper's face, the back of the plate
+DW_X, DW_Z1 = 42, 213      # drive wall and plate: half width; top of the wall (it reaches up beside the top rail)
+DP_Z0, DP_Z1 = ZB + S / 2 + 1, 183     # the plate's pocket in the wall, open to the outside between the rails
+DP_BOLT = (36, -20, 25)    # plate to wall, M4: x, and z from the axle
+DW_BOLT_X = 35             # M5 into the rail slots, bottom and top
 NEMA_SQ, NEMA_LEN = 56.4, 82
 NEMA_PCD = 47.14           # square hole pattern of stepper, gearbox and blade motor
 NEMA_BOSS, NEMA_BOSS_H = 38.1, 1.6
-NEMA_SHAFT, NEMA_SHAFT_L = 8, 16       # cut: it comes 21 long
+NEMA_SHAFT, NEMA_SHAFT_L = 8, 21       # as bought: bought parts are not cut or machined
 GB_D, GB_LEN = 57, 47.5    # MG23-G10-D8: round body up to its output flange
 GB_FL, GB_FL_T = 57, 8     # output flange
 GB_PILOT, GB_PILOT_H = 40, 3
@@ -86,7 +89,7 @@ Y_GB1 = YI + GB_LEN + GB_FL_T          # 151.5: output flange face
 HUB_FL, HUB_FL_T = 56.8, 6             # wheel hub: flange
 HUB_D, HUB_LEN = 30, 20.4              # and the part with the set screw
 HUB_PCD, HUB_BORE = 47.5, 14
-YW, WHEEL_W = 164, 56                  # wheel centre plane, width
+YW, WHEEL_W = Y_GB1 + 12.5, 56         # 164: wheel centre plane; width
 WHEEL_R, LUG = 114, 6                  # rim radius, lug height
 Y_WHEEL1 = YW + WHEEL_W / 2            # 192: outer face of the wheel
 WEB = 6                                # wheel web at the hub flange
@@ -117,12 +120,13 @@ DRV = (118, 34, 75.5)      # DM542T / BLD-510B: length, thickness, height standi
 DRV_SLOT_PITCH, DRV_SLOT_OFF = 112, 14        # base slots: apart, from one big face
 PLINTH = 5                 # drivers and battery stand this far over the floor
 ZP = TUB_ZF + PLINTH       # 80
-STEPPER_Y0 = YS - NEMA_LEN             # 10: tail of the stepper
-# The steppers lie tail to tail.  The second one goes down pulled back by its shaft's length, then out
-# through its bore: the gap between the tails has to be longer than the shaft.  And the shaft has to
-# end inside the gearbox's bore.
-assert 2 * STEPPER_Y0 >= NEMA_SHAFT_L + 3, "no room to put the second stepper in"
-assert 9.5 <= NEMA_SHAFT_L - DW_WEB <= GB_BORE_DEPTH, "stepper shaft too short or too long for the gearbox"
+STEPPER_Y0 = YS - NEMA_LEN             # 5: tail of the stepper
+# Stepper, plate and gearbox are screwed together on the bench and go in from outside, the stepper
+# through the gap between the rails and a window in the tub's wall.  The shaft has to end inside the
+# gearbox's bore, and the steppers must not meet in the middle.
+assert 9.5 <= NEMA_SHAFT_L - DW_T <= GB_BORE_DEPTH, "plate too thin or too thick for the shaft in the gearbox"
+assert STEPPER_Y0 >= 3, "the steppers meet in the middle"
+assert NEMA_SQ + 2 < ZT - ZB - S, "the stepper does not pass between the rails"
 DM_A_X = -NEMA_SQ / 2 - 5 - DRV[1] / 2            # behind the steppers
 DM_B_X = DM_A_X - DRV[1] - 4
 BUCK = ((38, 60), (-32, 32), (TUB_ZF + 4, TUB_ZF + 61))               # 22 x 64 x 57, on a rest with a tie tunnel
@@ -158,7 +162,8 @@ POGO_Z = 192               # charge contact: its boss stays under the lid's eave
 POGO_L, POGO_D = 12, 14    # its body
 
 ASSUMED = {
-    "23HS32-4004S steppers": "82 long with nothing standing out at the tail; shafts cut from 21 to 16",
+    "23HS32-4004S steppers": "82 long with nothing standing out at the tail, shaft 21",
+    "MG23 input end": "drawn round 57; its M4 holes on 47.14 lie outside that, so it is likely square",
     "57BLR90-24-01 blade motor": "flange 57 square x 6 with 4 holes for M5 on 47.14, shaft 8 x 21, "
                                  "83 long over the flange, round body",
     "BLD-510B": "same case and base slots as the DM542T (118 x 75.5 x 34, slots 112 apart)",
