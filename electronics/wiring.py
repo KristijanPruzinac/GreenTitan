@@ -100,10 +100,22 @@ def part(k, n):
         else:
             ty = y + h / 2 + 4 + (i - (len(lines) - 1) / 2) * 15
         out.append(f'<text x="{x+w/2}" y="{ty}" text-anchor="middle" font-size="12.5" font-weight="bold" fill="#222">{esc(line)}</text>')
+    if n.get("term"):
+        text, ok = n["term"]
+        colour = "#1b7a2b" if ok else "#c62828"
+        tl = textwrap.wrap(("OK: " if ok else "? ") + text, 34)
+        ty0 = (y + h + 17 + len(lines) * 15) if n.get("img") else (y + h + 15)
+        tw = max(len(t) for t in tl) * 5.6 + 10
+        out.append(f'<rect x="{x+w/2-tw/2}" y="{ty0-11}" width="{tw}" height="{len(tl)*13+4}" rx="4" fill="#fff" stroke="{colour}"/>')
+        for i, t in enumerate(tl):
+            out.append(f'<text x="{x+w/2}" y="{ty0+i*13}" text-anchor="middle" font-size="10.5" fill="{colour}">{esc(t)}</text>')
 
 W, H = doc["canvas"]
 cx, cy, cw, ch = box(doc["carrier"])
 out.append(f'<rect width="{W}" height="{H}" fill="#fafafa"/>')
+out.append(f'<rect x="20" y="6" width="{W-40}" height="40" rx="8" fill="#fdecea" stroke="#c62828" stroke-width="2"/>'
+           f'<text x="{W/2}" y="32" text-anchor="middle" font-size="16" font-weight="bold" fill="#c62828">'
+           f'DRAFT, NOT CONFIRMED: no cable is confirmed end to end. Under each part: green = its real terminals are checked, red = not checked.</text>')
 out.append(f'<rect x="{cx}" y="{cy}" width="{cw}" height="{ch}" rx="14" fill="#e3edfb" stroke="#4a86e8" stroke-width="3"/>'
            f'<text x="{cx+cw/2}" y="{cy+28}" text-anchor="middle" font-size="17" font-weight="bold" fill="#1c4587">{esc(doc["carrier"]["label"])}</text>')
 labels = []

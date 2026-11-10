@@ -1,37 +1,38 @@
 # Picture of how the parts connect (wiring.py -> wiring.svg). Edit here, then run render.sh.
 # nodes: id: {at: [x, y] centre, size: [w, h], label, img (optional), status: owned | buy | board, on: carrier (drawn on the board)}
 # links: [from, to, wires, label]  wires = signal names (one drawn wire each), or "ribbon" / "usb" / "coax" / "power"
-# Nothing here is a decided connector type; it shows which part connects to which, with how many wires.
-canvas: [1900, 1300]
-carrier: {at: [930, 560], size: [460, 520], label: "Carrier board (own PCB)"}
+# term: [what the part really has to connect to, true if checked against the bought listing or the maker's document]
+# NOT CONFIRMED: no cable here is confirmed end to end; the cables only show which part talks to which.
+canvas: [1900, 1340]
+carrier: {at: [930, 560], size: [460, 520], label: "Carrier board (own PCB, not designed)"}
 nodes:
-  ESP32:    {at: [930, 450],  size: [150, 110], label: ESP32 devboard, img: img/esp32.jpg, status: owned, on: carrier}
-  IMU:      {at: [800, 640],  size: [90, 70],   label: IMU ICM-42688-P, img: img/imu.jpg, status: buy, on: carrier}
-  INA226:   {at: [1060, 640], size: [90, 70],   label: INA226 battery monitor, img: img/ina226.jpg, status: buy, on: carrier}
-  HCT245:   {at: [930, 740],  size: [100, 60],  label: 74HCT245 (5 V signals), img: img/hct245.jpg, status: board, on: carrier}
+  ESP32:    {at: [930, 450],  size: [150, 110], label: ESP32 devboard, img: img/esp32.jpg, status: owned, on: carrier, term: ["HW-394: 2x15 pin headers 2.54 mm + USB-C; came with a screw-terminal breakout", true]}
+  IMU:      {at: [800, 640],  size: [90, 70],   label: IMU ICM-42688-P, img: img/imu.jpg, status: buy, on: carrier, term: ["not bought", false]}
+  INA226:   {at: [1060, 640], size: [90, 70],   label: INA226 battery monitor, img: img/ina226.jpg, status: buy, on: carrier, term: ["not bought", false]}
+  HCT245:   {at: [930, 740],  size: [100, 60],  label: 74HCT245 (5 V signals), img: img/hct245.jpg, status: board, on: carrier, term: ["not bought", false]}
 
-  TOF_L:    {at: [330, 120],  size: [120, 90],  label: "ToF 8x8, front left", img: img/tof_8x8.jpg, status: owned}
-  TOF_R:    {at: [330, 300],  size: [120, 90],  label: "ToF 8x8, front right", img: img/tof_8x8.jpg, status: owned}
-  C94:      {at: [330, 520],  size: [160, 120], label: C94-M8P RTK board, img: img/c94.jpg, status: owned}
-  ANT_GNSS: {at: [90, 450],   size: [100, 80],  label: GNSS antenna, status: owned}
-  ANT_UHF:  {at: [90, 600],   size: [100, 80],  label: UHF whip, status: owned}
-  DEBUG:    {at: [330, 720],  size: [120, 80],  label: "USB-UART (bench only)", img: img/usb_uart.jpg, status: owned}
-  PHONE:    {at: [110, 900],  size: [110, 170], label: Galaxy A12 phone, status: owned}
-  OTG:      {at: [360, 900],  size: [130, 70],  label: "USB-C OTG adapter (data + charge)", status: buy}
-  USBC:     {at: [360, 1080], size: [130, 60],  label: "USB-C plug, screw terminal", status: buy}
+  TOF_L:    {at: [330, 120],  size: [120, 90],  label: "ToF 8x8, front left", img: img/tof_8x8.jpg, status: owned, term: ["9 bare holes 2.54 mm + loose pin header: VIN GND SDA SCL MISO LPn INT NCS SPI_I2C_N", true]}
+  TOF_R:    {at: [330, 300],  size: [120, 90],  label: "ToF 8x8, front right", img: img/tof_8x8.jpg, status: owned, term: ["9 bare holes 2.54 mm + loose pin header: VIN GND SDA SCL MISO LPn INT NCS SPI_I2C_N", true]}
+  C94:      {at: [330, 520],  size: [160, 120], label: C94-M8P RTK board, img: img/c94.jpg, status: owned, term: ["J8 2x10 socket per u-blox guide; own board not checked", false]}
+  ANT_GNSS: {at: [90, 450],   size: [100, 80],  label: GNSS antenna, status: owned, term: ["SMA plug on a fixed cable", true]}
+  ANT_UHF:  {at: [90, 600],   size: [100, 80],  label: UHF whip, status: owned, term: ["SMA", true]}
+  DEBUG:    {at: [330, 720],  size: [120, 80],  label: "USB-UART (bench only)", img: img/usb_uart.jpg, status: owned, term: ["which of the listing's 5 variants was bought: not checked", false]}
+  PHONE:    {at: [110, 900],  size: [110, 170], label: Galaxy A12 phone, status: owned, term: ["USB-C socket", true]}
+  OTG:      {at: [360, 900],  size: [130, 70],  label: "USB-C OTG adapter (data + charge)", status: buy, term: ["not bought", false]}
+  USBC:     {at: [360, 1080], size: [130, 60],  label: "USB-C plug, screw terminal", status: buy, term: ["not bought", false]}
 
-  DRV_L:    {at: [1450, 130], size: [130, 120], label: "DM542T driver, left", img: img/dm542t.jpg, status: owned}
-  DRV_R:    {at: [1450, 400], size: [130, 120], label: "DM542T driver, right", img: img/dm542t.jpg, status: owned}
-  MOT_L:    {at: [1750, 130], size: [150, 120], label: "Stepper + 10:1 gearbox, left", img: img/stepper_gearbox.jpg, status: owned}
-  MOT_R:    {at: [1750, 400], size: [150, 120], label: "Stepper + 10:1 gearbox, right", img: img/stepper_gearbox.jpg, status: owned}
-  BLD:      {at: [1450, 670], size: [130, 120], label: BLD-510B blade driver, img: img/bld510b.jpg, status: owned}
-  BLADE:    {at: [1750, 670], size: [150, 120], label: 57BLR90 blade motor, img: img/blade_motor.jpg, status: owned}
+  DRV_L:    {at: [1450, 130], size: [130, 120], label: "DM542T driver, left", img: img/dm542t.jpg, status: owned, term: ["screw terminals: PUL DIR ENA +/-, V+ GND, A+ A- B+ B-", true]}
+  DRV_R:    {at: [1450, 400], size: [130, 120], label: "DM542T driver, right", img: img/dm542t.jpg, status: owned, term: ["screw terminals: PUL DIR ENA +/-, V+ GND, A+ A- B+ B-", true]}
+  MOT_L:    {at: [1750, 130], size: [150, 120], label: "Stepper + 10:1 gearbox, left", img: img/stepper_gearbox.jpg, status: owned, term: ["4 bare leads; colours not checked", false]}
+  MOT_R:    {at: [1750, 400], size: [150, 120], label: "Stepper + 10:1 gearbox, right", img: img/stepper_gearbox.jpg, status: owned, term: ["4 bare leads; colours not checked", false]}
+  BLD:      {at: [1450, 670], size: [130, 120], label: BLD-510B blade driver, img: img/bld510b.jpg, status: owned, term: ["screw terminals; signal names not checked against the manual", false]}
+  BLADE:    {at: [1750, 670], size: [150, 120], label: 57BLR90 blade motor, img: img/blade_motor.jpg, status: owned, term: ["leads; count and plug not checked", false]}
 
-  CHARGE:   {at: [800, 1160], size: [120, 90],  label: "Charge port (magnetic pogo)", img: img/pogo.jpg, status: owned}
-  BATT:     {at: [1050, 1160], size: [160, 110], label: 7S3P battery 25.9 V, img: img/battery.jpg, status: buy}
-  ESTOP:    {at: [1300, 1160], size: [110, 90], label: E-stop, img: img/estop.jpg, status: buy}
-  BUCK:     {at: [1180, 930], size: [130, 90],  label: 24 V to 5 V buck, img: img/buck.jpg, status: owned}
-  DIST:     {at: [1270, 400], size: [50, 700],  label: "24 V", status: board}
+  CHARGE:   {at: [800, 1160], size: [120, 90],  label: "Charge port (magnetic pogo)", img: img/pogo.jpg, status: owned, term: ["no wires: solder pin (centre) + 2 solder tabs (shell), 8 mm", true]}
+  BATT:     {at: [1050, 1160], size: [160, 110], label: 7S3P battery 25.9 V, img: img/battery.jpg, status: buy, term: ["not bought", false]}
+  ESTOP:    {at: [1300, 1160], size: [110, 90], label: E-stop, img: img/estop.jpg, status: buy, term: ["not bought", false]}
+  BUCK:     {at: [1180, 930], size: [130, 90],  label: 24 V to 5 V buck, img: img/buck.jpg, status: owned, term: ["4 bare leads: red/black in, yellow/black out", true]}
+  DIST:     {at: [1270, 400], size: [50, 700],  label: "24 V", status: board, term: ["not designed", false]}
 
 links:
   - [TOF_L, carrier, [3V3, GND, SDA, SCL, LPn, INT], "6 wires"]
@@ -50,7 +51,7 @@ links:
   - [DRV_L, MOT_L, [A+, A-, B+, B-], "4 motor wires"]
   - [DRV_R, MOT_R, [A+, A-, B+, B-], "4 motor wires"]
   - [BLD, BLADE, [U, V, W, 5V, HA, HB, HC, GND], "3 phase + 5 hall wires"]
-  - [CHARGE, BATT, power, "charge, 2 wires"]
+  - [CHARGE, BATT, power, "charge: 2 wires soldered to pin and tab"]
   - [CHARGE, carrier, [DOCK+, GND], "dock sense, 2 wires"]
   - [BATT, ESTOP, power, "battery +"]
   - [ESTOP, DIST, power, "24 V through the INA226 shunt"]
