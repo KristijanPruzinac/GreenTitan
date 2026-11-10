@@ -101,6 +101,7 @@ DECK_Z1 = ZB - S / 2       # 70: the deck plate lies under the rails
 DECK_R, DECK_SKIRT = 131, 20           # plate radius; the skirt flares 45 degrees, 20 down and out
 BLADE_Z, BLADE_R = 55, 135             # cut 270
 DISC_R, DISC_T = 110, 4
+DISC_Z1 = 58               # top of the blade disc: the coupling's flange lies on it
 BM_FL, BM_FL_T = 57, 6     # 57BLR90: flange
 BM_D, BM_LEN = 57, 83      # body above the flange
 BM_SHAFT, BM_SHAFT_L = 8, 21
@@ -118,13 +119,14 @@ ZP = TUB_ZF + PLINTH       # 80
 STEPPER_Y0 = YS - NEMA_LEN             # 5: tail of the stepper
 DM_A_X = -NEMA_SQ / 2 - 5 - DRV[1] / 2            # behind the steppers
 DM_B_X = DM_A_X - DRV[1] - 4
-BUCK = ((38, 60), (-32, 32), (TUB_ZF + 2, TUB_ZF + 59))               # 22 x 64 x 57
-BATTERY = ((-327, -260), (-46, 87), (ZP, ZP + 100))                   # 67 x 133 x 100, on its side
+BUCK = ((38, 60), (-32, 32), (TUB_ZF + 4, TUB_ZF + 61))               # 22 x 64 x 57, on a rest with a tie tunnel
+BAT_Z0 = TUB_ZF + 7        # the battery stands higher: its strap runs underneath
+BATTERY = ((-327, -260), (-46, 87), (BAT_Z0, BAT_Z0 + 100))           # 67 x 133 x 100, on its side
 ESTOP = (-70, 150)         # y, z of the hole in the rear wall
-ESTOP_BODY = ((RT_X0 + WALL, RT_X0 + WALL + 46), (-90, -50), (125, 175))
+ESTOP_BODY = ((RT_X0 + WALL, RT_X0 + WALL + 46), (-88, -52), (125, 175))
 BLD = ((-254, -136), (-90, -56), (ZP, ZP + DRV[2]))                   # along the right wall
 CARRIER = ((-255, -200), (-50, 50), (93, 94.6))                       # 55 x 100 board
-CARRIER_POSTS = ((-252, 46), (-212.5, 46))                            # and mirrored
+CARRIER_POSTS = ((-252, 46), (-218, 46))                              # and mirrored
 C94 = ((-193, -138), (86, 87.6), (95, 170))                           # standing on the left wall
 C94_HOLES = (48.2, 69.6)   # between its screw holes: along x, along z
 PHONE = (164.0, 75.8, 8.9)
@@ -157,7 +159,7 @@ ASSUMED = {
     "blade coupling (not bought)": "8 mm bore, flange 32 x 3, hub 16 x 12",
     "casters (not bought)": "plate 70 x 51, holes 53 x 35, 72 high",
     "battery (not bought)": "133 x 100 x 67",
-    "e-stop (not bought)": "22 mm hole, body 46 deep x 40 x 50",
+    "e-stop (not bought)": "22 mm hole, body 46 deep x 36 x 50",
     "carrier board (not designed)": "at most 55 x 100, four M3 holes",
     "C94-M8P": "75 x 55, screw holes 69.6 x 48.2",
     "Galaxy A12": "camera island position",

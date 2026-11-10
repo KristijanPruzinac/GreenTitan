@@ -27,6 +27,16 @@ def rod(p0, p1, r):
     return wp(cq.Solid.makeCylinder(r, (b - a).Length, a, (b - a).normalized()))
 
 
+def hhole(p0, p1, r, flat=0.3):
+    """Hole along x or y that prints without support: round, with a low gable over it."""
+    axis = "x" if abs(p1[0] - p0[0]) > abs(p1[1] - p0[1]) else "y"
+    i = 0 if axis == "x" else 1
+    c, z = p0[1 - i], p0[2]
+    k, w = r / math.sqrt(2), r * (math.sqrt(2) - 1) - flat
+    roof = prism([(c - k, z + k), (c + k, z + k), (c + w, z + r + flat), (c - w, z + r + flat)], axis, p0[i], p1[i])
+    return fuse(rod(p0, p1, r), roof)
+
+
 def prism(pts, axis, a0, a1):
     """Polygon pushed along a world axis from a0 to a1.
     axis "z": pts are (x, y);  "y": (x, z);  "x": (y, z)."""
@@ -166,18 +176,42 @@ def bed_size(w, up):
     return best
 
 
-def overhangs(w, up, limit=45.0, min_area=4.0):
+def _span(solid, pts, u, e1, e2, reach=42.0, step=1.5):
+    """A flat face that looks down prints as a bridge if every point of it lies between two
+    supports.  For each point: the shortest way across, support to support, over four directions.
+    Returns the worst of them (1e9: a point that hangs free)."""
+    worst = 0.0
+    for p in pts:
+        best = 1e9
+        for k in range(4):
+            a = math.pi * k / 4
+            d = e1 * math.cos(a) + e2 * math.sin(a)
+            ends = []
+            for s in (1, -1):
+                t = step
+                while t <= reach and not solid.isInside(p + d * (s * t) - u * 0.3):
+                    t += step
+                ends.append(t)
+            if max(ends) <= reach:
+                best = min(best, sum(ends))
+        worst = max(worst, best)
+    return worst
+
+
+def overhangs(w, up, limit=45.0, min_area=12.0):
     """Faces that would print in the air: steeper than `limit` off the vertical, facing down,
-    not lying on the bed.  Returns [(area, (x, y, z) of its middle, height over the bed)],
-    biggest first.  A hole's roof or a short bridge shows up here too: judge by the size."""
-    u, _, _ = _frame(up)
+    not lying on the bed.  Returns [(area, (x, y, z) of its middle, height over the bed, span, flat)],
+    biggest first.  span: for a flat face the longest bridge in it (1e9 if it hangs free); for a
+    sloping or curved one its width, which is small for the roof of a hole."""
+    u, e1, e2 = _frame(up)
     lim = -math.cos(math.radians(limit)) - 1e-3
     solid = w.val()
     h0 = min(v.x * u.x + v.y * u.y + v.z * u.z for v in solid.tessellate(0.5, 0.3)[0])
+    dirs = [e1 * math.cos(math.pi * k / 4) + e2 * math.sin(math.pi * k / 4) for k in range(4)]
     out = []
     for f in solid.Faces():
         vs, ts = f.tessellate(0.25, 0.3)
-        area, cx, cy, cz, hmin = 0.0, 0.0, 0.0, 0.0, 1e9
+        area, cx, cy, cz, hmin, flat, tris, pts = 0.0, 0.0, 0.0, 0.0, 1e9, True, [], []
         for i, j, k in ts:
             a, b, c = vs[i], vs[j], vs[k]
             n = (b - a).cross(c - a)
@@ -192,9 +226,17 @@ def overhangs(w, up, limit=45.0, min_area=4.0):
                 area += ar
                 cx, cy, cz = cx + m.x * ar, cy + m.y * ar, cz + m.z * ar
                 hmin = min(hmin, hh)
+                flat &= n.dot(u) / (2 * ar) < -0.999
+                tris.append((ar, m))
+                pts += [a, b, c]
         if area >= min_area:
-            out.append((area, (cx / area, cy / area, cz / area), hmin))
-    return sorted(out, reverse=True)
+            if flat:
+                tris.sort(key=lambda t: -t[0])
+                span = _span(solid, [m for _, m in tris[:6]], u, e1, e2)
+            else:
+                span = min(max(p.dot(d) for p in pts) - min(p.dot(d) for p in pts) for d in dirs)
+            out.append((area, (cx / area, cy / area, cz / area), hmin, span, flat))
+    return sorted(out, key=lambda o: -o[0])
 
 
 # ------------------------------------------------------------------ frame slots

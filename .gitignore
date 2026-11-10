@@ -32,3 +32,4 @@ electronics/*.png
 electronics/*.html
 electronics/*.gv
 electronics/*.tsv
+cad/exo/out/
