@@ -60,10 +60,10 @@ parts:
     notes: "bare header holes; pin order ?"
   - &TOF1
     bgcolor_title: "#bfe8bf"
-    type: "single-point ToF (VL6180 TOF050C ?)"
+    type: VL6180 single-point ToF (TOF050C module)
     image: {src: img/tof_single.jpg, height: 80}
     pinlabels: [VIN, GND, SDA, SCL, XSHUT, INT]
-    notes: "type, position and pin order ?"
+    notes: "position and pin order ?; short range (about 10 cm rated, 50 cm at best); same default I2C address as the VL53L8CX"
   - &C94
     bgcolor_title: "#bfe8bf"
     type: u-blox C94-M8P RTK board (rover)
