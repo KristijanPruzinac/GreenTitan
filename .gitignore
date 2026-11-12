@@ -33,3 +33,4 @@ electronics/*.html
 electronics/*.gv
 electronics/*.tsv
 cad/exo/out/
+tools/hil/out/

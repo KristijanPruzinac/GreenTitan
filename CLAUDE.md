@@ -57,6 +57,8 @@ ros2_ws/src/greentitan_sim/  mower + lawn configs (course.yaml: all wall-assist 
 ros2_ws/build|install|log   colcon output (gitignored)
 tools/android/           phone provisioning (adb debloat, Termux, camera over adb)
 tools/drive_test/        HIL drive tests: scripted stick drives (scenarios.py, drive.py) and a scorer against the sim truth (score.py)
+tools/hil/               HIL run scripts: drive.ps1 (drive by hand), scen.ps1 (drive tests, one or a batch), the WSL side
+                         (sim, recorder, scoring, cleanup), fw_var.sh + flash_as.sh (firmware variants for parallel boards); logs in out/ (gitignored)
 tools/wall_bench/        wall-assist bench: the real ToF task + wall assist (g++, shims) against a numpy world and plant, scenario suite
 electronics/             parts map (WireViz): common.yml defines every part and its pins once; signals.yml, drive.yml, power.yml
                          are the sheets; wiring.yml + wiring.py draw wiring.svg (parts as photos joined by cables); render.sh writes all the .svg; img/ holds the part photos
@@ -103,7 +105,9 @@ ros2 run greentitan_sim console                                     # debug cons
 `gui:=true` opens the Gazebo window (true mower, WSLg on Windows 11). `rviz:=true` opens RViz with `config/hil.rviz`: top-down view in `odom` following `base_link`, EKF pose trail, outline/infill markers.
 Drive page (joystick, live map, wall map, sim truth): both launch files start `web_ui`; open `http://127.0.0.1:8080/` (not `localhost`: from Windows into WSL that tries IPv6 first and stalls 2 s; phone: `http://<host ip>:8080/`), `ui:=false` turns it off (ARCHITECTURE §10).
 Without firmware: `hil.launch.py robot:=<share>/config/mower_teleop.yaml agent:=false` and drive with `teleop_twist_keyboard`. HIL-vs-real differences are listed in ARCHITECTURE §11.
-HIL drive tests (scripted manual drives through the drive page, scored against the sim truth): `tools/drive_test` (ARCHITECTURE §11).
+Drive by hand in HIL (Windows: board on COM10, sim headless in WSL, recorded to WSL `~/bags`, drive page opens): `powershell -ExecutionPolicy Bypass -File tools\hil\drive.ps1 -World course` (`-Gui` for the Gazebo window, `-Port`). Reset the board after every Gazebo start (the scripts do).
+HIL drive tests (scripted manual drives through the drive page, scored against the sim truth): `tools/drive_test` (ARCHITECTURE §11), run with `tools\hil\scen.ps1 -Name park,dock` (results in `tools/hil/out/scen`).
+Parallel boards: `tools/hil/fw_var.sh NAME N 'sed expr'` (WSL) builds a variant on domain 40+N, `tools/hil/flash_as.sh NAME COMx` (Git Bash) flashes it, `dom_scan.py` finds which domain a board is on.
 Wall-assist bench (WSL/Linux, g++ + numpy, no ROS, no board): `python3 tools/wall_bench/run_all.py --seeds 3` (all scenarios, pass/fail table) or `python3 tools/wall_bench/run.py --scenario inner_90 --plot /tmp/x.png` (ARCHITECTURE §11).
 
 Exo CAD model (Python with `cadquery`, HARDWARE §6): `cd cad/exo && python build.py` builds every part and runs the fit, print and assembly checks; `--export` also writes STEP and STL to `out/`; `blender -b --python view.py -- hero top` renders the export (`--open` without the lids, `--printed` only the printed parts). After any change to a part or a number in `dims.py`, `build.py` must end with `OK`.
