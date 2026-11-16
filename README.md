@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/img/exo-hero.jpg" alt="Render of the GreenTitan Exo mower on a lawn, its ToF sensors scanning ahead" width="100%">
+
 # GreenTitan
 
 **An open-source robotic lawnmower you 3D-print yourself. RTK GPS navigation, for well under $1000.**
@@ -14,6 +16,18 @@
 </div>
 
 Commercial RTK robot mowers are expensive and closed. The open-source projects I found give you either software for a machine you have to buy, or a printed shell with no software. GreenTitan is both: a printable mower built from parts you can order, the firmware and host software that drive it, and the docs to build one yourself.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/img/exo-rays.jpg" alt="The two 8x8 ToF sensors' zones hitting a garden wall and a post"></td>
+<td width="50%"><img src="docs/img/exo-open.jpg" alt="Exo with its lids off"></td>
+</tr>
+<tr>
+<td><sub>Two VL53L8CX sensors, 64 zones each, find walls, hedges and posts while you drive.</sub></td>
+<td><sub>Lids off: geared steppers and drivers in the front tub, battery, blade driver and RTK board in the rear.</sub></td>
+</tr>
+</table>
+<sub>Renders of the proposed Exo design, made in Blender Cycles from the CadQuery model. Sky and textures: <a href="https://polyhaven.com">Poly Haven</a> (CC0).</sub>
 
 ## What it does
 
