@@ -1,0 +1,225 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800" width="1280" height="800">
+  <title>GreenTitan block diagram</title>
+  <defs>
+    <marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0.8L7 4L0 7.2z" fill="#1f2421"/>
+    </marker>
+    <marker id="ab" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0.8L7 4L0 7.2z" fill="#2563a8"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0.8L7 4L0 7.2z" fill="#b5422f"/>
+    </marker>
+    <style>
+      text { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #1f2421; }
+      .h  { font-size: 14px; font-weight: 700; }
+      .pn { font-family: 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 11px; fill: #5b625d; }
+      .d  { font-size: 11.5px; fill: #4a524c; }
+      .sec { font-size: 10.5px; font-weight: 700; letter-spacing: 1.6px; fill: #6d756f; }
+      .net { font-family: 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 10.5px; fill: #1f2421; }
+      .netb { font-family: 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 10.5px; fill: #2563a8; }
+      .netr { font-family: 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace; font-size: 10.5px; fill: #b5422f; }
+      .blk { fill: #ffffff; stroke: #1f2421; stroke-width: 1.3; }
+      .own { fill: #f3f1ea; stroke: #1f2421; stroke-width: 1.3; }
+      .sig { fill: none; stroke: #1f2421; stroke-width: 1.3; }
+      .usb { fill: none; stroke: #2563a8; stroke-width: 1.6; }
+      .pwr { fill: none; stroke: #b5422f; stroke-width: 2.2; }
+      .rf  { fill: none; stroke: #1f2421; stroke-width: 1.2; stroke-dasharray: 2 4; }
+      .bd  { fill: none; stroke: #6d756f; stroke-width: 1; stroke-dasharray: 6 4; }
+      .tag { fill: #fbfaf6; }
+    </style>
+  </defs>
+
+  <!-- sheet -->
+  <rect x="0.5" y="0.5" width="1279" height="799" rx="10" fill="#fbfaf6" stroke="#d9d6cc"/>
+  <text x="36" y="48" font-size="22" font-weight="700">GreenTitan</text>
+  <text x="166" y="48" font-size="22" fill="#6d756f">block diagram</text>
+  <text x="36" y="70" class="d">Exo mower. Sensors and drives hang off one ESP32; an old Android phone runs ROS 2 and the drive page.</text>
+
+  <!-- ===== carrier board boundary ===== -->
+  <rect class="bd" x="420" y="110" width="400" height="356" rx="6"/>
+  <text class="sec" x="432" y="128">CARRIER BOARD (OWN PCB)</text>
+
+  <!-- ESP32 -->
+  <rect class="own" x="470" y="150" width="300" height="200" rx="4"/>
+  <text class="h" x="486" y="174">ESP32</text>
+  <text class="pn" x="538" y="174">ESP-WROOM-32 devboard</text>
+  <line x1="486" y1="184" x2="754" y2="184" stroke="#cfcabd"/>
+  <text class="d" x="486" y="204">FreeRTOS · PlatformIO · Arduino</text>
+  <text class="d" x="486" y="226">gps · imu · tof tasks</text>
+  <text class="d" x="486" y="244">wall assist (shared control)</text>
+  <text class="d" x="486" y="262">coverage planner (Clipper2)</text>
+  <text class="d" x="486" y="280">path tracking (TinyMPC)</text>
+  <text class="d" x="486" y="298">missions · docking · stall detection</text>
+  <text class="d" x="486" y="316">step pulses from LEDC hardware</text>
+  <text class="pn" x="486" y="338">micro-ROS client on UART0</text>
+
+  <!-- IMU + INA on carrier -->
+  <rect class="blk" x="440" y="384" width="170" height="60" rx="4"/>
+  <text class="h" x="454" y="406">IMU</text>
+  <text class="pn" x="454" y="423">ICM-42688-P</text>
+  <text class="d" x="454" y="438">yaw rate, tilt</text>
+  <rect class="blk" x="630" y="384" width="170" height="60" rx="4"/>
+  <text class="h" x="644" y="406">Power monitor</text>
+  <text class="pn" x="644" y="423">INA226 · 2 mΩ</text>
+  <text class="d" x="644" y="438">pack V and I</text>
+  <path class="sig" d="M525 384V350"/>
+  <path class="sig" d="M715 384V350"/>
+  <path class="sig" d="M525 367H715"/>
+  <rect class="tag" x="572" y="360" width="96" height="14"/>
+  <text class="net" x="620" y="371" text-anchor="middle">I²C0 · IO21/22</text>
+
+  <!-- buffer -->
+  <rect class="blk" x="790" y="150" width="20" height="200" rx="2"/>
+  <text class="pn" transform="translate(804 330) rotate(-90)">74ACT245 · 3.3 → 5 V</text>
+  <path class="sig" d="M770 205H790"/>
+  <path class="sig" d="M770 300H790"/>
+
+  <!-- ===== sensors ===== -->
+  <text class="sec" x="36" y="128">SENSORS</text>
+
+  <rect class="blk" x="36" y="150" width="250" height="88" rx="4"/>
+  <text class="h" x="50" y="172">RTK GNSS rover</text>
+  <text class="pn" x="50" y="189">u-blox C94-M8P</text>
+  <text class="d" x="50" y="207">centimetre position, NAV-PVT</text>
+  <text class="d" x="50" y="224">ANN-MS antenna over the blade</text>
+  <path class="sig" d="M286 194H470" marker-end="url(#a)"/>
+  <text class="net" x="378" y="187" text-anchor="middle">UART2 · 19200 · IO16/17</text>
+
+  <rect class="blk" x="36" y="262" width="250" height="88" rx="4"/>
+  <text class="h" x="50" y="284">2× ToF, 8×8 zones</text>
+  <text class="pn" x="50" y="301">ST VL53L8CX</text>
+  <text class="d" x="50" y="319">front corners, crossed 45°</text>
+  <text class="d" x="50" y="336">walls, hedges, posts to 1.5 m</text>
+  <path class="sig" d="M286 306H470" marker-end="url(#a)"/>
+  <text class="net" x="378" y="299" text-anchor="middle">I²C1 · IO25/23 · LPn 4/14</text>
+
+  <rect class="blk" x="36" y="374" width="250" height="70" rx="4"/>
+  <text class="h" x="50" y="396">Dock sense</text>
+  <text class="pn" x="50" y="413">divider → ADC</text>
+  <text class="d" x="50" y="430">charge contact live = docked</text>
+  <path class="sig" d="M286 409H380V330H470" marker-end="url(#a)"/>
+  <text class="net" x="333" y="402" text-anchor="middle">IO34</text>
+
+  <!-- base station radio -->
+  <rect class="blk" x="36" y="96" width="250" height="34" rx="4" stroke-dasharray="4 3"/>
+  <text class="d" x="50" y="118">RTK base station · corrections over UHF</text>
+  <path class="rf" d="M161 130V150"/>
+
+  <!-- ===== actuators ===== -->
+  <text class="sec" x="900" y="128">DRIVE AND BLADE</text>
+
+  <rect class="blk" x="900" y="150" width="150" height="110" rx="4"/>
+  <text class="h" x="914" y="172">2× DM542T</text>
+  <text class="pn" x="914" y="189">stepper drivers</text>
+  <text class="d" x="914" y="210">opto inputs, 5 V</text>
+  <text class="d" x="914" y="228">microstepping</text>
+  <text class="d" x="914" y="246">24 V supply</text>
+  <path class="sig" d="M810 205H900" marker-end="url(#a)"/>
+  <text class="net" x="855" y="185" text-anchor="middle">STEP/DIR</text>
+  <text class="net" x="855" y="198" text-anchor="middle">IO19/32·26/33</text>
+
+  <rect class="blk" x="1086" y="150" width="158" height="110" rx="4"/>
+  <text class="h" x="1100" y="172">Drive units</text>
+  <text class="pn" x="1100" y="189">23HS32-4004S</text>
+  <text class="pn" x="1100" y="204">+ MG23 10:1</text>
+  <text class="d" x="1100" y="228">Ø240 mm wheels</text>
+  <text class="d" x="1100" y="246">differential drive</text>
+  <path class="sig" d="M1050 205H1086" marker-end="url(#a)"/>
+
+  <rect class="blk" x="900" y="284" width="150" height="90" rx="4"/>
+  <text class="h" x="914" y="306">BLD-510B</text>
+  <text class="pn" x="914" y="323">brushless driver</text>
+  <text class="d" x="914" y="344">SV 5 V = run</text>
+  <text class="d" x="914" y="361">Hall feedback</text>
+  <path class="sig" d="M810 300H900" marker-end="url(#a)"/>
+  <text class="net" x="855" y="293" text-anchor="middle">SV · IO18</text>
+
+  <rect class="blk" x="1086" y="284" width="158" height="90" rx="4"/>
+  <text class="h" x="1100" y="306">Blade motor</text>
+  <text class="pn" x="1100" y="323">57BLR90 · 220 W</text>
+  <text class="d" x="1100" y="344">printed disc</text>
+  <text class="d" x="1100" y="361">270 mm cut</text>
+  <path class="sig" d="M1050 329H1086" marker-end="url(#a)"/>
+
+  <!-- ===== power ===== -->
+  <text class="sec" x="36" y="508">POWER</text>
+  <rect class="blk" x="36" y="526" width="150" height="74" rx="4"/>
+  <text class="h" x="50" y="548">Battery</text>
+  <text class="pn" x="50" y="565">7S3P Li-ion · BMS</text>
+  <text class="d" x="50" y="584">25.9 V nominal</text>
+  <rect class="blk" x="226" y="536" width="96" height="54" rx="4"/>
+  <text class="h" x="240" y="558">E-stop</text>
+  <text class="d" x="240" y="577">cuts the loads</text>
+  <rect class="blk" x="362" y="536" width="132" height="54" rx="4"/>
+  <text class="h" x="376" y="558">Buck</text>
+  <text class="pn" x="376" y="577">24 → 5 V · 10 A</text>
+  <path class="pwr" d="M186 563H226" marker-end="url(#ar)"/>
+  <path class="pwr" d="M322 563H362" marker-end="url(#ar)"/>
+  <!-- 24 V rail to the drivers -->
+  <path class="pwr" d="M342 563V490H860V408H975V374" marker-end="url(#ar)"/>
+  <path class="pwr" d="M860 490V478H880M860 408V268H975V260" marker-end="url(#ar)"/>
+  <text class="netr" x="600" y="484">24 V rail</text>
+  <!-- 5 V to carrier and phone -->
+  <path class="pwr" d="M430 536V466" marker-end="url(#ar)"/>
+  <rect class="tag" x="436" y="500" width="30" height="14"/>
+  <text class="netr" x="439" y="511">5 V</text>
+  <path class="pwr" d="M494 563H560V640H600" marker-end="url(#ar)"/>
+
+  <!-- charging -->
+  <rect class="blk" x="36" y="640" width="150" height="74" rx="4"/>
+  <text class="h" x="50" y="662">Charge contact</text>
+  <text class="pn" x="50" y="679">magnetic pogo, front</text>
+  <text class="d" x="50" y="698">ideal diode</text>
+  <rect class="blk" x="226" y="650" width="160" height="54" rx="4" stroke-dasharray="4 3"/>
+  <text class="h" x="240" y="672">Dock station</text>
+  <text class="d" x="240" y="691">29.4 V · 2 A charger</text>
+  <path class="pwr" d="M226 677H186" marker-end="url(#ar)"/>
+  <path class="pwr" d="M111 640V600" marker-end="url(#ar)"/>
+
+  <!-- ===== phone ===== -->
+  <text class="sec" x="600" y="508">ROS 2 HOST</text>
+  <rect class="own" x="600" y="526" width="300" height="190" rx="4"/>
+  <text class="h" x="616" y="550">Old Android phone</text>
+  <text class="pn" x="616" y="567">Samsung Galaxy A12 · Termux</text>
+  <line x1="616" y1="578" x2="884" y2="578" stroke="#cfcabd"/>
+  <text class="d" x="616" y="598">ROS 2 Jazzy</text>
+  <text class="d" x="616" y="617">robot_localization EKF</text>
+  <text class="d" x="616" y="636">   RTK position + gyro heading</text>
+  <text class="d" x="616" y="655">drive page server (HTTP + SSE)</text>
+  <text class="d" x="616" y="674">cameras through the fascia (planned)</text>
+  <text class="pn" x="616" y="700">USB-C OTG adapter: data + charge</text>
+
+  <!-- USB link -->
+  <path class="usb" d="M700 350V526" marker-start="url(#ab)" marker-end="url(#ab)"/>
+  <rect class="tag" x="706" y="476" width="128" height="28"/>
+  <text class="netb" x="710" y="487">USB · micro-ROS</text>
+  <text class="netb" x="710" y="500">UART0 · 921600</text>
+
+  <!-- ===== user ===== -->
+  <text class="sec" x="980" y="508">YOU</text>
+  <rect class="blk" x="980" y="526" width="264" height="120" rx="4"/>
+  <text class="h" x="996" y="550">Drive page</text>
+  <text class="pn" x="996" y="567">any browser on the Wi-Fi</text>
+  <text class="d" x="996" y="590">joystick with wall assist</text>
+  <text class="d" x="996" y="608">live 3D map, recorded lawn edge</text>
+  <text class="d" x="996" y="626">mow · go home · dock</text>
+  <path class="usb" d="M900 586H980" marker-start="url(#ab)" marker-end="url(#ab)"/>
+  <rect class="tag" x="912" y="566" width="56" height="14"/>
+  <text class="netb" x="916" y="577">Wi-Fi</text>
+
+  <!-- ===== legend + title block ===== -->
+  <g transform="translate(980 668)">
+    <line x1="0" y1="6" x2="26" y2="6" stroke="#1f2421" stroke-width="1.3"/>
+    <text class="d" x="34" y="10">signal</text>
+    <line x1="90" y1="6" x2="116" y2="6" stroke="#2563a8" stroke-width="1.6"/>
+    <text class="d" x="124" y="10">data link</text>
+    <line x1="190" y1="6" x2="216" y2="6" stroke="#b5422f" stroke-width="2.2"/>
+    <text class="d" x="224" y="10">power</text>
+    <rect x="0" y="24" width="18" height="12" fill="#f3f1ea" stroke="#1f2421"/>
+    <text class="d" x="26" y="34">runs GreenTitan code</text>
+    <rect x="150" y="24" width="18" height="12" fill="#fff" stroke="#1f2421" stroke-dasharray="4 3"/>
+    <text class="d" x="176" y="34">off the mower</text>
+  </g>
+  <text class="pn" x="1244" y="776" text-anchor="end">GreenTitan · Exo · pins from src/definitions.h · parts from electronics/common.yml</text>
+</svg>
